@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CYBER STRIKE // Top-Down Tactical Shooter</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Game Container -->
+  <div id="game-container">
+    <!-- Main Game Canvas -->
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- Tactical Flashlight / Vignette Overlay Canvas -->
+    <canvas id="lightingCanvas"></canvas>
+
+    <!-- Custom Crosshair -->
+    <div id="crosshair">
+      <div class="ch-dot"></div>
+      <div class="ch-ring"></div>
+      <div class="ch-line ch-top"></div>
+      <div class="ch-line ch-bottom"></div>
+      <div class="ch-line ch-left"></div>
+      <div class="ch-line ch-right"></div>
+      <div id="crosshair-reload" class="ch-reload-ring"></div>
+    </div>
+
+    <!-- Fullscreen Damage Hurt Flash Vignette -->
+    <div id="hurt-vignette" class="hurt-vignette"></div>
+
+    <!-- Center Kill Confirmed Splash -->
+    <div id="kill-confirmed-splash" class="kill-confirmed-splash hidden"></div>
+
+    <!-- Top-Right Tactical Kill Feed -->
+    <div id="kill-feed-container" class="kill-feed-container"></div>
+
+    <!-- Tactical Scoreboard Overlay (Hold TAB) -->
+    <div id="tactical-scoreboard" class="scoreboard-modal hidden">
+      <div class="sb-header">
+        <div class="sb-title">TACTICAL SQUAD ROSTER // SECTOR OPERATIVES</div>
+        <div class="sb-sub">HOLD [TAB] TO VIEW &bull; CO-OP &amp; FRIENDLY FIRE ACTIVE</div>
+      </div>
+      <table class="sb-table">
+        <thead>
+          <tr>
+            <th>RANK</th>
+            <th>OPERATIVE</th>
+            <th>STATUS</th>
+            <th>KILLS</th>
+            <th>SCORE</th>
+            <th>PING</th>
+          </tr>
+        </thead>
+        <tbody id="scoreboard-body">
+        </tbody>
+      </table>
+    </div>
+
+    <!-- In-Game Tactical Comms Chat (Press ENTER) -->
+    <div id="tactical-chat-box" class="tactical-chat-box">
+      <div id="chat-messages-list" class="chat-messages-list"></div>
+      <div class="chat-input-wrapper">
+        <input type="text" id="chat-input-field" placeholder="Press [ENTER] to send comms to squad..." maxlength="100" autocomplete="off" />
+      </div>
+    </div>
+
+    <!-- Tactical Respawn Protocol Overlay -->
+    <div id="respawn-overlay" class="respawn-overlay hidden">
+      <div class="respawn-card">
+        <div class="respawn-tag">CRITICAL CASUALTY DETECTED</div>
+        <div class="respawn-title">ELIMINATED BY <span id="respawn-killer-name">HOSTILE</span></div>
+        <div class="respawn-circle">
+          <span id="respawn-seconds">4</span>
+          <span class="respawn-sub">SECONDS</span>
+        </div>
+        <div class="respawn-hint">REDEPLOYING OPERATIVE TO BASE &bull; REINFORCED ENERGY SHIELD READY</div>
+      </div>
+    </div>
+
+    <!-- HUD Overlay -->
+    <div id="hud">
+      <!-- Top Left: Player Status -->
+      <div class="hud-panel hud-status">
+        <div class="hud-tag">
+          OPERATIVE STATUS
+          <span id="net-ping-display" class="ping-tag">-- ms</span>
+        </div>
+        <div class="health-container">
+          <div class="bar-header">
+            <span class="label">VITALITY</span>
+            <span id="hp-text" class="value">100 / 100</span>
+          </div>
+          <div class="bar-track">
+            <div id="hp-loss-bar" class="bar-fill-loss"></div>
+            <div id="hp-bar" class="bar-fill"></div>
+          </div>
+        </div>
+
+        <div class="dash-container">
+          <div class="bar-header">
+            <span class="label">DASH COOLDOWN [SPACE]</span>
+            <span id="dash-text" class="value">READY</span>
+          </div>
+          <div class="bar-track dash-track">
+            <div id="dash-bar" class="bar-fill dash-fill"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Top Center: Wave & Objective Banner -->
+      <div class="hud-center">
+        <div class="wave-badge">
+          <span class="wave-title">MISSION PHASE</span>
+          <span id="wave-display" class="wave-number">WAVE 1</span>
+        </div>
+        <div id="wave-timer-bar" class="wave-progress-bar">
+          <div id="wave-timer-fill" class="wave-progress-fill"></div>
+        </div>
+        <div id="wave-banner" class="wave-banner-msg hidden">WAVE INCOMING</div>
+      </div>
+
+      <!-- Top Right: Score & Minimap Radar -->
+      <div class="hud-panel hud-stats">
+        <div class="score-row">
+          <div class="score-box">
+            <span class="score-label">SCORE</span>
+            <span id="score-display" class="score-val">00000</span>
+          </div>
+          <div class="score-box">
+            <span class="score-label">KILLS</span>
+            <span id="kills-display" class="score-val">0</span>
+          </div>
+          <div class="score-box">
+            <span class="score-label">HOSTILES</span>
+            <span id="enemies-left" class="score-val warning-val">0</span>
+          </div>
+        </div>
+
+        <!-- Radar Minimap -->
+        <div class="radar-container">
+          <canvas id="radarCanvas" width="140" height="140"></canvas>
+          <div class="radar-sweep"></div>
+          <div class="radar-overlay-grid"></div>
+          <div class="radar-label">TACTICAL SCANNER</div>
+        </div>
+      </div>
+
+      <!-- Bottom Right: Weapon & Ammo HUD -->
+      <div class="hud-panel hud-weapon">
+        <div class="weapon-info">
+          <div class="weapon-name">ARC-9 PULSE RIFLE</div>
+          <div class="ammo-count">
+            <span id="ammo-current">30</span>
+            <span class="ammo-divider">/</span>
+            <span id="ammo-max">30</span>
+          </div>
+        </div>
+        <div class="ammo-pills" id="ammo-pills">
+          <!-- Dynamically populated ammo icons -->
+        </div>
+        <div id="reload-indicator" class="reload-prompt hidden">RELOADING... [R]</div>
+      </div>
+
+      <!-- Controls Reminder Bar (Bottom Left) -->
+      <div class="controls-hint">
+        <span>[WASD] MOVE</span>
+        <span>[MOUSE] AIM</span>
+        <span>[L-CLICK] FIRE</span>
+        <span>[R] RELOAD</span>
+        <span>[SPACE] DASH</span>
+        <span>[TAB] SCOREBOARD</span>
+        <span>[ENTER] CHAT</span>
+        <span>[M] MUTE</span>
+      </div>
+
+      <!-- Audio Mute Quick Toggle Button -->
+      <button id="sound-toggle-btn" class="sound-toggle" title="Toggle Audio (M)">
+        <span id="sound-icon">🔊</span>
+      </button>
+    </div>
+
+    <!-- Start / Intro Screen -->
+    <div id="start-screen" class="screen-overlay">
+      <div class="modal-box start-modal-wide">
+        <div class="modal-glow"></div>
+        <div class="header-status-line">
+          <div class="logo-sub">TACTICAL TOP-DOWN MULTIPLAYER SHOOTER</div>
+          <div id="net-status-badge" class="status-chip online-chip">ONLINE // LAN READY</div>
+        </div>
+        <h1 class="game-logo">CYBER<span>STRIKE</span></h1>
+        <p class="mission-briefing">
+          High-value combat scenario. Contain invading hostiles with your squad or test your reflexes against each other.
+          PvPvE is active: eliminate hostile cyborgs, defend sectors, and watch your fire!
+        </p>
+
+        <!-- LAN Connection Card -->
+        <div class="lan-card">
+          <div class="lan-header">
+            <span class="lan-title">🌐 LAN MULTIPLAYER ACCESS</span>
+            <span id="lobby-operatives-count" class="lan-players-count">1 OPERATIVE READY</span>
+          </div>
+          <div class="lan-address-row">
+            <div class="lan-ip-box">
+              <span class="lan-label">LAN INVITE LINK:</span>
+              <code id="lan-ip-address">http://192.168.1.33:3000</code>
+            </div>
+            <button id="copy-lan-btn" class="btn-copy" type="button">COPY LINK</button>
+          </div>
+          <div class="lan-subtext" id="lan-connect-hint">
+            Direct Ethernet / LAN Wi-Fi: Tell everyone to open this link in their browser to connect instantly!
+          </div>
+        </div>
+
+        <!-- Operative Profile Customizer -->
+        <div class="operative-customizer">
+          <div class="customizer-col">
+            <label class="input-label">OPERATIVE CALLSIGN</label>
+            <div class="callsign-input-row">
+              <input type="text" id="operative-callsign-input" value="GHOST-01" maxlength="14" spellcheck="false" autocomplete="off" />
+              <button id="random-callsign-btn" class="btn-secondary" type="button" title="Randomize Callsign">🎲 RANDOM</button>
+            </div>
+          </div>
+          <div class="customizer-col">
+            <label class="input-label">VISOR COLOR</label>
+            <div class="color-palette">
+              <div class="color-swatch selected" data-color="#00f0ff" style="--c: #00f0ff;" title="Cyan (Ghost)"></div>
+              <div class="color-swatch" data-color="#00ff88" style="--c: #00ff88;" title="Neon Green (Viper)"></div>
+              <div class="color-swatch" data-color="#ffb703" style="--c: #ffb703;" title="Amber (Titan)"></div>
+              <div class="color-swatch" data-color="#ff3366" style="--c: #ff3366;" title="Crimson (Reaper)"></div>
+              <div class="color-swatch" data-color="#bd00ff" style="--c: #bd00ff;" title="Purple (Spectre)"></div>
+              <div class="color-swatch" data-color="#ff00aa" style="--c: #ff00aa;" title="Pink (Valkyrie)"></div>
+              <div class="color-swatch" data-color="#00d4ff" style="--c: #00d4ff;" title="Cobalt (Frost)"></div>
+              <div class="color-swatch" data-color="#ffe600" style="--c: #ffe600;" title="Yellow (Hazard)"></div>
+            </div>
+          </div>
+        </div>
+
+        <button id="start-btn" class="btn-primary">
+          <span class="btn-text">DEPLOY OPERATIVE TO BATTLEFIELD</span>
+          <span class="btn-icon">➔</span>
+        </button>
+
+        <div class="keybind-guide">
+          <strong>WASD</strong> Move &nbsp;|&nbsp; 
+          <strong>Mouse</strong> Aim &nbsp;|&nbsp; 
+          <strong>L-Click</strong> Shoot &nbsp;|&nbsp; 
+          <strong>Space</strong> Dash &nbsp;|&nbsp; 
+          <strong>R</strong> Reload &nbsp;|&nbsp; 
+          <strong>TAB</strong> Scoreboard &nbsp;|&nbsp; 
+          <strong>ENTER</strong> Squad Comms
+        </div>
+      </div>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div id="game-over-screen" class="screen-overlay hidden">
+      <div class="modal-box game-over-box">
+        <div class="status-chip danger-chip">SIGNAL LOST</div>
+        <h1 class="game-over-title">MISSION FAILED</h1>
+        <p class="game-over-sub">Operative neutralized in combat zone.</p>
+
+        <div class="results-grid">
+          <div class="result-card">
+            <div class="res-num" id="final-score">0</div>
+            <div class="res-label">FINAL SCORE</div>
+          </div>
+          <div class="result-card">
+            <div class="res-num" id="final-wave">1</div>
+            <div class="res-label">WAVE REACHED</div>
+          </div>
+          <div class="result-card">
+            <div class="res-num" id="final-kills">0</div>
+            <div class="res-label">HOSTILES PURGED</div>
+          </div>
+          <div class="result-card">
+            <div class="res-num" id="final-accuracy">0%</div>
+            <div class="res-label">COMBAT ACCURACY</div>
+          </div>
+        </div>
+
+        <button id="restart-btn" class="btn-primary">
+          <span class="btn-text">REDEPLOY SQUAD</span>
+          <span class="btn-icon">↺</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Wave Cleared Celebration Banner -->
+    <div id="wave-clear-banner" class="wave-clear-overlay hidden">
+      <div class="wave-clear-content">
+        <div class="clear-sub">SECTOR CLEARED</div>
+        <h2 id="cleared-wave-title">WAVE 1 COMPLETE</h2>
+        <div class="clear-bonus">+1,000 COMBAT BONUS & AMMO REFILLED</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Game Scripts -->
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/particles.js"></script>
+  <script src="js/map.js"></script>
+  <script src="js/bullet.js"></script>
+  <script src="js/player.js"></script>
+  <script src="js/enemy.js"></script>
+  <script src="js/network.js"></script>
+  <script src="js/game.js"></script>
+</body>
+</html>
