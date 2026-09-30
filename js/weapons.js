@@ -70,7 +70,7 @@ const WEAPON_DEFINITIONS = {
     reloadDuration: 1.15,
     damage: 16,
     speed: 1250,
-    range: 920,
+    range: 480, // Decreased range for high-capacity SMG
     spread: 0.075,
     pellets: 1,
     recoil: 3.2,

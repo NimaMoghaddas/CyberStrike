@@ -7,17 +7,18 @@
  */
 
 class AcidSpit {
-  constructor(x, y, angle, speed = 460, damage = 16, color = '#39ff14') {
+  constructor(x, y, angle, speed = 460, damage = 16, color = '#39ff14', ignoreWalls = false) {
     this.x = x;
     this.y = y;
     this.angle = angle;
     this.speed = speed;
     this.damage = damage;
     this.color = color;
+    this.ignoreWalls = ignoreWalls || (color === '#b026ff');
     this.vx = Math.cos(angle) * speed;
     this.vy = Math.sin(angle) * speed;
     this.radius = color === '#b026ff' ? 4.5 : 5.5;
-    this.maxDistance = color === '#b026ff' ? 1200 : 560;
+    this.maxDistance = color === '#b026ff' ? 1400 : 560;
     this.distanceTraveled = 0;
     this.active = true;
     this.trail = [];
@@ -40,7 +41,7 @@ class AcidSpit {
     if (Math.random() < 0.45 && window.particleSystem) {
       window.particleSystem.emit(this.x, this.y, 1, {
         speed: 35,
-        color: '#39ff14',
+        color: this.color === '#b026ff' ? '#b026ff' : '#39ff14',
         life: 0.2,
         size: 2
       });
@@ -51,15 +52,24 @@ class AcidSpit {
       return;
     }
 
-    if (map && map.isColliding(this.x, this.y, this.radius)) {
-      this.explode(game);
-      return;
+    // Purple sniper beams pierce through walls!
+    if (!this.ignoreWalls && this.color !== '#b026ff') {
+      if (map && map.isColliding(this.x, this.y, this.radius)) {
+        this.explode(game);
+        return;
+      }
     }
 
     if (player && player.alive) {
       const dist = Math.hypot(this.x - player.x, this.y - player.y);
       if (dist <= this.radius + player.radius) {
         player.takeDamage(this.damage);
+        // Green enemy acid ball DoT: 3 seconds duration, 3 HP per second
+        if (this.color === '#39ff14' || this.color === '#00ff88' || !this.color.includes('b026ff')) {
+          if (player.applyAcidDoT) {
+            player.applyAcidDoT(3.0, 3);
+          }
+        }
         if (game) game.addScreenShake(5);
         this.explode(game);
         return;
@@ -389,28 +399,28 @@ class Enemy {
         }
       } else {
         if (this.spitTimer > 0) this.spitTimer -= dt;
-        if (this.spitTimer <= 0 && distToPlayer >= 85 && distToPlayer <= 340) {
+        if (this.spitTimer <= 0 && distToPlayer >= 85 && distToPlayer <= 650) {
           const midX = (this.x + player.x) * 0.5;
           const midY = (this.y + player.y) * 0.5;
           if (!map.isColliding(midX, midY, 8)) {
-            this.spitWindupTimer = 0.38;
-            this.spitTimer = this.spitCooldown + Math.random() * 1.2;
+            this.spitWindupTimer = 0.35;
+            this.spitTimer = 5.0; // Spit once every 5 seconds
           }
         }
       }
     }
 
-    // Phantom Sniper AI: Maintain standoff distance and fire high-speed beam
+    // Phantom Sniper AI: Standoff laser targeting for 1.0s and high-velocity wall-piercing sniper beam
     if (this.type === 'sniper' && player && player.alive) {
-      this.sniperTimer = (this.sniperTimer || 2.2) - dt;
-      if (this.sniperTimer <= 0) {
+      this.sniperTimer = (this.sniperTimer !== undefined ? this.sniperTimer : 3.5) - dt;
+      if (this.sniperTimer <= 0 && distToPlayer <= 900) {
         this.sniperAimTimer = (this.sniperAimTimer || 0) + dt;
         this.angle = Math.atan2(dy, dx);
-        if (this.sniperAimTimer >= 1.1) {
-          this.sniperTimer = 2.8 + Math.random() * 1.0;
+        if (this.sniperAimTimer >= 1.0) { // Exactly 1.0 second of laser telegraph
+          this.sniperTimer = 5.0;
           this.sniperAimTimer = 0;
           if (game && game.spawnAcidSpit) {
-            game.spawnAcidSpit(this.x, this.y, this.angle, 680, 26, '#b026ff');
+            game.spawnAcidSpit(this.x, this.y, this.angle, 820, 28, '#b026ff', true);
           }
           if (window.soundSystem) {
             window.soundSystem.playWeaponShoot('railgun');
@@ -480,7 +490,12 @@ class Enemy {
 
     // Death check
     if (this.hp <= 0 && this.alive) {
-      this.die();
+      if (window.gameInstance && window.gameInstance.gameMode === 'multiplayer') {
+        this.hp = 0;
+        // In multiplayer, keep locally until server sync/kill confirms
+      } else {
+        this.die();
+      }
     }
   }
 
@@ -512,6 +527,9 @@ class Enemy {
   }
 
   draw(ctx) {
+    if (this.hp > 0) {
+      this.alive = true; // Guarantees enemies with positive health are never rendered invisible
+    }
     if (!this.alive) return;
 
     // Self-driving frame-rate independent animation timer guarantee (1.0x real time)
@@ -1463,53 +1481,277 @@ class Enemy {
   }
 
   // =========================================================================
-  // 5. PHANTOM SNIPER // LONG-RANGE LASER MARKSMAN
+  // 5. PHANTOM SNIPER // ELITE HIGH-TECH CYBERNETIC MARKSMAN ASSASSIN
   // =========================================================================
   drawPhantomSniper(ctx, isHit) {
-    ctx.save();
-    const cBody = isHit ? '#ffffff' : '#140c24';
-    const cVisor = isHit ? '#ffffff' : '#b026ff';
+    const t = this.animTimer || 0;
+    const isAiming = this.sniperAimTimer && this.sniperAimTimer > 0;
+    const breath = Math.sin(t * 2.4) * 0.04;
+    const floatBob = Math.sin(t * 3.2) * 1.5;
 
-    // Targeting Laser Line when aiming
-    if (this.sniperAimTimer && this.sniperAimTimer > 0) {
+    // Palette: Obsidian, Deep Void Purple, Radiant Psionic Violet & Pure Neon Pink
+    const cObsidian = isHit ? '#ffffff' : '#0e0717';
+    const cArmor = isHit ? '#e2d9f3' : '#1c0f2e';
+    const cArmorLight = isHit ? '#ffffff' : '#2d1847';
+    const cNeonViolet = isHit ? '#ffffff' : '#b026ff';
+    const cPlasmaGlow = isHit ? '#ffffff' : '#d946ef';
+
+    ctx.save();
+    ctx.translate(0, floatBob);
+
+    // 1. Soft Under-Chassis Psionic Shadow & Hover Distortion
+    ctx.save();
+    ctx.fillStyle = isHit ? 'rgba(255, 255, 255, 0.2)' : 'rgba(176, 38, 255, 0.15)';
+    ctx.shadowColor = cNeonViolet;
+    ctx.shadowBlur = 16;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 26, 16, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // 2. Targeting Laser Telegraph & Holographic Reticle when Aiming
+    if (isAiming) {
+      const aimProg = Math.min(1.0, this.sniperAimTimer / 1.1);
       ctx.save();
-      ctx.strokeStyle = 'rgba(217, 70, 239, 0.75)';
-      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = `rgba(217, 70, 239, ${0.4 + aimProg * 0.55})`;
+      ctx.lineWidth = 1.6 + aimProg * 0.8;
       ctx.shadowColor = '#d946ef';
-      ctx.shadowBlur = 8;
-      ctx.setLineDash([8, 6]);
+      ctx.shadowBlur = 12 * aimProg;
+      ctx.setLineDash([10, 4]);
       ctx.beginPath();
-      ctx.moveTo(28, 0);
-      ctx.lineTo(550, 0);
+      ctx.moveTo(38, 0);
+      ctx.lineTo(850, 0);
+      ctx.stroke();
+
+      // Pulsing crosshair at barrel tip
+      ctx.strokeStyle = cPlasmaGlow;
+      ctx.lineWidth = 1.2;
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.arc(38, 0, 5 + Math.sin(t * 20) * 1.5, 0, Math.PI * 2);
       ctx.stroke();
       ctx.restore();
     }
 
-    // Long Railgun Emitter Barrel
-    ctx.fillStyle = '#22153b';
-    ctx.strokeStyle = cVisor;
-    ctx.lineWidth = 1.5;
-    ctx.fillRect(8, -2.5, 20, 5);
-    ctx.strokeRect(8, -2.5, 20, 5);
+    // 3. Dual Rear Plasma Ion Thruster Exhausts
+    const thrusterPulse = 0.7 + 0.3 * Math.sin(t * 16);
+    const drawThruster = (ty) => {
+      ctx.save();
+      ctx.translate(-16, ty);
+      // Thruster Cowling
+      ctx.fillStyle = '#12081f';
+      ctx.strokeStyle = cNeonViolet;
+      ctx.lineWidth = 1.2;
+      ctx.fillRect(-3, -3, 6, 6);
+      ctx.strokeRect(-3, -3, 6, 6);
 
-    // Triangular Aerodynamic Chassis
-    ctx.fillStyle = cBody;
+      // Plasma Flame Core
+      const flameGrad = ctx.createLinearGradient(0, 0, -10 * thrusterPulse, 0);
+      flameGrad.addColorStop(0, '#ffffff');
+      flameGrad.addColorStop(0.3, cPlasmaGlow);
+      flameGrad.addColorStop(1, 'rgba(176, 38, 255, 0)');
+      ctx.fillStyle = flameGrad;
+      ctx.beginPath();
+      ctx.moveTo(0, -2.5);
+      ctx.lineTo(-9 * thrusterPulse, 0);
+      ctx.lineTo(0, 2.5);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    };
+    drawThruster(-9);
+    drawThruster(9);
+
+    // 4. Swept-Back Stealth Aerodynamic Wings (Layered Angular Wings)
+    const drawWing = (side) => {
+      const dir = side === 'top' ? -1 : 1;
+      ctx.save();
+      // Outer Wing Blade
+      ctx.beginPath();
+      ctx.moveTo(-6, dir * 4);
+      ctx.lineTo(-20, dir * 20);
+      ctx.lineTo(-10, dir * 22);
+      ctx.lineTo(4, dir * 12);
+      ctx.lineTo(8, dir * 5);
+      ctx.closePath();
+      ctx.fillStyle = cArmor;
+      ctx.fill();
+      ctx.strokeStyle = cNeonViolet;
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+
+      // Wingtip Neon Energy Conduit
+      ctx.beginPath();
+      ctx.moveTo(-18, dir * 19);
+      ctx.lineTo(-9, dir * 21);
+      ctx.strokeStyle = cPlasmaGlow;
+      ctx.lineWidth = 2.0;
+      ctx.shadowColor = cPlasmaGlow;
+      ctx.shadowBlur = 8;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // Inner Armor Flap
+      ctx.beginPath();
+      ctx.moveTo(-4, dir * 6);
+      ctx.lineTo(-12, dir * 14);
+      ctx.lineTo(-5, dir * 15);
+      ctx.lineTo(2, dir * 9);
+      ctx.closePath();
+      ctx.fillStyle = cArmorLight;
+      ctx.fill();
+      ctx.restore();
+    };
+    drawWing('top');
+    drawWing('bottom');
+
+    // 5. Heavy Articulated Stabilizer Bipod Claws (Forward Flanking)
+    const drawClaw = (side) => {
+      const dir = side === 'top' ? -1 : 1;
+      ctx.save();
+      ctx.translate(6, dir * 10);
+      const sway = Math.sin(t * 3 + (dir > 0 ? 0 : Math.PI)) * 0.08;
+      ctx.rotate(sway);
+
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(12, dir * 4);
+      ctx.lineTo(8, dir * 1.5);
+      ctx.lineTo(0, dir * 2);
+      ctx.closePath();
+      ctx.fillStyle = cObsidian;
+      ctx.strokeStyle = cNeonViolet;
+      ctx.lineWidth = 1.2;
+      ctx.fill();
+      ctx.stroke();
+
+      // Glowing claw joint node
+      ctx.beginPath();
+      ctx.arc(0, 0, 1.8, 0, Math.PI * 2);
+      ctx.fillStyle = cPlasmaGlow;
+      ctx.fill();
+      ctx.restore();
+    };
+    drawClaw('top');
+    drawClaw('bottom');
+
+    // 6. Long Rail-Accelerator Sniper Barrel (Precision Heavy Cannon)
+    ctx.save();
+    // Heavy Rail Receiver Mount
+    ctx.fillStyle = '#11061c';
+    ctx.strokeStyle = cNeonViolet;
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.moveTo(14, 0);
-    ctx.lineTo(-14, -14);
-    ctx.lineTo(-8, 0);
-    ctx.lineTo(-14, 14);
-    ctx.closePath();
+    ctx.roundRect(4, -4.5, 14, 9, 2);
     ctx.fill();
     ctx.stroke();
 
-    // Cyclops Visor Eye
-    ctx.fillStyle = cVisor;
-    ctx.shadowColor = cVisor;
-    ctx.shadowBlur = 8;
+    // Twin Electromagnetic Accelerator Rails (extends forward to x: 38)
+    const railGrad = ctx.createLinearGradient(12, 0, 36, 0);
+    railGrad.addColorStop(0, '#31174d');
+    railGrad.addColorStop(0.5, '#1e0e30');
+    railGrad.addColorStop(1, '#441f6e');
+    ctx.fillStyle = railGrad;
+    ctx.fillRect(16, -2.8, 20, 5.6);
+
+    // 3 Violet Electromagnetic Capacitor Rings along the barrel
+    const ringPositions = [20, 26, 32];
+    ringPositions.forEach((rx) => {
+      ctx.fillStyle = isAiming ? cPlasmaGlow : cNeonViolet;
+      ctx.shadowColor = cPlasmaGlow;
+      ctx.shadowBlur = isAiming ? 10 : 4;
+      ctx.fillRect(rx, -4, 2.5, 8);
+    });
+    ctx.shadowBlur = 0;
+
+    // Vented Muzzle Compensator / Flash Suppressor Tip
+    ctx.fillStyle = '#0a0312';
+    ctx.fillRect(36, -3.2, 4, 6.4);
+    ctx.strokeStyle = cNeonViolet;
+    ctx.lineWidth = 1.2;
+    ctx.strokeRect(36, -3.2, 4, 6.4);
+
+    // Dark Bore Hole
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(39, -1.2, 1.2, 2.4);
+    ctx.restore();
+
+    // 7. Central Armored Carapace & Psionic Void Core
+    ctx.save();
+    // Segmented Hexagonal Hull Shell
     ctx.beginPath();
-    ctx.arc(6, 0, 3, 0, Math.PI * 2);
+    ctx.moveTo(14, 0);
+    ctx.lineTo(8, -10);
+    ctx.lineTo(-8, -11);
+    ctx.lineTo(-16, 0);
+    ctx.lineTo(-8, 11);
+    ctx.lineTo(8, 10);
+    ctx.closePath();
+    ctx.fillStyle = cArmor;
     ctx.fill();
+    ctx.strokeStyle = cNeonViolet;
+    ctx.lineWidth = 2.0;
+    ctx.shadowColor = cNeonViolet;
+    ctx.shadowBlur = 8;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Inner Faceted Armor Plates
+    ctx.beginPath();
+    ctx.moveTo(10, 0);
+    ctx.lineTo(4, -6);
+    ctx.lineTo(-6, -7);
+    ctx.lineTo(-12, 0);
+    ctx.lineTo(-6, 7);
+    ctx.lineTo(4, 6);
+    ctx.closePath();
+    ctx.fillStyle = cArmorLight;
+    ctx.fill();
+
+    // Pulsating Spherical Psionic Capacitor Core
+    const coreR = 4.2 + (breath * 12) + (isAiming ? Math.sin(t * 25) * 0.8 : 0);
+    const coreGrad = ctx.createRadialGradient(-2, 0, 0.5, -2, 0, coreR);
+    coreGrad.addColorStop(0, '#ffffff');
+    coreGrad.addColorStop(0.4, cPlasmaGlow);
+    coreGrad.addColorStop(1, 'rgba(176, 38, 255, 0.2)');
+    ctx.fillStyle = coreGrad;
+    ctx.shadowColor = cPlasmaGlow;
+    ctx.shadowBlur = isAiming ? 18 : 10;
+    ctx.beginPath();
+    ctx.arc(-2, 0, coreR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.restore();
+
+    // 8. Tri-Optic Multi-Spectrum Sniper Sensor Array (Visor Head)
+    ctx.save();
+    ctx.translate(6, 0);
+
+    // Primary Central Long-Range Zoom Sensor
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = cPlasmaGlow;
+    ctx.shadowBlur = 12;
+    ctx.beginPath();
+    ctx.arc(3.5, 0, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Auxiliary Left & Right Sensor Nodes
+    ctx.fillStyle = cNeonViolet;
+    ctx.shadowBlur = 6;
+    ctx.beginPath();
+    ctx.arc(1.5, -3.8, 1.4, 0, Math.PI * 2);
+    ctx.arc(1.5, 3.8, 1.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Glowing Visor HUD Eyeline Arc
+    ctx.strokeStyle = cPlasmaGlow;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(1, 0, 5.5, -Math.PI * 0.45, Math.PI * 0.45);
+    ctx.stroke();
+    ctx.restore();
+
     ctx.restore();
   }
 

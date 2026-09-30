@@ -117,10 +117,26 @@ class NetworkSystem {
         this.handleLobbySync(data);
       });
 
+      // 1.3. Leader Game Start Signal (or Late Join deploy)
+      this.socket.on('game_start_signal', (data) => {
+        this.gameStarted = true;
+        if (data.mapId && this.game && this.game.map) {
+          this.game.selectedMapId = data.mapId;
+          this.game.map.setMap(data.mapId);
+        }
+        if (this.game && this.game.gameState !== 'playing') {
+          this.game.startGame();
+        }
+      });
+
       // 1.5. Synchronized Map Switch from Server
       this.socket.on('map_sync', (data) => {
         if (data.mapId && this.game && this.game.map) {
+          this.game.selectedMapId = data.mapId;
           this.game.map.setMap(data.mapId);
+          document.querySelectorAll('.map-card').forEach(c => {
+            c.classList.toggle('selected', c.getAttribute('data-map') === data.mapId);
+          });
         }
       });
 
@@ -229,7 +245,7 @@ class NetworkSystem {
       // 8.5. Enemy Ranged Attack: Acid Spit
       this.socket.on('enemy_spit', (data) => {
         if (this.game && this.game.spawnAcidSpit) {
-          this.game.spawnAcidSpit(data.x, data.y, data.angle, data.speed, data.damage);
+          this.game.spawnAcidSpit(data.x, data.y, data.angle, data.speed, data.damage, data.color || '#39ff14', data.ignoreWalls || data.color === '#b026ff');
         }
       });
 
@@ -366,6 +382,7 @@ class NetworkSystem {
   // --- Send Local Player State to Server ---
   update(dt) {
     if (!this.connected || !this.socket || !this.game.player.alive) return;
+    if (this.game && this.game.gameMode !== 'multiplayer') return;
 
     const now = performance.now();
     if (now - this.lastStateEmit >= this.emitRate) {
@@ -403,6 +420,7 @@ class NetworkSystem {
   // --- Broadcast Shoot Event ---
   emitShoot(x, y, angle, isCritical, damage, color, weaponType, speed, range, radius, penetrating, explosive, splashDamage, blastRadius) {
     if (!this.connected || !this.socket) return;
+    if (this.game && this.game.gameMode !== 'multiplayer') return;
     // In multiplayer, bullets are colored with the player's operative color
     const bulletColor = (this.game && this.game.player) ? (this.game.player.color || '#00f0ff') : (color || '#00f0ff');
     this.socket.emit('player_shoot', {
@@ -426,6 +444,7 @@ class NetworkSystem {
   // --- Report Hit on Enemy (PvE) ---
   reportEnemyHit(enemyId, damage, isCritical, x, y) {
     if (!this.connected || !this.socket) return;
+    if (this.game && this.game.gameMode !== 'multiplayer') return;
     this.socket.emit('hit_enemy', {
       enemyId,
       damage,
@@ -438,6 +457,7 @@ class NetworkSystem {
   // --- Report Hit on Player (PvP / Friendly Fire) ---
   reportPlayerHit(targetId, damage, isCritical, x, y) {
     if (!this.connected || !this.socket) return;
+    if (this.game && this.game.gameMode !== 'multiplayer') return;
     this.socket.emit('hit_player', {
       targetId,
       damage,
@@ -493,6 +513,7 @@ class NetworkSystem {
 
   // --- Handle Master Game Snapshot ---
   handleGameSnapshot(snapshot) {
+    if (!this.game || this.game.gameMode !== 'multiplayer') return;
     // 1. Update Remote Players
     if (snapshot.players) {
       snapshot.players.forEach(pData => {
@@ -519,6 +540,10 @@ class NetworkSystem {
         rp.alive = pData.alive;
         if (pData.team) rp.team = pData.team;
         if (pData.color) rp.color = pData.color;
+        if (pData.modelType && rp.modelType !== pData.modelType) {
+          rp.modelType = pData.modelType;
+          if (rp.setModel) rp.setModel(pData.modelType);
+        }
         rp.invulnerableTimer = pData.invulnerableTimer;
         rp.isDashing = pData.isDashing;
         rp.isReloading = pData.isReloading;
@@ -561,6 +586,9 @@ class NetworkSystem {
         enemy.angle = eData.angle;
         enemy.hp = eData.hp;
         enemy.maxHp = eData.maxHp;
+        if (eData.hp > 0) {
+          enemy.alive = true;
+        }
 
         // Prevent synced enemy from clipping inside local player's body
         if (this.game.player && this.game.player.alive) {
@@ -607,6 +635,9 @@ class NetworkSystem {
     rp.team = pData.team || 'solo';
     rp.color = pData.color;
     rp.skinId = pData.skinId || 'spectre';
+    rp.modelType = pData.modelType || 'commando';
+    if (rp.setModel) rp.setModel(rp.modelType);
+    if (rp.setColor) rp.setColor(pData.color || '#00f0ff');
     rp.weapon = pData.weapon || 'rifle';
     rp.hp = pData.hp;
     rp.maxHp = pData.maxHp || 100;
@@ -640,27 +671,18 @@ class NetworkSystem {
     ctx.save();
     ctx.translate(p.x, p.y);
     ctx.rotate(p.angle);
-    ctx.translate(-p.recoilOffset, 0);
 
-    // Drop shadow
-    ctx.save();
-    ctx.shadowColor = 'rgba(0,0,0,0.6)';
-    ctx.shadowBlur = 12;
-    ctx.fillStyle = 'rgba(0,0,0,0.4)';
-    ctx.beginPath();
-    ctx.ellipse(0, 0, 22, 16, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-
-    // Moving legs
-    const legSway = Math.sin(p.walkCycle) * 7;
-    ctx.fillStyle = '#1c2430';
-    ctx.fillRect(-12, -10 + legSway, 12, 6);
-    ctx.fillRect(-12, 4 - legSway, 12, 6);
-
-    const skin = (window.SKIN_DEFINITIONS && window.SKIN_DEFINITIONS[p.skinId]) || (window.SKIN_DEFINITIONS && window.SKIN_DEFINITIONS.spectre);
+    const skin = (window.OPERATIVE_SKINS && window.OPERATIVE_SKINS[p.skinId]) || (window.SKIN_DEFINITIONS && window.SKIN_DEFINITIONS[p.skinId]) || (window.OPERATIVE_SKINS && window.OPERATIVE_SKINS.spectre);
     if (window.drawOperativeModel && skin) {
-      window.drawOperativeModel(ctx, skin, p.weapon || 'rifle', 0, 1.0);
+      window.drawOperativeModel(ctx, skin, p.weapon || 'rifle', 0, 1.0, {
+        animTimer: performance.now() * 0.001,
+        walkCycle: p.walkCycle || 0,
+        isMoving: (p.vx && (Math.hypot(p.vx, p.vy) > 10)) || false,
+        recoilOffset: p.recoilOffset || 0,
+        isShooting: p.muzzleFlashTimer > 0,
+        modelType: p.modelType || 'commando',
+        color: p.color
+      });
     } else {
       // Fallback Operative Rendering
       if (window.drawTacticalWeapon) {
@@ -868,20 +890,33 @@ class NetworkSystem {
     }
 
     const skinId = this.game.selectedSkinId || 'spectre';
+    const modelType = this.game.selectedModelType || 'commando';
+    let color = this.game.selectedSkinColor || this.color || '#00f0ff';
+
+    // In multiplayer team battle, strictly enforce the squad color!
+    if (this.lobbyMode === 'teams') {
+      color = (this.myTeam === 'beta') ? this.betaColor : this.alphaColor;
+    }
+
     const mapId = this.game.selectedMapId || 'sector_09';
     const weapon = this.game.selectedWeaponId || 'rifle';
 
+    this.callsign = this.callsign || 'OPERATIVE';
+    this.color = color;
     this.game.player.name = this.callsign;
     this.game.player.setSkin(skinId);
+    this.game.player.setModel(modelType);
+    this.game.player.setColor(color);
     this.game.player.equipWeapon(weapon);
     this.game.map.setMap(mapId);
     this.game.player.team = this.myTeam;
-    this.game.player.color = this.color;
+    this.game.player.color = color;
 
     if (this.socket && this.connected) {
       this.socket.emit('join_game', {
         name: this.callsign,
-        color: this.color,
+        color: color,
+        modelType: modelType,
         team: this.myTeam,
         skinId: skinId,
         mapId: mapId,
@@ -1164,6 +1199,8 @@ class NetworkSystem {
     const btnFfa = document.getElementById('btn-submode-ffa');
     if (btnTeams) {
       btnTeams.addEventListener('click', () => {
+        this.lobbyMode = 'teams';
+        this.renderLobbyUI();
         if (this.socket && this.connected && this.isHost) {
           this.socket.emit('lobby_set_mode', { mode: 'teams' });
         }
@@ -1171,6 +1208,8 @@ class NetworkSystem {
     }
     if (btnFfa) {
       btnFfa.addEventListener('click', () => {
+        this.lobbyMode = 'ffa';
+        this.renderLobbyUI();
         if (this.socket && this.connected && this.isHost) {
           this.socket.emit('lobby_set_mode', { mode: 'ffa' });
         }
@@ -1279,10 +1318,19 @@ class NetworkSystem {
     this.lobbyMode = data.mode || 'teams';
     this.isHost = (this.myId && data.hostId === this.myId);
     this.hostId = data.hostId;
+    this.gameStarted = !!data.gameStarted;
     this.alphaColor = data.alphaColor || '#00f0ff';
     this.betaColor = data.betaColor || '#ff3366';
     this.lockedColors = data.lockedColors || [];
     this.lobbyPlayers = data.players || [];
+
+    if (data.mapId && this.game && this.game.map && this.game.selectedMapId !== data.mapId) {
+      this.game.selectedMapId = data.mapId;
+      this.game.map.setMap(data.mapId);
+      document.querySelectorAll('.map-card').forEach(c => {
+        c.classList.toggle('selected', c.getAttribute('data-map') === data.mapId);
+      });
+    }
 
     const me = this.lobbyPlayers.find(p => p.id === this.myId);
     if (me) {
@@ -1304,25 +1352,92 @@ class NetworkSystem {
     if (btnTeams) btnTeams.classList.toggle('active', this.lobbyMode === 'teams');
     if (btnFfa) btnFfa.classList.toggle('active', this.lobbyMode === 'ffa');
 
-    // 2. Team Battle vs FFA
+    // 2. Team Battle vs FFA Grids
     const teamGrid = document.getElementById('team-battle-grid');
+    const ffaGrid = document.getElementById('ffa-battle-grid');
     if (teamGrid) {
       teamGrid.style.display = this.lobbyMode === 'teams' ? 'grid' : 'none';
     }
+    if (ffaGrid) {
+      ffaGrid.style.display = this.lobbyMode === 'ffa' ? 'block' : 'none';
+      const ffaBox = document.getElementById('ffa-members-list');
+      if (ffaBox) {
+        ffaBox.innerHTML = '';
+        if (this.lobbyPlayers.length === 0) {
+          ffaBox.innerHTML = '<div class="team-empty-hint">NO OPERATIVES IN COMBAT SECTOR</div>';
+        } else {
+          this.lobbyPlayers.forEach(m => {
+            const item = document.createElement('div');
+            item.className = 'team-member-item';
+            item.innerHTML = `
+              <span class="member-dot" style="background: ${m.color || '#00f0ff'}; box-shadow: 0 0 6px ${m.color || '#00f0ff'};"></span>
+              <span class="member-name">${m.name} ${m.id === this.myId ? '(YOU)' : ''}</span>
+              ${m.isHost ? '<span class="member-host-badge">LEADER</span>' : ''}
+            `;
+            ffaBox.appendChild(item);
+          });
+        }
+      }
+    }
 
-    // 3. Host Tags & Permissions
+    // 3. Leader Pill & Match Status
+    const leaderPill = document.getElementById('lobby-leader-pill');
+    if (leaderPill) {
+      const hostPlayer = this.lobbyPlayers.find(p => p.isHost || p.id === this.hostId);
+      if (this.isHost) {
+        leaderPill.textContent = '👑 SQUAD LEADER: YOU (HOST)';
+        leaderPill.style.borderColor = 'rgba(255, 180, 0, 0.7)';
+        leaderPill.style.color = '#ffb400';
+      } else if (hostPlayer) {
+        leaderPill.textContent = `👑 SQUAD LEADER: ${hostPlayer.name}`;
+        leaderPill.style.borderColor = 'rgba(0, 240, 255, 0.5)';
+        leaderPill.style.color = '#00f0ff';
+      } else {
+        leaderPill.textContent = '👑 SQUAD LEADER: ASSIGNING...';
+      }
+    }
+
+    const matchStatusText = document.getElementById('match-status-text');
+    const startBtn = document.getElementById('start-btn');
+    if (matchStatusText) {
+      if (this.gameStarted) {
+        matchStatusText.textContent = 'MATCH IN PROGRESS — SELECT TEAM TO DROP IN';
+        matchStatusText.style.color = '#00ff88';
+      } else if (this.isHost) {
+        matchStatusText.textContent = 'LEADER READY — CLICK START TO LAUNCH SQUAD';
+        matchStatusText.style.color = '#ffb400';
+      } else {
+        matchStatusText.textContent = 'WAITING FOR SQUAD LEADER TO START MATCH';
+        matchStatusText.style.color = 'var(--accent-cyan)';
+      }
+    }
+
+    if (startBtn && this.game && this.game.gameMode === 'multiplayer') {
+      const btnText = startBtn.querySelector('.btn-text');
+      if (btnText) {
+        if (this.gameStarted) {
+          btnText.textContent = 'DROP INTO MATCH';
+        } else if (this.isHost) {
+          btnText.textContent = 'START MATCH (LEADER)';
+        } else {
+          btnText.textContent = 'WAITING FOR LEADER';
+        }
+      }
+    }
+
+    // 4. Host Tags & Permissions
     const alphaHostTag = document.getElementById('alpha-host-tag');
     const betaHostTag = document.getElementById('beta-host-tag');
     if (alphaHostTag) {
-      alphaHostTag.textContent = this.isHost ? 'ROOM HOST (YOU)' : 'ROOM HOST ONLY';
+      alphaHostTag.textContent = this.isHost ? 'SQUAD LEADER (YOU)' : 'SQUAD LEADER ONLY';
       alphaHostTag.style.color = this.isHost ? '#00ff88' : 'rgba(255,255,255,0.4)';
     }
     if (betaHostTag) {
-      betaHostTag.textContent = this.isHost ? 'ROOM HOST (YOU)' : 'ROOM HOST ONLY';
+      betaHostTag.textContent = this.isHost ? 'SQUAD LEADER (YOU)' : 'SQUAD LEADER ONLY';
       betaHostTag.style.color = this.isHost ? '#00ff88' : 'rgba(255,255,255,0.4)';
     }
 
-    // 4. Team Colors & Dots
+    // 5. Team Colors & Dots
     const alphaDot = document.getElementById('team-alpha-dot');
     if (alphaDot) {
       alphaDot.style.background = this.alphaColor;
@@ -1348,7 +1463,7 @@ class NetworkSystem {
       btn.style.cursor = this.isHost ? 'pointer' : 'not-allowed';
     });
 
-    // 5. Team Members
+    // 6. Team Members
     const alphaBox = document.getElementById('team-alpha-members');
     const betaBox = document.getElementById('team-beta-members');
     const alphaMembers = this.lobbyPlayers.filter(p => p.team === 'alpha');
@@ -1374,7 +1489,7 @@ class NetworkSystem {
           item.innerHTML = `
             <span class="member-dot" style="background: ${this.alphaColor}; box-shadow: 0 0 6px ${this.alphaColor};"></span>
             <span class="member-name">${m.name} ${m.id === this.myId ? '(YOU)' : ''}</span>
-            ${m.isHost ? '<span class="member-host-badge">HOST</span>' : ''}
+            ${m.isHost ? '<span class="member-host-badge">LEADER</span>' : ''}
           `;
           alphaBox.appendChild(item);
         });
@@ -1392,14 +1507,14 @@ class NetworkSystem {
           item.innerHTML = `
             <span class="member-dot" style="background: ${this.betaColor}; box-shadow: 0 0 6px ${this.betaColor};"></span>
             <span class="member-name">${m.name} ${m.id === this.myId ? '(YOU)' : ''}</span>
-            ${m.isHost ? '<span class="member-host-badge">HOST</span>' : ''}
+            ${m.isHost ? '<span class="member-host-badge">LEADER</span>' : ''}
           `;
           betaBox.appendChild(item);
         });
       }
     }
 
-    // 6. Join Buttons
+    // 7. Join Buttons
     const btnJoinAlpha = document.getElementById('btn-join-alpha');
     const btnJoinBeta = document.getElementById('btn-join-beta');
     const cardAlpha = document.getElementById('team-card-alpha');
@@ -1418,7 +1533,7 @@ class NetworkSystem {
       if (cardBeta) cardBeta.classList.toggle('my-team', isBeta);
     }
 
-    // 7. Color Locking in FFA
+    // 8. Color Locking in FFA
     const swatches = document.querySelectorAll('.color-swatch');
     swatches.forEach(s => {
       const col = s.getAttribute('data-color');
@@ -1426,6 +1541,10 @@ class NetworkSystem {
       s.classList.toggle('locked', isLocked && this.lobbyMode === 'ffa');
       s.title = isLocked ? 'Color chosen by another operative' : '';
     });
+
+    if (this.game && this.game.updateCustomizationSections) {
+      this.game.updateCustomizationSections();
+    }
   }
 
   updateServerIpDisplay(ip, port, allIps) {

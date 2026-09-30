@@ -179,9 +179,11 @@ const enemies = {};
 const lobbyState = {
   mode: 'teams', // 'teams' | 'ffa'
   hostId: null,
+  mapId: 'sector_09',
+  gameStarted: false,
   alphaColor: '#00f0ff',
   betaColor: '#ff3366',
-  players: {}, // [socketId]: { id, name, team: 'alpha'|'beta'|'solo', color, isHost }
+  players: {}, // [socketId]: { id, name, team: 'alpha'|'beta'|'solo', color, isHost, modelType }
   lockedColors: {} // [color]: socketId
 };
 
@@ -189,6 +191,8 @@ function broadcastLobbySync() {
   io.emit('lobby_sync', {
     mode: lobbyState.mode,
     hostId: lobbyState.hostId,
+    mapId: lobbyState.mapId || currentMapId,
+    gameStarted: lobbyState.gameStarted,
     alphaColor: lobbyState.alphaColor,
     betaColor: lobbyState.betaColor,
     lockedColors: Object.keys(lobbyState.lockedColors),
@@ -257,11 +261,11 @@ function startWave(waveNum) {
   waveManager.state = 'intermission';
   waveManager.timer = 3.0;
 
-  // In Multiplayer, keep enemy count compact (2 to 4 max) because players are also in PvP/PvPvE combat
-  const count = Math.min(4, 2 + Math.floor(waveNum * 0.5));
+  // Total enemies: Wave 1 starts with exactly 20 hostiles, scaling exponentially per wave
+  const count = 20 + (waveNum - 1) * 8 + Math.floor((waveNum - 1) * (waveNum - 1) * 1.5);
   waveManager.enemiesToSpawn = count;
   waveManager.totalEnemiesInWave = count;
-  waveManager.spawnTimer = 0.5;
+  waveManager.spawnTimer = 0.1; // initial spawn batch right when wave activates
 
   io.emit('wave_start', {
     wave: waveManager.wave,
@@ -275,46 +279,50 @@ function spawnServerEnemy() {
   let type = 'normal';
   let radius = 22, maxHp = 90, speed = 155, damage = 20, scoreValue = 100, color = '#00ff88', attackCooldown = 0.85, attackRange = 48;
 
+  // Blue enemies (fast, shielded) completely removed!
+  // Vast majority are standard green grunts and agile bombers, few snipers, and rare red tanks.
   if (waveManager.wave === 1) {
-    if (roll < 0.6) type = 'normal';
-    else {
-      type = 'fast';
-      radius = 16; maxHp = 45; speed = 240; damage = 12; scoreValue = 150; color = '#00f0ff'; attackCooldown = 0.6; attackRange = 40;
+    if (roll < 0.85) {
+      type = 'normal';
+    } else {
+      type = 'bomber';
+      radius = 18; maxHp = 60; speed = 210; damage = 50; scoreValue = 200; color = '#ff7700'; attackCooldown = 0.5; attackRange = 36;
     }
   } else if (waveManager.wave === 2) {
-    if (roll < 0.35) {
+    if (roll < 0.70) {
       type = 'normal';
-    } else if (roll < 0.65) {
-      type = 'fast';
-      radius = 16; maxHp = 45; speed = 240; damage = 12; scoreValue = 150; color = '#00f0ff'; attackCooldown = 0.6; attackRange = 40;
+    } else if (roll < 0.90) {
+      type = 'bomber';
+      radius = 18; maxHp = 60; speed = 210; damage = 50; scoreValue = 200; color = '#ff7700'; attackCooldown = 0.5; attackRange = 36;
     } else {
-      type = 'shielded';
-      radius = 24; maxHp = 160; speed = 130; damage = 22; scoreValue = 250; color = '#00d4ff'; attackCooldown = 0.9; attackRange = 45;
+      type = 'sniper';
+      radius = 20; maxHp = 75; speed = 115; damage = 28; scoreValue = 300; color = '#b026ff'; attackCooldown = 1.0; attackRange = 40;
     }
   } else if (waveManager.wave === 3) {
-    if (roll < 0.35) {
-      type = 'shielded';
-      radius = 24; maxHp = 160; speed = 130; damage = 22; scoreValue = 250; color = '#00d4ff'; attackCooldown = 0.9; attackRange = 45;
-    } else if (roll < 0.7) {
+    if (roll < 0.60) {
+      type = 'normal';
+    } else if (roll < 0.80) {
+      type = 'bomber';
+      radius = 18; maxHp = 60; speed = 210; damage = 50; scoreValue = 200; color = '#ff7700'; attackCooldown = 0.5; attackRange = 36;
+    } else if (roll < 0.94) {
       type = 'sniper';
       radius = 20; maxHp = 75; speed = 115; damage = 28; scoreValue = 300; color = '#b026ff'; attackCooldown = 1.0; attackRange = 40;
     } else {
-      type = 'bomber';
-      radius = 18; maxHp = 60; speed = 210; damage = 50; scoreValue = 200; color = '#ff7700'; attackCooldown = 0.5; attackRange = 36;
+      type = 'tank'; // rare
+      radius = 34; maxHp = 350; speed = 85; damage = 38; scoreValue = 400; color = '#ff3366'; attackCooldown = 1.2; attackRange = 60;
     }
   } else { // Wave 4+
-    if (roll < 0.25) {
-      type = 'tank';
-      radius = 34; maxHp = 350; speed = 85; damage = 38; scoreValue = 400; color = '#ff3366'; attackCooldown = 1.2; attackRange = 60;
-    } else if (roll < 0.5) {
-      type = 'shielded';
-      radius = 24; maxHp = 160; speed = 130; damage = 22; scoreValue = 250; color = '#00d4ff'; attackCooldown = 0.9; attackRange = 45;
+    if (roll < 0.50) {
+      type = 'normal';
     } else if (roll < 0.75) {
+      type = 'bomber';
+      radius = 18; maxHp = 60; speed = 210; damage = 50; scoreValue = 200; color = '#ff7700'; attackCooldown = 0.5; attackRange = 36;
+    } else if (roll < 0.90) {
       type = 'sniper';
       radius = 20; maxHp = 75; speed = 115; damage = 28; scoreValue = 300; color = '#b026ff'; attackCooldown = 1.0; attackRange = 40;
     } else {
-      type = 'bomber';
-      radius = 18; maxHp = 60; speed = 210; damage = 50; scoreValue = 200; color = '#ff7700'; attackCooldown = 0.5; attackRange = 36;
+      type = 'tank'; // rare big enemy
+      radius = 34; maxHp = 350; speed = 85; damage = 38; scoreValue = 400; color = '#ff3366'; attackCooldown = 1.2; attackRange = 60;
     }
   }
 
@@ -591,6 +599,29 @@ io.on('connection', (socket) => {
     broadcastLobbySync();
   });
 
+  // Lobby: Leader sets Battlefield Map
+  socket.on('lobby_set_map', (data) => {
+    if (socket.id !== lobbyState.hostId) return;
+    if (data && data.mapId && MAP_DEFINITIONS[data.mapId]) {
+      currentMapId = data.mapId;
+      lobbyState.mapId = data.mapId;
+      barrels = getInitialBarrelsForMap(currentMapId);
+      io.emit('map_sync', { mapId: currentMapId });
+      broadcastLobbySync();
+    }
+  });
+
+  // Lobby: Leader starts the match for all operatives in the squad
+  socket.on('leader_start_game', (data) => {
+    if (socket.id !== lobbyState.hostId) return;
+    lobbyState.gameStarted = true;
+    io.emit('game_start_signal', {
+      mapId: currentMapId,
+      mode: lobbyState.mode
+    });
+    broadcastLobbySync();
+  });
+
   // Lobby: Player Joins a Team
   socket.on('lobby_join_team', (data) => {
     const lp = lobbyState.players[socket.id];
@@ -602,6 +633,15 @@ io.on('connection', (socket) => {
         players[socket.id].color = lp.color;
       }
       broadcastLobbySync();
+
+      // If game is already active, immediately notify client to drop into the battle
+      if (lobbyState.gameStarted && !players[socket.id]) {
+        socket.emit('game_start_signal', {
+          mapId: currentMapId,
+          mode: lobbyState.mode,
+          autoDeploy: true
+        });
+      }
     }
   });
 
@@ -660,6 +700,7 @@ io.on('connection', (socket) => {
       team,
       color,
       skinId: (data && data.skinId) ? data.skinId : 'spectre',
+      modelType: (data && (data.modelType || data.skinModel)) ? (data.modelType || data.skinModel) : 'commando',
       weapon: (data && data.weapon) ? data.weapon : 'rifle',
       x: spawn.x,
       y: spawn.y,
@@ -692,6 +733,11 @@ io.on('connection', (socket) => {
     }
 
     players[socket.id] = newPlayer;
+
+    // Start wave 1 if no active wave running on server
+    if (waveManager.enemiesToSpawn === 0 && Object.keys(enemies).length === 0) {
+      startWave(1);
+    }
 
     // Acknowledge to joined player with current map
     socket.emit('joined_successfully', {
@@ -907,7 +953,8 @@ io.on('connection', (socket) => {
     const dy = p.y - medkit.y;
     if (dx * dx + dy * dy <= 60 * 60) {
       delete medkits[data.id];
-      p.hp = Math.min(p.maxHp, p.hp + (medkit.heal || 50));
+      const healAmount = Math.max(1, Math.round(p.maxHp * 0.25));
+      p.hp = Math.min(p.maxHp, p.hp + healAmount);
       io.emit('medkit_collected', {
         id: data.id,
         collectorId: socket.id,
@@ -1033,11 +1080,20 @@ setInterval(() => {
         io.emit('wave_state_changed', { state: 'active', wave: waveManager.wave });
       }
     } else if (waveManager.state === 'active') {
+      // Spawn pending wave enemies in staggered batches
       if (waveManager.enemiesToSpawn > 0) {
         waveManager.spawnTimer -= DT;
+        // If all enemies on the field are eliminated, immediately flush next batch!
+        if (Object.keys(enemies).length === 0) {
+          waveManager.spawnTimer = 0;
+        }
         if (waveManager.spawnTimer <= 0) {
-          spawnServerEnemy();
-          waveManager.spawnTimer = 0.45 + Math.random() * 0.4;
+          const batchSize = Math.min(waveManager.enemiesToSpawn, Math.max(3, Math.floor(3 + waveManager.wave * 0.7)));
+          for (let b = 0; b < batchSize; b++) {
+            spawnServerEnemy();
+          }
+          const interval = Math.max(2.0, 4.2 - waveManager.wave * 0.35);
+          waveManager.spawnTimer = interval;
         }
       } else if (Object.keys(enemies).length === 0) {
         // Wave Cleared!
@@ -1201,15 +1257,46 @@ setInterval(() => {
                 y: mouthY,
                 angle: enemy.angle,
                 speed: 460,
-                damage: 16
+                damage: 16,
+                color: '#39ff14',
+                ignoreWalls: false
               });
             }
           } else {
             enemy.spitTimer -= DT;
-            if (enemy.spitTimer <= 0 && curDist >= 85 && curDist <= 340) {
-              enemy.spitTimer = 3.4 + Math.random() * 1.2;
-              enemy.spitWindupTimer = 0.38;
-              io.emit('enemy_windup', { enemyId: enemy.id, duration: 0.38 });
+            if (enemy.spitTimer <= 0 && curDist >= 85 && curDist <= 650) {
+              enemy.spitTimer = 5.0; // Spit every 5.0 seconds
+              enemy.spitWindupTimer = 0.35;
+              io.emit('enemy_windup', { enemyId: enemy.id, duration: 0.35 });
+            }
+          }
+        }
+
+        // Ranged Sniper Shot for Phantom Sniper Enemies (1.0s aim, wall-penetrating)
+        if (enemy.type === 'sniper') {
+          if (enemy.sniperTimer === undefined) enemy.sniperTimer = 2.0 + Math.random() * 2.0;
+          if (enemy.sniperAimTimer > 0) {
+            enemy.sniperAimTimer -= DT;
+            if (enemy.sniperAimTimer <= 0) {
+              const muzzleX = enemy.x + Math.cos(enemy.angle) * (enemy.radius + 14);
+              const muzzleY = enemy.y + Math.sin(enemy.angle) * (enemy.radius + 14);
+              io.emit('enemy_spit', {
+                enemyId: enemy.id,
+                x: muzzleX,
+                y: muzzleY,
+                angle: enemy.angle,
+                speed: 820,
+                damage: 28,
+                color: '#b026ff',
+                ignoreWalls: true // Wall piercing sniper bolt!
+              });
+            }
+          } else {
+            enemy.sniperTimer -= DT;
+            if (enemy.sniperTimer <= 0 && curDist <= 900) {
+              enemy.sniperTimer = 5.0;
+              enemy.sniperAimTimer = 1.0; // telegraph laser line for 1.0s
+              io.emit('enemy_windup', { enemyId: enemy.id, duration: 1.0 });
             }
           }
         }
@@ -1223,24 +1310,6 @@ setInterval(() => {
           if (closestP.invulnerableTimer <= 0) {
             closestP.hp = Math.max(0, closestP.hp - enemy.damage);
             closestP.invulnerableTimer = 0.25;
-
-            // Defensive repulsion on surrounding hostiles to prevent crowding
-            const repulseRadius = 320;
-            for (const oeId in enemies) {
-              const oe = enemies[oeId];
-              const edx = oe.x - closestP.x;
-              const edy = oe.y - closestP.y;
-              const edist = Math.hypot(edx, edy);
-              if (edist < repulseRadius) {
-                const targetDist = 240;
-                const pushForce = Math.max(180, targetDist - edist);
-                const pushAngle = edist > 0.001 ? Math.atan2(edy, edx) : Math.random() * Math.PI * 2;
-                oe.x += Math.cos(pushAngle) * pushForce;
-                oe.y += Math.sin(pushAngle) * pushForce;
-                oe.attackTimer = Math.max(oe.attackTimer || 0, 0.75);
-                resolveCircleCollision(oe);
-              }
-            }
 
             if (closestP.hp <= 0) {
               closestP.hp = 0;
@@ -1311,7 +1380,8 @@ setInterval(() => {
       isMoving: p.isMoving,
       walkCycle: Number(p.walkCycle.toFixed(2)),
       recoilOffset: Number(p.recoilOffset.toFixed(1)),
-      weapon: p.weapon || 'rifle'
+      weapon: p.weapon || 'rifle',
+      modelType: p.modelType || 'commando'
     })),
     enemies: Object.values(enemies).map(e => ({
       id: e.id,

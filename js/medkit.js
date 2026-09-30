@@ -38,9 +38,10 @@ class Medkit {
     if (this.collected) return;
     this.collected = true;
 
-    // Restore 50 HP (half vitality up to max 100)
+    // Restore 25% of total health (e.g., +25 HP for 100 max HP)
+    const healAmount = Math.max(1, Math.round(player.maxHp * 0.25));
     const oldHp = player.hp;
-    player.hp = Math.min(player.maxHp, player.hp + this.heal);
+    player.hp = Math.min(player.maxHp, player.hp + healAmount);
     const healedAmount = Math.round(player.hp - oldHp);
 
     // Visual FX: Emerald nanite sparks & floating heal popup

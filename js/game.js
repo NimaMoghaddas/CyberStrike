@@ -69,6 +69,8 @@ class GameEngine {
     // Customization & Modular Pre-Game State
     this.gameMode = 'singleplayer'; // 'singleplayer' | 'multiplayer'
     this.selectedSkinId = 'spectre';
+    this.selectedModelType = 'commando';
+    this.selectedSkinColor = '#00f0ff';
     this.selectedMapId = 'sector_09';
     this.selectedWeaponId = 'rifle';
     this.isRespawning = false;
@@ -111,6 +113,8 @@ class GameEngine {
     this.initArsenalUI();
     this.updateAmmoUI();
     this.updateLiveRoster();
+    this.updateCustomizationSections();
+    this.initLightingUI();
   }
 
   initModeSelector() {
@@ -133,29 +137,30 @@ class GameEngine {
 
       if (mode === 'singleplayer') {
         if (netBadge) {
-          netBadge.textContent = 'OFFLINE // SOLO CAMPAIGN';
+          netBadge.textContent = 'OFFLINE // SOLO';
           netBadge.className = 'status-chip offline-chip';
         }
         if (startBtn) {
           const btnText = startBtn.querySelector('.btn-text');
-          if (btnText) btnText.textContent = 'شروع بازی تک نفره // DEPLOY SOLO';
+          if (btnText) btnText.textContent = 'DEPLOY SOLO';
         }
-        if (rosterBadge) rosterBadge.textContent = 'SOLO OPS';
+        if (rosterBadge) rosterBadge.textContent = 'SOLO';
       } else {
         if (netBadge) {
-          netBadge.textContent = 'ONLINE // LAN READY';
+          netBadge.textContent = 'ONLINE // LAN';
           netBadge.className = 'status-chip online-chip';
         }
         if (startBtn) {
           const btnText = startBtn.querySelector('.btn-text');
-          if (btnText) btnText.textContent = 'شروع بازی چند نفره // DEPLOY SQUAD';
+          if (btnText) btnText.textContent = 'DEPLOY SQUAD';
         }
-        if (rosterBadge) rosterBadge.textContent = 'LAN MULTIPLAYER';
+        if (rosterBadge) rosterBadge.textContent = 'MULTIPLAYER';
         if (this.network && this.network.renderLobbyUI) {
           this.network.renderLobbyUI();
         }
       }
       this.updateLiveRoster();
+      this.updateCustomizationSections();
       if (window.soundSystem && window.soundSystem.playDryFire) {
         window.soundSystem.playDryFire();
       }
@@ -183,39 +188,41 @@ class GameEngine {
   }
 
   initSkinsUI() {
-    const grid = document.getElementById('skins-grid');
-    if (!grid || typeof SKIN_DEFINITIONS === 'undefined') return;
+    this.initModelsUI();
+    this.initColorsUI();
+  }
+
+  initModelsUI() {
+    const grid = document.getElementById('models-grid');
+    if (!grid || typeof OPERATIVE_MODELS === 'undefined') return;
     grid.innerHTML = '';
 
-    for (const id in SKIN_DEFINITIONS) {
-      const skin = SKIN_DEFINITIONS[id];
+    for (const id in OPERATIVE_MODELS) {
+      const model = OPERATIVE_MODELS[id];
       const card = document.createElement('div');
-      card.className = `skin-card ${id === this.selectedSkinId ? 'selected' : ''}`;
-      card.id = `skin-card-${id}`;
-      card.style.setProperty('--card-color', skin.colors.visor);
-      card.style.setProperty('--card-glow', `${skin.colors.visor}55`);
+      card.className = `model-card ${id === (this.selectedModelType || 'commando') ? 'selected' : ''}`;
+      card.id = `model-card-${id}`;
 
       card.innerHTML = `
-        <div class="skin-card-header">
-          <div class="skin-color-badge" style="background: ${skin.colors.visor}; color: ${skin.colors.visor};"></div>
+        <div class="model-card-header">
+          <span class="model-card-icon">${model.icon}</span>
           <div>
-            <div class="skin-card-title">${skin.name}</div>
-            <div class="skin-card-role">${skin.role}</div>
+            <div class="model-card-title">${model.name}</div>
+            <div class="model-card-role">${model.role}</div>
           </div>
         </div>
-        <div class="skin-card-lore">${skin.desc}</div>
-        <div class="skin-card-perk">
-          <span class="skin-card-perk-name">⚡ ${skin.perk.name}</span>
-          <span class="skin-card-perk-desc">${skin.perk.desc}</span>
-        </div>
+        <div class="model-card-desc">${model.desc}</div>
       `;
 
       card.addEventListener('click', () => {
-        this.selectedSkinId = id;
-        document.querySelectorAll('.skin-card').forEach(c => c.classList.remove('selected'));
+        this.selectedModelType = id;
+        document.querySelectorAll('.model-card').forEach(c => c.classList.remove('selected'));
         card.classList.add('selected');
-        this.player.setSkin(id);
-        this.updateTerminalSummary();
+
+        this.player.setModel(id);
+        if (this.network && this.network.socket && this.network.connected) {
+          this.network.socket.emit('lobby_update_model', { modelType: id });
+        }
         if (window.soundSystem && window.soundSystem.playReload) {
           window.soundSystem.playReload();
         }
@@ -223,6 +230,42 @@ class GameEngine {
 
       grid.appendChild(card);
     }
+  }
+
+  initColorsUI() {
+    const grid = document.getElementById('colors-palette-grid');
+    if (!grid || typeof OPERATIVE_COLORS === 'undefined') return;
+    grid.innerHTML = '';
+
+    OPERATIVE_COLORS.forEach(item => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `palette-swatch-btn ${item.hex === (this.selectedSkinColor || '#00f0ff') ? 'selected' : ''}`;
+      btn.id = `swatch-${item.id}`;
+      btn.style.setProperty('--swatch-color', item.hex);
+
+      btn.innerHTML = `
+        <div class="swatch-circle" style="background: ${item.hex};"></div>
+        <span class="swatch-label">${item.name}</span>
+      `;
+
+      btn.addEventListener('click', () => {
+        this.selectedSkinColor = item.hex;
+        document.querySelectorAll('.palette-swatch-btn').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+
+        this.player.setColor(item.hex);
+        if (this.network && this.network.socket && this.network.connected) {
+          this.network.color = item.hex;
+          this.network.socket.emit('lobby_select_color', { color: item.hex });
+        }
+        if (window.soundSystem && window.soundSystem.playDryFire) {
+          window.soundSystem.playDryFire();
+        }
+      });
+
+      grid.appendChild(btn);
+    });
   }
 
   initMapsUI() {
@@ -246,30 +289,40 @@ class GameEngine {
       card.style.setProperty('--map-glow', `${mapDef.accentColor || '#00f0ff'}55`);
 
       const icon = mapIcons[id] || '🗺️';
-      const barrelCount = mapDef.barrels ? mapDef.barrels.length : 0;
 
       card.innerHTML = `
         <div class="map-card-header">
           <span class="map-icon">${icon}</span>
-          <div>
-            <div class="map-card-title">${mapDef.name}</div>
-            <div class="map-card-sub">${mapDef.subtitle}</div>
-          </div>
-        </div>
-        <div class="map-card-lore">${mapDef.description}</div>
-        <div class="map-card-tags">
-          <span class="map-tag">${mapDef.theme.toUpperCase()} THEME</span>
-          <span class="map-tag">${barrelCount} BARRELS</span>
-          <span class="map-tag hazard">${mapDef.hazardLevel || 'MODERATE'}</span>
+          <div class="map-card-title">${mapDef.shortName || mapDef.name}</div>
         </div>
       `;
 
       card.addEventListener('click', () => {
+        // If in multiplayer and connected, only the leader can change the map
+        if (this.gameMode === 'multiplayer' && this.network && this.network.connected && !this.network.isHost) {
+          const statusText = document.getElementById('match-status-text');
+          if (statusText) {
+            const old = statusText.textContent;
+            statusText.textContent = 'MAP IS CONTROLLED BY ROOM LEADER';
+            statusText.style.color = '#ffb703';
+            setTimeout(() => {
+              statusText.textContent = old;
+              statusText.style.color = 'var(--accent-cyan)';
+            }, 2000);
+          }
+          return;
+        }
+
         this.selectedMapId = id;
         document.querySelectorAll('.map-card').forEach(c => c.classList.remove('selected'));
         card.classList.add('selected');
         this.map.setMap(id);
         this.updateTerminalSummary();
+
+        if (this.network && this.network.socket && this.network.connected && this.network.isHost) {
+          this.network.socket.emit('lobby_set_map', { mapId: id });
+        }
+
         if (window.soundSystem && window.soundSystem.playReload) {
           window.soundSystem.playReload();
         }
@@ -294,13 +347,7 @@ class GameEngine {
 
       card.innerHTML = `
         <div class="loadout-card-name" style="color: ${w.color}">${w.name}</div>
-        <div class="loadout-card-type">${w.category} // ${w.tag}</div>
-        <div class="loadout-card-desc">${w.description}</div>
-        <div class="loadout-stats">
-          <span>DMG: <strong>${w.damage}${w.count ? `x${w.count}` : ''}</strong></span>
-          <span>MAG: <strong>${w.magSize}</strong></span>
-          <span>ROF: <strong>${Math.round(1 / w.fireRate * 60)}/m</strong></span>
-        </div>
+        <div class="loadout-card-type">${w.category}</div>
       `;
 
       card.addEventListener('click', () => {
@@ -364,16 +411,60 @@ class GameEngine {
         this.previewAngle += 0.015;
 
         const skin = (typeof SKIN_DEFINITIONS !== 'undefined' && SKIN_DEFINITIONS[this.selectedSkinId]) || null;
-        if (window.drawOperativeModel && skin) {
+        if (window.drawOperativeModel) {
           ctx.save();
           ctx.translate(canvas.width / 2, canvas.height / 2);
-          window.drawOperativeModel(ctx, skin, this.selectedWeaponId || 'rifle', this.previewAngle, 1.8);
+
+          let previewColor = this.selectedSkinColor || '#00f0ff';
+          if (this.gameMode === 'multiplayer' && this.network && this.network.lobbyMode === 'teams') {
+            previewColor = (this.network.myTeam === 'beta') ? this.network.betaColor : this.network.alphaColor;
+          }
+
+          window.drawOperativeModel(ctx, skin, this.selectedWeaponId || 'rifle', this.previewAngle, 1.8, {
+            modelType: this.selectedModelType || 'commando',
+            color: previewColor
+          });
           ctx.restore();
         }
       }
       requestAnimationFrame(render);
     };
     requestAnimationFrame(render);
+  }
+
+  updateCustomizationSections() {
+    const isTeamMode = (this.gameMode === 'multiplayer' && (!this.network || this.network.lobbyMode === 'teams'));
+    const colorsContainer = document.getElementById('section-colors-container');
+    if (colorsContainer) {
+      colorsContainer.classList.toggle('hidden', isTeamMode);
+    }
+  }
+
+  initLightingUI() {
+    const btnTactical = document.getElementById('btn-lighting-tactical');
+    const btnFull = document.getElementById('btn-lighting-full');
+    this.lightingMode = localStorage.getItem('syberstrike_lighting') || 'tactical';
+
+    const updateBtns = () => {
+      if (btnTactical) btnTactical.classList.toggle('active', this.lightingMode === 'tactical');
+      if (btnFull) btnFull.classList.toggle('active', this.lightingMode === 'full');
+    };
+    updateBtns();
+
+    if (btnTactical) {
+      btnTactical.addEventListener('click', () => {
+        this.lightingMode = 'tactical';
+        localStorage.setItem('syberstrike_lighting', 'tactical');
+        updateBtns();
+      });
+    }
+    if (btnFull) {
+      btnFull.addEventListener('click', () => {
+        this.lightingMode = 'full';
+        localStorage.setItem('syberstrike_lighting', 'full');
+        updateBtns();
+      });
+    }
   }
 
   handlePlayerDeath(source) {
@@ -551,12 +642,12 @@ class GameEngine {
     window.addEventListener('keydown', (e) => {
       this.input.keys[e.code] = true;
 
-      // Weapon Selection Hotkeys (1 to 5)
-      if (e.code === 'Digit1') this.player.equipWeapon('rifle');
-      if (e.code === 'Digit2') this.player.equipWeapon('shotgun');
-      if (e.code === 'Digit3') this.player.equipWeapon('smg');
-      if (e.code === 'Digit4') this.player.equipWeapon('railgun');
-      if (e.code === 'Digit5') this.player.equipWeapon('cannon');
+      // Weapon Selection Hotkeys (1 to 5 - supports both Digit and Numpad)
+      if (e.code === 'Digit1' || e.code === 'Numpad1') this.player.equipWeapon('rifle');
+      if (e.code === 'Digit2' || e.code === 'Numpad2') this.player.equipWeapon('shotgun');
+      if (e.code === 'Digit3' || e.code === 'Numpad3') this.player.equipWeapon('smg');
+      if (e.code === 'Digit4' || e.code === 'Numpad4') this.player.equipWeapon('railgun');
+      if (e.code === 'Digit5' || e.code === 'Numpad5') this.player.equipWeapon('cannon');
 
       // Quick Switch (Q)
       if (e.code === 'KeyQ') this.player.quickSwitchWeapon();
@@ -582,16 +673,11 @@ class GameEngine {
       this.crosshair.style.top = `${e.clientY}px`;
     });
 
-    // Mouse Down / Up
+    // Mouse Down / Up (Right click weapon cycle removed as requested)
     window.addEventListener('mousedown', (e) => {
       if (e.button === 0) {
         this.input.mouse.down = true;
         this.crosshair.classList.add('firing');
-      } else if (e.button === 2) {
-        // Right Click: Switch Weapon!
-        if (this.gameState === 'playing' && this.player && this.player.alive) {
-          this.player.nextWeapon();
-        }
       }
     });
 
@@ -618,7 +704,29 @@ class GameEngine {
     // UI Buttons
     document.getElementById('start-btn').addEventListener('click', () => {
       window.soundSystem.init();
-      this.startGame();
+      if (this.gameMode === 'multiplayer' && this.network && this.network.connected) {
+        if (this.network.isHost) {
+          // Leader deploys all operatives into the match!
+          this.network.socket.emit('leader_start_game');
+          this.startGame();
+        } else if (this.network.gameStarted) {
+          // Match already in progress -> drop in immediately!
+          this.startGame();
+        } else {
+          // Squad member waiting for leader
+          const statusText = document.getElementById('match-status-text');
+          if (statusText) {
+            statusText.textContent = 'WAITING FOR SQUAD LEADER TO START MATCH';
+            statusText.style.color = '#ff3366';
+            setTimeout(() => {
+              statusText.textContent = 'WAITING FOR LEADER TO START MATCH';
+              statusText.style.color = 'var(--accent-cyan)';
+            }, 2500);
+          }
+        }
+      } else {
+        this.startGame();
+      }
     });
 
     document.getElementById('restart-btn').addEventListener('click', () => {
@@ -669,6 +777,15 @@ class GameEngine {
 
     // Apply selected customizations to local player
     this.player.setSkin(this.selectedSkinId);
+    this.player.setModel(this.selectedModelType || 'commando');
+
+    let activeColor = this.selectedSkinColor || '#00f0ff';
+    if (this.gameMode === 'multiplayer' && this.network && this.network.lobbyMode === 'teams') {
+      activeColor = (this.network.myTeam === 'beta') ? this.network.betaColor : this.network.alphaColor;
+      this.network.color = activeColor;
+    }
+    this.player.setColor(activeColor);
+    this.player.color = activeColor;
     this.player.equipWeapon(this.selectedWeaponId);
     this.map.setMap(this.selectedMapId);
 
@@ -683,6 +800,9 @@ class GameEngine {
     this.medkitTimer = 0;
 
     if (this.gameMode === 'multiplayer') {
+      this.enemies = [];
+      this.enemyProjectiles = [];
+      this.bullets = [];
       if (this.network) {
         this.network.deployToBattlefield();
       }
@@ -741,11 +861,11 @@ class GameEngine {
     this.waveState = 'intermission';
     this.waveTimer = 2.8;
 
-    // Tactical enemy count: keeps the battlefield readable and dynamic (4 to 7 enemies)
-    const baseCount = Math.min(7, 3 + waveNum);
-    this.enemiesToSpawn = baseCount;
-    this.totalEnemiesInWave = baseCount;
-    this.spawnTimer = 0.5;
+    // Total enemies: Wave 1 starts with exactly 20 hostiles, scaling exponentially per wave
+    const totalCount = 20 + (waveNum - 1) * 8 + Math.floor((waveNum - 1) * (waveNum - 1) * 1.5);
+    this.enemiesToSpawn = totalCount;
+    this.totalEnemiesInWave = totalCount;
+    this.spawnTimer = 0.1; // Initial spawn batch right when wave activates
 
     // UI Updates
     document.getElementById('wave-display').textContent = `WAVE ${waveNum}`;
@@ -761,32 +881,27 @@ class GameEngine {
   }
 
   spawnEnemy() {
-    // Pick enemy archetype according to wave difficulty
+    // Pick enemy archetype: Blue enemies (fast, shielded) completely removed!
+    // Heavy preference for standard grunts and agile bombers over big tanks.
     let type = 'normal';
     const roll = Math.random();
 
     if (this.wave === 1) {
-      type = roll < 0.65 ? 'normal' : 'fast';
+      type = roll < 0.85 ? 'normal' : 'bomber';
     } else if (this.wave === 2) {
-      if (roll < 0.35) type = 'normal';
-      else if (roll < 0.65) type = 'fast';
-      else type = 'shielded';
+      if (roll < 0.70) type = 'normal';
+      else if (roll < 0.90) type = 'bomber';
+      else type = 'sniper';
     } else if (this.wave === 3) {
-      if (roll < 0.3) type = 'shielded';
-      else if (roll < 0.6) type = 'sniper';
-      else if (roll < 0.85) type = 'bomber';
-      else type = 'fast';
-    } else if (this.wave === 4) {
-      if (roll < 0.25) type = 'tank';
-      else if (roll < 0.5) type = 'shielded';
-      else if (roll < 0.75) type = 'sniper';
-      else type = 'bomber';
-    } else { // Wave 5+
-      if (roll < 0.2) type = 'tank';
-      else if (roll < 0.4) type = 'shielded';
-      else if (roll < 0.6) type = 'sniper';
-      else if (roll < 0.8) type = 'bomber';
-      else type = 'fast';
+      if (roll < 0.60) type = 'normal';
+      else if (roll < 0.80) type = 'bomber';
+      else if (roll < 0.94) type = 'sniper';
+      else type = 'tank'; // rare
+    } else { // Wave 4+
+      if (roll < 0.50) type = 'normal';
+      else if (roll < 0.75) type = 'bomber';
+      else if (roll < 0.90) type = 'sniper';
+      else type = 'tank'; // rare big enemy
     }
 
     // Find safe spawn location: minimum 550px from player, walkable floor
@@ -830,10 +945,10 @@ class GameEngine {
     this.screenShake = Math.max(this.screenShake, intensity);
   }
 
-  spawnAcidSpit(x, y, angle, speed = 460, damage = 16, color = '#39ff14') {
+  spawnAcidSpit(x, y, angle, speed = 460, damage = 16, color = '#39ff14', ignoreWalls = false) {
     if (!this.enemyProjectiles) this.enemyProjectiles = [];
     if (typeof AcidSpit !== 'undefined') {
-      this.enemyProjectiles.push(new AcidSpit(x, y, angle, speed, damage, color));
+      this.enemyProjectiles.push(new AcidSpit(x, y, angle, speed, damage, color, ignoreWalls || color === '#b026ff'));
       if (window.soundSystem && window.soundSystem.playAcidSpit) {
         window.soundSystem.playAcidSpit();
       }
@@ -906,8 +1021,8 @@ class GameEngine {
     }
 
     // 4. Update Enemies & Combat
-    // If running single-player standalone, run local enemy AI and waves
-    if (!this.network || !this.network.connected) {
+    // In singleplayer mode, run local enemy AI and waves
+    if (this.gameMode === 'singleplayer') {
       for (let i = this.enemies.length - 1; i >= 0; i--) {
         const enemy = this.enemies[i];
         enemy.update(dt, this.player, this.map, this.enemies, this);
@@ -927,12 +1042,21 @@ class GameEngine {
           this.waveState = 'active';
         }
       } else if (this.waveState === 'active') {
-        // Spawn pending wave enemies
+        // Spawn pending wave enemies in staggered batches over time
         if (this.enemiesToSpawn > 0) {
           this.spawnTimer -= dt;
+          // If all active enemies are dead, immediately flush next batch without waiting!
+          if (this.enemies.length === 0) {
+            this.spawnTimer = 0;
+          }
           if (this.spawnTimer <= 0) {
-            this.spawnEnemy();
-            this.spawnTimer = 0.45 + Math.random() * 0.4;
+            const batchSize = Math.min(this.enemiesToSpawn, Math.max(3, Math.floor(3 + this.wave * 0.7)));
+            for (let b = 0; b < batchSize; b++) {
+              this.spawnEnemy();
+              this.enemiesToSpawn--;
+            }
+            const interval = Math.max(2.0, 4.2 - this.wave * 0.35);
+            this.spawnTimer = interval;
           }
         } else if (this.enemies.length === 0) {
           // Wave Cleared!
@@ -1148,6 +1272,11 @@ class GameEngine {
   renderLighting() {
     const ctx = this.lightingCtx;
     ctx.clearRect(0, 0, this.width, this.height);
+
+    // Full Brightness Mode: Leave entire map illuminated (no dark fog of war)
+    if (this.lightingMode === 'full') {
+      return;
+    }
 
     // 1. Dark ambient gloom overlay
     ctx.fillStyle = 'rgba(6, 9, 15, 0.94)';
