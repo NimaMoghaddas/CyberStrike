@@ -83,30 +83,44 @@
 
     <!-- HUD Overlay -->
     <div id="hud">
-      <!-- Top Left: Player Status -->
-      <div class="hud-panel hud-status">
-        <div class="hud-tag">
-          OPERATIVE STATUS
-          <span id="net-ping-display" class="ping-tag">-- ms</span>
-        </div>
-        <div class="health-container">
-          <div class="bar-header">
-            <span class="label">VITALITY</span>
-            <span id="hp-text" class="value">100 / 100</span>
+      <!-- Top Left: Operative Status & Live Squad Roster Strip -->
+      <div class="hud-left-column">
+        <div class="hud-panel hud-status">
+          <div class="hud-tag">
+            OPERATIVE STATUS
+            <span id="net-ping-display" class="ping-tag">-- ms</span>
           </div>
-          <div class="bar-track">
-            <div id="hp-loss-bar" class="bar-fill-loss"></div>
-            <div id="hp-bar" class="bar-fill"></div>
+          <div class="health-container">
+            <div class="bar-header">
+              <span class="label">VITALITY</span>
+              <span id="hp-text" class="value">100 / 100</span>
+            </div>
+            <div class="bar-track">
+              <div id="hp-loss-bar" class="bar-fill-loss"></div>
+              <div id="hp-bar" class="bar-fill"></div>
+            </div>
+          </div>
+
+          <div class="dash-container">
+            <div class="bar-header">
+              <span class="label">DASH COOLDOWN [SPACE]</span>
+              <span id="dash-text" class="value">READY</span>
+            </div>
+            <div class="bar-track dash-track">
+              <div id="dash-bar" class="bar-fill dash-fill"></div>
+            </div>
           </div>
         </div>
 
-        <div class="dash-container">
-          <div class="bar-header">
-            <span class="label">DASH COOLDOWN [SPACE]</span>
-            <span id="dash-text" class="value">READY</span>
+        <!-- Left In-Game Live Players Roster Strip (Always Visible) -->
+        <div id="live-roster-sidebar" class="live-roster-sidebar">
+          <div class="roster-header">
+            <span class="roster-dot"></span>
+            <span class="roster-title">OPERATIVES LEADERBOARD</span>
+            <span class="roster-mode-badge" id="roster-mode-badge">SOLO OPS</span>
           </div>
-          <div class="bar-track dash-track">
-            <div id="dash-bar" class="bar-fill dash-fill"></div>
+          <div class="roster-list" id="roster-list">
+            <!-- Dynamically populated with player score, kills, deaths cards -->
           </div>
         </div>
       </div>
@@ -149,20 +163,41 @@
         </div>
       </div>
 
-      <!-- Bottom Right: Weapon & Ammo HUD -->
+      <!-- Bottom Right: Weapon Arsenal & Ammo HUD -->
       <div class="hud-panel hud-weapon">
-        <div class="weapon-info">
-          <div class="weapon-name">ARC-9 PULSE RIFLE</div>
-          <div class="ammo-count">
-            <span id="ammo-current">30</span>
-            <span class="ammo-divider">/</span>
-            <span id="ammo-max">30</span>
+        <!-- Weapon Arsenal Selector Dock -->
+        <div class="arsenal-dock" id="arsenal-dock">
+          <!-- Populated by game.initArsenalUI() -->
+        </div>
+
+        <div class="weapon-details-card">
+          <div class="weapon-meta-row">
+            <span class="weapon-category-chip" id="weapon-category">ASSAULT RIFLE</span>
+            <span class="weapon-perk-chip" id="weapon-tag">BALANCED</span>
+          </div>
+          <div class="weapon-info">
+            <div class="weapon-name" id="weapon-name">ARC-9 PULSE RIFLE</div>
+            <div class="ammo-count">
+              <span id="ammo-current">30</span>
+              <span class="ammo-divider">/</span>
+              <span id="ammo-max">30</span>
+            </div>
           </div>
         </div>
+
         <div class="ammo-pills" id="ammo-pills">
           <!-- Dynamically populated ammo icons -->
         </div>
         <div id="reload-indicator" class="reload-prompt hidden">RELOADING... [R]</div>
+      </div>
+
+      <!-- Quick Weapon Switch Pop-up HUD Alert -->
+      <div id="weapon-toast" class="weapon-toast hidden">
+        <div class="toast-key" id="toast-key">[1]</div>
+        <div class="toast-content">
+          <div class="toast-name" id="toast-name">ARC-9 PULSE RIFLE</div>
+          <div class="toast-desc" id="toast-desc">Standard issue tactical energy rifle</div>
+        </div>
       </div>
 
       <!-- Controls Reminder Bar (Bottom Left) -->
@@ -170,11 +205,11 @@
         <span>[WASD] MOVE</span>
         <span>[MOUSE] AIM</span>
         <span>[L-CLICK] FIRE</span>
+        <span>[1-5 / SCROLL] ARSENAL</span>
+        <span>[Q] QUICK-SWAP</span>
         <span>[R] RELOAD</span>
         <span>[SPACE] DASH</span>
         <span>[TAB] SCOREBOARD</span>
-        <span>[ENTER] CHAT</span>
-        <span>[M] MUTE</span>
       </div>
 
       <!-- Audio Mute Quick Toggle Button -->
@@ -183,76 +218,269 @@
       </button>
     </div>
 
-    <!-- Start / Intro Screen -->
+    <!-- Start / Intro Screen (Tactical Pre-Game Briefing Terminal) -->
     <div id="start-screen" class="screen-overlay">
-      <div class="modal-box start-modal-wide">
+      <div class="modal-box terminal-modal">
         <div class="modal-glow"></div>
-        <div class="header-status-line">
-          <div class="logo-sub">TACTICAL TOP-DOWN MULTIPLAYER SHOOTER</div>
-          <div id="net-status-badge" class="status-chip online-chip">ONLINE // LAN READY</div>
-        </div>
-        <h1 class="game-logo">CYBER<span>STRIKE</span></h1>
-        <p class="mission-briefing">
-          High-value combat scenario. Contain invading hostiles with your squad or test your reflexes against each other.
-          PvPvE is active: eliminate hostile cyborgs, defend sectors, and watch your fire!
-        </p>
-
-        <!-- LAN Connection Card -->
-        <div class="lan-card">
-          <div class="lan-header">
-            <span class="lan-title">🌐 LAN MULTIPLAYER ACCESS</span>
-            <span id="lobby-operatives-count" class="lan-players-count">1 OPERATIVE READY</span>
+        
+        <!-- Terminal Header -->
+        <div class="terminal-header">
+          <div class="header-left">
+            <h1 class="game-logo">CYBER<span>STRIKE</span></h1>
+            <div class="logo-sub">TACTICAL OPS DEPLOYMENT TERMINAL // V2.5</div>
           </div>
-          <div class="lan-address-row">
-            <div class="lan-ip-box">
-              <span class="lan-label">LAN INVITE LINK:</span>
-              <code id="lan-ip-address">http://192.168.1.33:3000</code>
+          <div class="header-right">
+            <div id="net-status-badge" class="status-chip offline-chip">OFFLINE // SOLO CAMPAIGN</div>
+            <div id="lobby-operatives-count" class="players-online-chip">1 OPERATIVE READY</div>
+          </div>
+        </div>
+
+        <!-- Mode Selector Dock: 2 Distinct Sections (Singleplayer vs Multiplayer) -->
+        <div class="mode-select-dock">
+          <!-- Section 1: Singleplayer -->
+          <button class="mode-card-btn active" id="btn-mode-singleplayer" type="button" data-mode="singleplayer">
+            <div class="mode-radio-circle"></div>
+            <div class="mode-icon">👤</div>
+            <div class="mode-content">
+              <div class="mode-title-row">
+                <span class="mode-title">SINGLEPLAYER // بازی تک نفره</span>
+                <span class="mode-badge solo">SOLO</span>
+              </div>
+              <div class="mode-desc">مبارزه انفرادی با امواج مهاجم، ثبت رکورد و ارتقای مهارت در بخش داستانی</div>
             </div>
-            <button id="copy-lan-btn" class="btn-copy" type="button">COPY LINK</button>
-          </div>
-          <div class="lan-subtext" id="lan-connect-hint">
-            Direct Ethernet / LAN Wi-Fi: Tell everyone to open this link in their browser to connect instantly!
-          </div>
+          </button>
+
+          <!-- Section 2: Multiplayer -->
+          <button class="mode-card-btn" id="btn-mode-multiplayer" type="button" data-mode="multiplayer">
+            <div class="mode-radio-circle"></div>
+            <div class="mode-icon">🌐</div>
+            <div class="mode-content">
+              <div class="mode-title-row">
+                <span class="mode-title">MULTIPLAYER // بازی چند نفره</span>
+                <span class="mode-badge mp">LAN MULTIPLAYER</span>
+              </div>
+              <div class="mode-desc">نبرد تیمی Alpha در برابر Beta یا نبرد آزاد روی شبکه Wi-Fi / LAN</div>
+            </div>
+          </button>
         </div>
 
-        <!-- Operative Profile Customizer -->
-        <div class="operative-customizer">
-          <div class="customizer-col">
-            <label class="input-label">OPERATIVE CALLSIGN</label>
-            <div class="callsign-input-row">
-              <input type="text" id="operative-callsign-input" value="GHOST-01" maxlength="14" spellcheck="false" autocomplete="off" />
-              <button id="random-callsign-btn" class="btn-secondary" type="button" title="Randomize Callsign">🎲 RANDOM</button>
+        <!-- Multiplayer Team Deployment Hub (Visible when Multiplayer mode is chosen) -->
+        <div id="multiplayer-team-hub" class="multiplayer-team-hub hidden">
+          <!-- Sub-mode Bar: Team Battle vs Free For All -->
+          <div class="mp-submode-bar">
+            <button type="button" class="mp-submode-btn active" id="btn-submode-teams" data-submode="teams">
+              <span>⚔️</span> TEAM BATTLE (ALPHA vs BETA)
+            </button>
+            <button type="button" class="mp-submode-btn" id="btn-submode-ffa" data-submode="ffa">
+              <span>🎯</span> FREE FOR ALL (SOLO PVPvE)
+            </button>
+          </div>
+
+          <!-- Two-Section Live Team Battle Grid -->
+          <div class="team-battle-grid" id="team-battle-grid">
+            <!-- Left Section: TEAM ALPHA -->
+            <div class="team-card team-alpha my-team" id="team-card-alpha">
+              <div class="team-card-header">
+                <div class="team-title-wrap">
+                  <span class="team-color-dot" id="team-alpha-dot" style="background: #00f0ff; color: #00f0ff;"></span>
+                  <span class="team-card-title">TEAM ALPHA</span>
+                </div>
+                <span class="team-count-badge" id="team-alpha-count">0 OPERATIVES</span>
+              </div>
+
+              <!-- Host Color Picker for Team Alpha -->
+              <div class="team-host-color-row" id="team-alpha-color-picker">
+                <div class="team-host-label">
+                  <span>TEAM COLOR</span>
+                  <span class="host-tag-txt" id="alpha-host-tag">ROOM HOST ONLY</span>
+                </div>
+                <div class="team-color-swatches" id="alpha-color-swatches">
+                  <button type="button" class="color-swatch-btn active" data-color="#00f0ff" style="background: #00f0ff; color: #00f0ff;"></button>
+                  <button type="button" class="color-swatch-btn" data-color="#00ff88" style="background: #00ff88; color: #00ff88;"></button>
+                  <button type="button" class="color-swatch-btn" data-color="#ffd166" style="background: #ffd166; color: #ffd166;"></button>
+                  <button type="button" class="color-swatch-btn" data-color="#ffffff" style="background: #ffffff; color: #ffffff;"></button>
+                </div>
+              </div>
+
+              <!-- Live Operatives on Team Alpha -->
+              <div class="team-operatives-box" id="team-alpha-members">
+                <div class="team-empty-hint">NO OPERATIVES IN TEAM ALPHA</div>
+              </div>
+
+              <!-- Join Team Alpha Button -->
+              <button type="button" class="btn-select-team joined" id="btn-join-alpha">
+                <span>✓</span> JOINED TEAM ALPHA
+              </button>
+            </div>
+
+            <!-- Right Section: TEAM BETA -->
+            <div class="team-card team-beta" id="team-card-beta">
+              <div class="team-card-header">
+                <div class="team-title-wrap">
+                  <span class="team-color-dot" id="team-beta-dot" style="background: #ff3366; color: #ff3366;"></span>
+                  <span class="team-card-title">TEAM BETA</span>
+                </div>
+                <span class="team-count-badge" id="team-beta-count">0 OPERATIVES</span>
+              </div>
+
+              <!-- Host Color Picker for Team Beta -->
+              <div class="team-host-color-row" id="team-beta-color-picker">
+                <div class="team-host-label">
+                  <span>TEAM COLOR</span>
+                  <span class="host-tag-txt" id="beta-host-tag">ROOM HOST ONLY</span>
+                </div>
+                <div class="team-color-swatches" id="beta-color-swatches">
+                  <button type="button" class="color-swatch-btn active" data-color="#ff3366" style="background: #ff3366; color: #ff3366;"></button>
+                  <button type="button" class="color-swatch-btn" data-color="#bd00ff" style="background: #bd00ff; color: #bd00ff;"></button>
+                  <button type="button" class="color-swatch-btn" data-color="#ff7700" style="background: #ff7700; color: #ff7700;"></button>
+                  <button type="button" class="color-swatch-btn" data-color="#ff00aa" style="background: #ff00aa; color: #ff00aa;"></button>
+                </div>
+              </div>
+
+              <!-- Live Operatives on Team Beta -->
+              <div class="team-operatives-box" id="team-beta-members">
+                <div class="team-empty-hint">NO OPERATIVES IN TEAM BETA</div>
+              </div>
+
+              <!-- Join Team Beta Button -->
+              <button type="button" class="btn-select-team" id="btn-join-beta">
+                <span>➔</span> JOIN TEAM BETA
+              </button>
             </div>
           </div>
-          <div class="customizer-col">
-            <label class="input-label">VISOR COLOR</label>
-            <div class="color-palette">
-              <div class="color-swatch selected" data-color="#00f0ff" style="--c: #00f0ff;" title="Cyan (Ghost)"></div>
-              <div class="color-swatch" data-color="#00ff88" style="--c: #00ff88;" title="Neon Green (Viper)"></div>
-              <div class="color-swatch" data-color="#ffb703" style="--c: #ffb703;" title="Amber (Titan)"></div>
-              <div class="color-swatch" data-color="#ff3366" style="--c: #ff3366;" title="Crimson (Reaper)"></div>
-              <div class="color-swatch" data-color="#bd00ff" style="--c: #bd00ff;" title="Purple (Spectre)"></div>
-              <div class="color-swatch" data-color="#ff00aa" style="--c: #ff00aa;" title="Pink (Valkyrie)"></div>
-              <div class="color-swatch" data-color="#00d4ff" style="--c: #00d4ff;" title="Cobalt (Frost)"></div>
-              <div class="color-swatch" data-color="#ffe600" style="--c: #ffe600;" title="Yellow (Hazard)"></div>
+        </div>
+
+        <!-- Terminal Two-Column Grid -->
+        <div class="terminal-grid">
+          
+          <!-- Left Column: Holographic Preview & Operative Profile -->
+          <div class="terminal-col-preview">
+            <div class="preview-panel-box">
+              <div class="panel-section-title">HOLOGRAPHIC RECON // LIVE MODEL</div>
+              
+              <!-- 3D Hologram Canvas -->
+              <div class="holo-canvas-wrapper">
+                <canvas id="operative-preview-canvas" width="220" height="220"></canvas>
+                <div class="holo-scanline"></div>
+                <div class="holo-ring"></div>
+                <div class="holo-status">SIMULATION ACTIVE</div>
+              </div>
+
+              <!-- Callsign Input -->
+              <div class="callsign-wrapper">
+                <label class="terminal-label">OPERATIVE CALLSIGN</label>
+                <div class="callsign-row">
+                  <input type="text" id="operative-callsign-input" value="GHOST-01" maxlength="14" spellcheck="false" autocomplete="off" />
+                  <button id="random-callsign-btn" class="btn-rnd" type="button" title="Randomize Callsign">🎲 RANDOM</button>
+                </div>
+              </div>
+
+              <!-- Selected Operative & Map Summary Info Card -->
+              <div class="operative-summary-card" id="operative-summary-card">
+                <div class="summary-row">
+                  <span class="sum-tag">OPERATIVE:</span>
+                  <span class="sum-val" id="sum-skin-name">SPECTRE</span>
+                </div>
+                <div class="summary-row">
+                  <span class="sum-tag">ROLE:</span>
+                  <span class="sum-val" id="sum-skin-role">RECON SPECIALIST</span>
+                </div>
+                <div class="summary-perk" id="sum-skin-perk">
+                  <span class="perk-label">COMBAT PERK:</span>
+                  <span class="perk-desc" id="sum-skin-perk-desc">Kinetic Recoil Damping &amp; Swift Agility</span>
+                </div>
+                <div class="summary-row summary-map-row">
+                  <span class="sum-tag">DEPLOY SECTOR:</span>
+                  <span class="sum-val" id="sum-map-name">SECTOR-09 COMPLEX</span>
+                </div>
+                <div class="summary-row">
+                  <span class="sum-tag">PRIMARY ARMS:</span>
+                  <span class="sum-val" id="sum-weapon-name">ARC-9 PULSE RIFLE</span>
+                </div>
+              </div>
+
+              <!-- Deploy Button -->
+              <button id="start-btn" class="btn-primary btn-deploy">
+                <span class="btn-text">DEPLOY TO COMBAT ZONE</span>
+                <span class="btn-icon">➔</span>
+              </button>
+
+              <div class="keybind-guide compact">
+                <strong>WASD</strong> Move &bull; <strong>Mouse</strong> Aim &bull; <strong>L-Click</strong> Shoot &bull; <strong>Space</strong> Dash &bull; <strong>R</strong> Reload &bull; <strong>TAB</strong> Squad
+              </div>
             </div>
+          </div>
+
+          <!-- Right Column: Modular Customization Hub with Tabs -->
+          <div class="terminal-col-tabs">
+            
+            <!-- Navigation Tabs -->
+            <div class="terminal-tab-nav">
+              <button class="terminal-tab-btn active" data-tab="skins" type="button">
+                <span class="tab-icon">👤</span>
+                <span class="tab-title">OPERATIVE SKINS</span>
+              </button>
+              <button class="terminal-tab-btn" data-tab="maps" type="button">
+                <span class="tab-icon">🗺️</span>
+                <span class="tab-title">BATTLE MAPS</span>
+              </button>
+              <button class="terminal-tab-btn" data-tab="loadout" type="button">
+                <span class="tab-icon">⚡</span>
+                <span class="tab-title">LOADOUT</span>
+              </button>
+              <button class="terminal-tab-btn" data-tab="lan" type="button">
+                <span class="tab-icon">🌐</span>
+                <span class="tab-title">LAN CO-OP</span>
+              </button>
+            </div>
+
+            <!-- Tab 1: Skins -->
+            <div class="terminal-tab-content active" id="tab-content-skins">
+              <div class="tab-intro">کلاس و زره رزمی خود را انتخاب کنید.</div>
+              <div class="skins-grid" id="skins-grid">
+                <!-- Dynamically populated by game.initSkinsUI() -->
+              </div>
+            </div>
+
+            <!-- Tab 2: Maps -->
+            <div class="terminal-tab-content" id="tab-content-maps">
+              <div class="tab-intro">بخش عملیاتی و نقشه میدان نبرد را انتخاب کنید.</div>
+              <div class="maps-grid" id="maps-grid">
+                <!-- Dynamically populated by game.initMapsUI() -->
+              </div>
+            </div>
+
+            <!-- Tab 3: Starting Loadout -->
+            <div class="terminal-tab-content" id="tab-content-loadout">
+              <div class="tab-intro">سلاح آغازین خود را انتخاب کنید (تغییر سلاح در بازی با [1-5] یا راست‌کلیک).</div>
+              <div class="loadout-grid" id="loadout-grid">
+                <!-- Dynamically populated by game.initLoadoutUI() -->
+              </div>
+            </div>
+
+            <!-- Tab 4: LAN Network -->
+            <div class="terminal-tab-content" id="tab-content-lan">
+              <div class="tab-intro">لینک زیر را برای پیوستن سایر بازیکنان روی Wi-Fi یا کابل LAN ارسال کنید.</div>
+              <div class="lan-card">
+                <div class="lan-header">
+                  <span class="lan-title">🌐 LAN DIRECT ACCESS ADDRESS</span>
+                </div>
+                <div class="lan-address-row">
+                  <div class="lan-ip-box">
+                    <span class="lan-label">LAN LINK:</span>
+                    <code id="lan-ip-address">http://127.0.0.1:3000</code>
+                  </div>
+                  <button id="copy-lan-btn" class="btn-copy" type="button">کپی لینک</button>
+                </div>
+                <div class="lan-subtext" id="lan-connect-hint">
+                  همه بازیکنان متصل به همین مودم یا وای‌فای با باز کردن این لینک وارد نبرد می‌شوند.
+                </div>
+              </div>
+            </div>
+
           </div>
         </div>
 
-        <button id="start-btn" class="btn-primary">
-          <span class="btn-text">DEPLOY OPERATIVE TO BATTLEFIELD</span>
-          <span class="btn-icon">➔</span>
-        </button>
-
-        <div class="keybind-guide">
-          <strong>WASD</strong> Move &nbsp;|&nbsp; 
-          <strong>Mouse</strong> Aim &nbsp;|&nbsp; 
-          <strong>L-Click</strong> Shoot &nbsp;|&nbsp; 
-          <strong>Space</strong> Dash &nbsp;|&nbsp; 
-          <strong>R</strong> Reload &nbsp;|&nbsp; 
-          <strong>TAB</strong> Scoreboard &nbsp;|&nbsp; 
-          <strong>ENTER</strong> Squad Comms
-        </div>
       </div>
     </div>
 
@@ -303,7 +531,11 @@
   <script src="/socket.io/socket.io.js"></script>
   <script src="js/audio.js"></script>
   <script src="js/particles.js"></script>
+  <script src="js/skins.js"></script>
+  <script src="js/maps_data.js"></script>
+  <script src="js/weapons.js"></script>
   <script src="js/map.js"></script>
+  <script src="js/medkit.js"></script>
   <script src="js/bullet.js"></script>
   <script src="js/player.js"></script>
   <script src="js/enemy.js"></script>

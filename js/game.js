@@ -39,6 +39,7 @@ class GameEngine {
     this.map = new GameMap(2400, 2400);
     this.player = new Player(1200, 1200); // Start in center courtyard
     this.bullets = [];
+    this.enemyProjectiles = [];
     this.enemies = [];
 
     // Wave Progression State
@@ -65,9 +66,23 @@ class GameEngine {
     // Timing
     this.lastTime = performance.now();
 
+    // Customization & Modular Pre-Game State
+    this.gameMode = 'singleplayer'; // 'singleplayer' | 'multiplayer'
+    this.selectedSkinId = 'spectre';
+    this.selectedMapId = 'sector_09';
+    this.selectedWeaponId = 'rifle';
+    this.isRespawning = false;
+    this.previewAngle = 0;
+    this.deaths = 0;
+
+    // Tactical Medkit System (Spawns every 5s, restores 50 HP)
+    this.medkits = [];
+    this.medkitTimer = 0;
+
     // Network Multiplayer System
     this.localPlayerId = null;
     this.network = new NetworkSystem(this);
+    window.gameInstance = this;
 
     this.initEvents();
     this.resize();
@@ -85,12 +100,466 @@ class GameEngine {
     this.camera.height = this.height;
   }
 
+  initUI() {
+    this.initModeSelector();
+    this.initTerminalTabs();
+    this.initSkinsUI();
+    this.initMapsUI();
+    this.initLoadoutUI();
+    this.updateTerminalSummary();
+    this.startOperativePreviewLoop();
+    this.initArsenalUI();
+    this.updateAmmoUI();
+    this.updateLiveRoster();
+  }
+
+  initModeSelector() {
+    const spBtn = document.getElementById('btn-mode-singleplayer');
+    const mpBtn = document.getElementById('btn-mode-multiplayer');
+
+    const selectMode = (mode) => {
+      this.gameMode = mode;
+      if (spBtn) spBtn.classList.toggle('active', mode === 'singleplayer');
+      if (mpBtn) mpBtn.classList.toggle('active', mode === 'multiplayer');
+
+      const netBadge = document.getElementById('net-status-badge');
+      const startBtn = document.getElementById('start-btn');
+      const rosterBadge = document.getElementById('roster-mode-badge');
+      const teamHub = document.getElementById('multiplayer-team-hub');
+
+      if (teamHub) {
+        teamHub.classList.toggle('hidden', mode !== 'multiplayer');
+      }
+
+      if (mode === 'singleplayer') {
+        if (netBadge) {
+          netBadge.textContent = 'OFFLINE // SOLO CAMPAIGN';
+          netBadge.className = 'status-chip offline-chip';
+        }
+        if (startBtn) {
+          const btnText = startBtn.querySelector('.btn-text');
+          if (btnText) btnText.textContent = 'شروع بازی تک نفره // DEPLOY SOLO';
+        }
+        if (rosterBadge) rosterBadge.textContent = 'SOLO OPS';
+      } else {
+        if (netBadge) {
+          netBadge.textContent = 'ONLINE // LAN READY';
+          netBadge.className = 'status-chip online-chip';
+        }
+        if (startBtn) {
+          const btnText = startBtn.querySelector('.btn-text');
+          if (btnText) btnText.textContent = 'شروع بازی چند نفره // DEPLOY SQUAD';
+        }
+        if (rosterBadge) rosterBadge.textContent = 'LAN MULTIPLAYER';
+        if (this.network && this.network.renderLobbyUI) {
+          this.network.renderLobbyUI();
+        }
+      }
+      this.updateLiveRoster();
+      if (window.soundSystem && window.soundSystem.playDryFire) {
+        window.soundSystem.playDryFire();
+      }
+    };
+
+    if (spBtn) spBtn.addEventListener('click', () => selectMode('singleplayer'));
+    if (mpBtn) mpBtn.addEventListener('click', () => selectMode('multiplayer'));
+  }
+
+  initTerminalTabs() {
+    const tabBtns = document.querySelectorAll('.terminal-tab-btn');
+    const tabContents = document.querySelectorAll('.terminal-tab-content');
+
+    tabBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const targetTab = btn.getAttribute('data-tab');
+        tabBtns.forEach(b => b.classList.remove('active'));
+        tabContents.forEach(c => c.classList.remove('active'));
+
+        btn.classList.add('active');
+        const targetEl = document.getElementById(`tab-content-${targetTab}`);
+        if (targetEl) targetEl.classList.add('active');
+      });
+    });
+  }
+
+  initSkinsUI() {
+    const grid = document.getElementById('skins-grid');
+    if (!grid || typeof SKIN_DEFINITIONS === 'undefined') return;
+    grid.innerHTML = '';
+
+    for (const id in SKIN_DEFINITIONS) {
+      const skin = SKIN_DEFINITIONS[id];
+      const card = document.createElement('div');
+      card.className = `skin-card ${id === this.selectedSkinId ? 'selected' : ''}`;
+      card.id = `skin-card-${id}`;
+      card.style.setProperty('--card-color', skin.colors.visor);
+      card.style.setProperty('--card-glow', `${skin.colors.visor}55`);
+
+      card.innerHTML = `
+        <div class="skin-card-header">
+          <div class="skin-color-badge" style="background: ${skin.colors.visor}; color: ${skin.colors.visor};"></div>
+          <div>
+            <div class="skin-card-title">${skin.name}</div>
+            <div class="skin-card-role">${skin.role}</div>
+          </div>
+        </div>
+        <div class="skin-card-lore">${skin.desc}</div>
+        <div class="skin-card-perk">
+          <span class="skin-card-perk-name">⚡ ${skin.perk.name}</span>
+          <span class="skin-card-perk-desc">${skin.perk.desc}</span>
+        </div>
+      `;
+
+      card.addEventListener('click', () => {
+        this.selectedSkinId = id;
+        document.querySelectorAll('.skin-card').forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+        this.player.setSkin(id);
+        this.updateTerminalSummary();
+        if (window.soundSystem && window.soundSystem.playReload) {
+          window.soundSystem.playReload();
+        }
+      });
+
+      grid.appendChild(card);
+    }
+  }
+
+  initMapsUI() {
+    const grid = document.getElementById('maps-grid');
+    if (!grid || typeof MAP_DEFINITIONS === 'undefined') return;
+    grid.innerHTML = '';
+
+    const mapIcons = {
+      sector_09: '🏢',
+      cyber_bunker: '🛡️',
+      neon_slums: '🏮',
+      reactor_crucible: '☢️'
+    };
+
+    for (const id in MAP_DEFINITIONS) {
+      const mapDef = MAP_DEFINITIONS[id];
+      const card = document.createElement('div');
+      card.className = `map-card ${id === this.selectedMapId ? 'selected' : ''}`;
+      card.id = `map-card-${id}`;
+      card.style.setProperty('--map-accent', mapDef.accentColor || '#00f0ff');
+      card.style.setProperty('--map-glow', `${mapDef.accentColor || '#00f0ff'}55`);
+
+      const icon = mapIcons[id] || '🗺️';
+      const barrelCount = mapDef.barrels ? mapDef.barrels.length : 0;
+
+      card.innerHTML = `
+        <div class="map-card-header">
+          <span class="map-icon">${icon}</span>
+          <div>
+            <div class="map-card-title">${mapDef.name}</div>
+            <div class="map-card-sub">${mapDef.subtitle}</div>
+          </div>
+        </div>
+        <div class="map-card-lore">${mapDef.description}</div>
+        <div class="map-card-tags">
+          <span class="map-tag">${mapDef.theme.toUpperCase()} THEME</span>
+          <span class="map-tag">${barrelCount} BARRELS</span>
+          <span class="map-tag hazard">${mapDef.hazardLevel || 'MODERATE'}</span>
+        </div>
+      `;
+
+      card.addEventListener('click', () => {
+        this.selectedMapId = id;
+        document.querySelectorAll('.map-card').forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+        this.map.setMap(id);
+        this.updateTerminalSummary();
+        if (window.soundSystem && window.soundSystem.playReload) {
+          window.soundSystem.playReload();
+        }
+      });
+
+      grid.appendChild(card);
+    }
+  }
+
+  initLoadoutUI() {
+    const grid = document.getElementById('loadout-grid');
+    if (!grid || typeof WEAPON_DEFINITIONS === 'undefined') return;
+    grid.innerHTML = '';
+
+    for (const id in WEAPON_DEFINITIONS) {
+      const w = WEAPON_DEFINITIONS[id];
+      const card = document.createElement('div');
+      card.className = `loadout-card ${id === this.selectedWeaponId ? 'selected' : ''}`;
+      card.id = `loadout-card-${id}`;
+      card.style.setProperty('--weapon-color', w.color);
+      card.style.setProperty('--weapon-glow', `${w.color}55`);
+
+      card.innerHTML = `
+        <div class="loadout-card-name" style="color: ${w.color}">${w.name}</div>
+        <div class="loadout-card-type">${w.category} // ${w.tag}</div>
+        <div class="loadout-card-desc">${w.description}</div>
+        <div class="loadout-stats">
+          <span>DMG: <strong>${w.damage}${w.count ? `x${w.count}` : ''}</strong></span>
+          <span>MAG: <strong>${w.magSize}</strong></span>
+          <span>ROF: <strong>${Math.round(1 / w.fireRate * 60)}/m</strong></span>
+        </div>
+      `;
+
+      card.addEventListener('click', () => {
+        this.selectedWeaponId = id;
+        document.querySelectorAll('.loadout-card').forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+        this.player.equipWeapon(id);
+        this.updateTerminalSummary();
+        if (window.soundSystem && window.soundSystem.playReload) {
+          window.soundSystem.playReload();
+        }
+      });
+
+      grid.appendChild(card);
+    }
+  }
+
+  updateTerminalSummary() {
+    const skin = (typeof SKIN_DEFINITIONS !== 'undefined' && SKIN_DEFINITIONS[this.selectedSkinId]) || null;
+    const mapDef = (typeof MAP_DEFINITIONS !== 'undefined' && MAP_DEFINITIONS[this.selectedMapId]) || null;
+    const weapon = (typeof WEAPON_DEFINITIONS !== 'undefined' && WEAPON_DEFINITIONS[this.selectedWeaponId]) || null;
+
+    if (skin) {
+      const skinNameEl = document.getElementById('sum-skin-name');
+      const skinRoleEl = document.getElementById('sum-skin-role');
+      const perkDescEl = document.getElementById('sum-skin-perk-desc');
+      if (skinNameEl) {
+        skinNameEl.textContent = skin.name;
+        skinNameEl.style.color = skin.colors.visor;
+      }
+      if (skinRoleEl) skinRoleEl.textContent = skin.role;
+      if (perkDescEl) perkDescEl.textContent = `${skin.perk.name}: ${skin.perk.desc}`;
+    }
+
+    if (mapDef) {
+      const mapNameEl = document.getElementById('sum-map-name');
+      if (mapNameEl) {
+        mapNameEl.textContent = mapDef.name;
+        mapNameEl.style.color = mapDef.accentColor || '#00f0ff';
+      }
+    }
+
+    if (weapon) {
+      const weaponNameEl = document.getElementById('sum-weapon-name');
+      if (weaponNameEl) {
+        weaponNameEl.textContent = weapon.name;
+        weaponNameEl.style.color = weapon.color;
+      }
+    }
+  }
+
+  startOperativePreviewLoop() {
+    const canvas = document.getElementById('operative-preview-canvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const render = () => {
+      if (this.gameState === 'start') {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        this.previewAngle += 0.015;
+
+        const skin = (typeof SKIN_DEFINITIONS !== 'undefined' && SKIN_DEFINITIONS[this.selectedSkinId]) || null;
+        if (window.drawOperativeModel && skin) {
+          ctx.save();
+          ctx.translate(canvas.width / 2, canvas.height / 2);
+          window.drawOperativeModel(ctx, skin, this.selectedWeaponId || 'rifle', this.previewAngle, 1.8);
+          ctx.restore();
+        }
+      }
+      requestAnimationFrame(render);
+    };
+    requestAnimationFrame(render);
+  }
+
+  handlePlayerDeath(source) {
+    if (this.isRespawning) return;
+    this.isRespawning = true;
+    this.deaths++;
+
+    this.addScreenShake(18);
+    window.particleSystem.emitExplosion(this.player.x, this.player.y, 80);
+    window.particleSystem.emitBlood(this.player.x, this.player.y, 0, 30);
+    window.soundSystem.playPlayerHurt();
+    this.updateLiveRoster();
+
+    const isSelf = (source === 'self' || source === 'explosive');
+    const killerLabel = isSelf ? 'SELF-ORDNANCE BLAST' : 'HOSTILE FIRE';
+    const killerColor = isSelf ? '#ffb703' : '#ff3366';
+
+    if (this.gameMode === 'multiplayer' && this.network && this.network.connected) {
+      this.network.reportSelfDeath(source);
+      this.network.showRespawnOverlay(killerLabel, killerColor);
+      this.network.startRespawnCountdown(4);
+    } else {
+      // Singleplayer Solo Mode: Game Over, restart from Wave 1!
+      setTimeout(() => {
+        this.handleGameOver();
+      }, 700);
+    }
+  }
+
+  respawnLocalPlayer() {
+    this.isRespawning = false;
+    let spawn = { x: 1200, y: 1200 };
+    if (this.map && this.map.data && this.map.data.spawns && this.map.data.spawns.length > 0) {
+      spawn = this.map.data.spawns[Math.floor(Math.random() * this.map.data.spawns.length)];
+    }
+    this.player.respawn(spawn.x, spawn.y);
+    if (this.network) {
+      this.network.hideRespawnOverlay();
+    }
+    this.updateHUD();
+    this.updateAmmoUI();
+    this.updateLiveRoster();
+    window.soundSystem.playReload();
+  }
+
+  // --- Tactical Medkits (Health Packs) ---
+  spawnLocalMedkit() {
+    const map = this.map;
+    let spawnX, spawnY;
+    let attempts = 0;
+    const pad = 140;
+    do {
+      spawnX = pad + Math.random() * (map.width - pad * 2);
+      spawnY = pad + Math.random() * (map.height - pad * 2);
+      attempts++;
+    } while (attempts < 30 && map.isColliding(spawnX, spawnY, 35));
+
+    if (typeof Medkit !== 'undefined') {
+      this.medkits.push(new Medkit(spawnX, spawnY));
+    }
+  }
+
+  syncMedkits(serverMedkits) {
+    if (!serverMedkits || typeof Medkit === 'undefined') return;
+    const serverMap = new Map();
+    serverMedkits.forEach(m => serverMap.set(m.id, m));
+
+    // Retain existing medkits
+    this.medkits = this.medkits.filter(m => serverMap.has(m.id));
+
+    // Insert new incoming medkits
+    const existingIds = new Set(this.medkits.map(m => m.id));
+    serverMedkits.forEach(sm => {
+      if (!existingIds.has(sm.id)) {
+        this.medkits.push(new Medkit(sm.x, sm.y, sm.id, sm.heal || 50));
+      }
+    });
+  }
+
+  onMedkitSpawned(data) {
+    if (typeof Medkit === 'undefined') return;
+    if (!this.medkits.some(m => m.id === data.id)) {
+      this.medkits.push(new Medkit(data.x, data.y, data.id, data.heal || 50));
+    }
+  }
+
+  onMedkitCollected(data) {
+    const idx = this.medkits.findIndex(m => m.id === data.id);
+    if (idx !== -1) {
+      const m = this.medkits[idx];
+      if (window.particleSystem) {
+        window.particleSystem.emit(m.x, m.y, 20, { speed: 110, color: '#00ff88', life: 0.45 });
+      }
+      this.medkits.splice(idx, 1);
+    }
+    if (data.collectorId === this.localPlayerId) {
+      this.player.hp = Math.min(this.player.maxHp, data.hp);
+      this.updateHUD();
+    }
+    this.updateLiveRoster();
+  }
+
+  // --- In-Game Live Operatives Roster Strip (Left Sidebar) ---
+  updateLiveRoster() {
+    const rosterList = document.getElementById('roster-list');
+    if (!rosterList) return;
+
+    const list = [];
+    if (this.player) {
+      list.push({
+        id: this.localPlayerId || 'local',
+        name: this.player.name || 'YOU',
+        color: this.player.color || '#00f0ff',
+        score: this.score,
+        kills: this.kills,
+        deaths: this.deaths,
+        hp: this.player.hp,
+        alive: this.player.alive,
+        isMe: true
+      });
+    }
+
+    if (this.gameMode === 'multiplayer' && this.network) {
+      for (const id in this.network.remotePlayers) {
+        const rp = this.network.remotePlayers[id];
+        list.push({
+          id: rp.id,
+          name: rp.name,
+          color: rp.color,
+          score: rp.score || 0,
+          kills: rp.kills || 0,
+          deaths: rp.deaths || 0,
+          hp: rp.hp,
+          alive: rp.alive,
+          isMe: false
+        });
+      }
+    }
+
+    list.sort((a, b) => b.score - a.score);
+
+    rosterList.innerHTML = '';
+    list.forEach((p) => {
+      const card = document.createElement('div');
+      card.className = `roster-card ${p.isMe ? 'me' : ''}`;
+      card.innerHTML = `
+        <div class="roster-top">
+          <span class="roster-avatar" style="background: ${p.color}; color: ${p.color};"></span>
+          <span class="roster-name">${p.name} ${p.isMe ? '(YOU)' : ''}</span>
+          <span class="roster-badge ${p.alive ? 'alive' : 'elim'}">${p.alive ? `${Math.round(p.hp)} HP` : 'RESPAWNING'}</span>
+        </div>
+        <div class="roster-stats-row">
+          <div class="roster-stat">
+            <span class="roster-stat-lbl">SCORE</span>
+            <span class="roster-stat-val val-gold">${p.score.toLocaleString()}</span>
+          </div>
+          <div class="roster-stat">
+            <span class="roster-stat-lbl">KILLS</span>
+            <span class="roster-stat-val val-green">${p.kills}</span>
+          </div>
+          <div class="roster-stat">
+            <span class="roster-stat-lbl">DEATHS</span>
+            <span class="roster-stat-val val-red">${p.deaths}</span>
+          </div>
+        </div>
+      `;
+      rosterList.appendChild(card);
+    });
+  }
+
   initEvents() {
     window.addEventListener('resize', () => this.resize());
 
     // Keyboard
     window.addEventListener('keydown', (e) => {
       this.input.keys[e.code] = true;
+
+      // Weapon Selection Hotkeys (1 to 5)
+      if (e.code === 'Digit1') this.player.equipWeapon('rifle');
+      if (e.code === 'Digit2') this.player.equipWeapon('shotgun');
+      if (e.code === 'Digit3') this.player.equipWeapon('smg');
+      if (e.code === 'Digit4') this.player.equipWeapon('railgun');
+      if (e.code === 'Digit5') this.player.equipWeapon('cannon');
+
+      // Quick Switch (Q)
+      if (e.code === 'KeyQ') this.player.quickSwitchWeapon();
 
       // Audio Mute Quick Toggle (M)
       if (e.code === 'KeyM') {
@@ -118,6 +587,11 @@ class GameEngine {
       if (e.button === 0) {
         this.input.mouse.down = true;
         this.crosshair.classList.add('firing');
+      } else if (e.button === 2) {
+        // Right Click: Switch Weapon!
+        if (this.gameState === 'playing' && this.player && this.player.alive) {
+          this.player.nextWeapon();
+        }
       }
     });
 
@@ -130,6 +604,16 @@ class GameEngine {
 
     // Prevent default context menu
     window.addEventListener('contextmenu', (e) => e.preventDefault());
+
+    // Mouse Wheel Weapon Cycle
+    window.addEventListener('wheel', (e) => {
+      if (this.gameState !== 'playing' || !this.player || !this.player.alive) return;
+      if (e.deltaY > 0) {
+        this.player.nextWeapon();
+      } else if (e.deltaY < 0) {
+        this.player.previousWeapon();
+      }
+    }, { passive: true });
 
     // UI Buttons
     document.getElementById('start-btn').addEventListener('click', () => {
@@ -147,34 +631,89 @@ class GameEngine {
     });
   }
 
-  initUI() {
-    // Populate ammo visual pills (30 pills)
-    const pillsContainer = document.getElementById('ammo-pills');
-    pillsContainer.innerHTML = '';
-    for (let i = 0; i < 30; i++) {
-      const pill = document.createElement('div');
-      pill.className = 'ammo-pill';
-      pillsContainer.appendChild(pill);
-    }
+  initArsenalUI() {
+    const dock = document.getElementById('arsenal-dock');
+    if (!dock) return;
+    dock.innerHTML = '';
+
+    const order = this.player.inventory.weaponOrder;
+    order.forEach((id) => {
+      const w = this.player.inventory.weapons[id];
+      const slot = document.createElement('div');
+      slot.className = `arsenal-slot ${id === this.player.currentWeaponId ? 'active' : ''}`;
+      slot.id = `arsenal-slot-${id}`;
+      slot.dataset.weaponId = id;
+      slot.style.setProperty('--weapon-glow', w.color);
+
+      slot.innerHTML = `
+        <div class="slot-key">${w.key}</div>
+        <div class="slot-body">
+          <div class="slot-name">${w.shortName}</div>
+          <div class="slot-ammo" id="slot-ammo-${id}">${w.ammo}/${w.magSize}</div>
+        </div>
+      `;
+
+      slot.addEventListener('click', () => {
+        this.player.equipWeapon(id);
+      });
+
+      dock.appendChild(slot);
+    });
+
+    this.updateWeaponUI();
   }
 
   startGame() {
     document.getElementById('start-screen').classList.add('hidden');
     this.gameState = 'playing';
 
-    if (this.network) {
-      this.network.deployToBattlefield();
+    // Apply selected customizations to local player
+    this.player.setSkin(this.selectedSkinId);
+    this.player.equipWeapon(this.selectedWeaponId);
+    this.map.setMap(this.selectedMapId);
+
+    // Position player safely at first spawn point of the chosen map
+    if (this.map.data && this.map.data.spawns && this.map.data.spawns.length > 0) {
+      const spawn = this.map.data.spawns[0];
+      this.player.x = spawn.x;
+      this.player.y = spawn.y;
     }
 
-    if (!this.network || !this.network.connected) {
+    this.medkits = [];
+    this.medkitTimer = 0;
+
+    if (this.gameMode === 'multiplayer') {
+      if (this.network) {
+        this.network.deployToBattlefield();
+      }
+    } else {
+      // Singleplayer Solo Mode
+      this.spawnLocalMedkit();
       this.startWave(1);
     }
+
+    this.updateHUD();
+    this.updateAmmoUI();
+    this.updateWeaponUI();
+    this.updateLiveRoster();
   }
 
   restartGame() {
     document.getElementById('game-over-screen').classList.add('hidden');
-    this.player = new Player(1200, 1200);
+    this.isRespawning = false;
+
+    let startX = 1200, startY = 1200;
+    if (this.map.data && this.map.data.spawns && this.map.data.spawns.length > 0) {
+      startX = this.map.data.spawns[0].x;
+      startY = this.map.data.spawns[0].y;
+    }
+
+    this.player = new Player(startX, startY);
+    this.player.setSkin(this.selectedSkinId);
+    this.player.equipWeapon(this.selectedWeaponId);
+
     this.bullets = [];
+    this.enemyProjectiles = [];
     this.enemies = [];
     this.score = 0;
     this.kills = 0;
@@ -183,14 +722,18 @@ class GameEngine {
     this.wave = 1;
     this.gameState = 'playing';
 
-    if (this.network) {
-      this.network.deployToBattlefield();
-    }
+    this.initArsenalUI();
+    this.updateAmmoUI();
+    this.updateWeaponUI();
 
-    if (!this.network || !this.network.connected) {
+    if (this.gameMode === 'multiplayer' && this.network && this.network.connected) {
+      this.network.deployToBattlefield();
+    } else {
+      this.spawnLocalMedkit();
       this.startWave(1);
     }
     this.updateHUD();
+    this.updateLiveRoster();
   }
 
   startWave(waveNum) {
@@ -198,8 +741,8 @@ class GameEngine {
     this.waveState = 'intermission';
     this.waveTimer = 2.8;
 
-    // Calculate composition for this wave
-    const baseCount = 5 + waveNum * 3;
+    // Tactical enemy count: keeps the battlefield readable and dynamic (4 to 7 enemies)
+    const baseCount = Math.min(7, 3 + waveNum);
     this.enemiesToSpawn = baseCount;
     this.totalEnemiesInWave = baseCount;
     this.spawnTimer = 0.5;
@@ -207,14 +750,14 @@ class GameEngine {
     // UI Updates
     document.getElementById('wave-display').textContent = `WAVE ${waveNum}`;
     const banner = document.getElementById('wave-banner');
-    banner.textContent = `HOSTILE WAVE ${waveNum} DETECTED`;
+    banner.textContent = `HOSTILE WAVE ${waveNum}`;
     banner.classList.remove('hidden');
 
     window.soundSystem.playWaveStart();
 
     setTimeout(() => {
       banner.classList.add('hidden');
-    }, 2400);
+    }, 2000);
   }
 
   spawnEnemy() {
@@ -222,10 +765,28 @@ class GameEngine {
     let type = 'normal';
     const roll = Math.random();
 
-    if (this.wave >= 3 && roll < 0.22) {
-      type = 'tank';
-    } else if (this.wave >= 2 && roll < 0.55) {
-      type = 'fast';
+    if (this.wave === 1) {
+      type = roll < 0.65 ? 'normal' : 'fast';
+    } else if (this.wave === 2) {
+      if (roll < 0.35) type = 'normal';
+      else if (roll < 0.65) type = 'fast';
+      else type = 'shielded';
+    } else if (this.wave === 3) {
+      if (roll < 0.3) type = 'shielded';
+      else if (roll < 0.6) type = 'sniper';
+      else if (roll < 0.85) type = 'bomber';
+      else type = 'fast';
+    } else if (this.wave === 4) {
+      if (roll < 0.25) type = 'tank';
+      else if (roll < 0.5) type = 'shielded';
+      else if (roll < 0.75) type = 'sniper';
+      else type = 'bomber';
+    } else { // Wave 5+
+      if (roll < 0.2) type = 'tank';
+      else if (roll < 0.4) type = 'shielded';
+      else if (roll < 0.6) type = 'sniper';
+      else if (roll < 0.8) type = 'bomber';
+      else type = 'fast';
     }
 
     // Find safe spawn location: minimum 550px from player, walkable floor
@@ -243,8 +804,8 @@ class GameEngine {
     } while (
       attempts < 30 &&
       (spawnX < 100 || spawnX > this.map.width - 100 ||
-       spawnY < 100 || spawnY > this.map.height - 100 ||
-       this.map.isColliding(spawnX, spawnY, 35))
+        spawnY < 100 || spawnY > this.map.height - 100 ||
+        this.map.isColliding(spawnX, spawnY, 35))
     );
 
     if (attempts < 30) {
@@ -269,18 +830,42 @@ class GameEngine {
     this.screenShake = Math.max(this.screenShake, intensity);
   }
 
+  spawnAcidSpit(x, y, angle, speed = 460, damage = 16, color = '#39ff14') {
+    if (!this.enemyProjectiles) this.enemyProjectiles = [];
+    if (typeof AcidSpit !== 'undefined') {
+      this.enemyProjectiles.push(new AcidSpit(x, y, angle, speed, damage, color));
+      if (window.soundSystem && window.soundSystem.playAcidSpit) {
+        window.soundSystem.playAcidSpit();
+      }
+    }
+  }
+
   // --- Main Update Loop ---
   update(dt) {
     if (this.gameState !== 'playing') return;
 
-    // 1. Update Player
-    this.player.update(dt, this.input, this.map, this);
+    // 1. Update Player (only if alive)
+    if (this.player.alive) {
+      this.player.update(dt, this.input, this.map, this);
+    }
 
-    // Check Player Death
-    if (!this.player.alive) {
-      if (!this.network || !this.network.connected) {
-        this.handleGameOver();
-        return;
+    // 1.5. Update Medkits (Health Packs) & 5-second periodic spawning in Singleplayer
+    if (this.gameMode === 'singleplayer') {
+      this.medkitTimer += dt;
+      if (this.medkitTimer >= 5.0) {
+        this.medkitTimer = 0;
+        if (this.medkits.length < 8) {
+          this.spawnLocalMedkit();
+        }
+      }
+    }
+
+    for (let i = this.medkits.length - 1; i >= 0; i--) {
+      const medkit = this.medkits[i];
+      const collected = medkit.update(dt, this.player, this);
+      if (collected || medkit.collected) {
+        this.medkits.splice(i, 1);
+        this.updateLiveRoster();
       }
     }
 
@@ -306,6 +891,17 @@ class GameEngine {
       bullet.update(dt, this.map, this.enemies, this.map.barrels, this);
       if (!bullet.active) {
         this.bullets.splice(i, 1);
+      }
+    }
+
+    // 3.5. Update Enemy Projectiles (Acid Spit)
+    if (this.enemyProjectiles) {
+      for (let i = this.enemyProjectiles.length - 1; i >= 0; i--) {
+        const proj = this.enemyProjectiles[i];
+        proj.update(dt, this.map, this.player, this);
+        if (!proj.active) {
+          this.enemyProjectiles.splice(i, 1);
+        }
       }
     }
 
@@ -360,12 +956,12 @@ class GameEngine {
   handleWaveClear() {
     this.waveState = 'cleared';
     this.score += 1000;
-    
-    // Restore partial health and refill ammo as a wave reward
+
+    // Restore partial health and refill all weapons as a wave reward
     this.player.hp = Math.min(this.player.maxHp, this.player.hp + 35);
-    this.player.ammo = this.player.magSize;
-    this.player.isReloading = false;
+    this.player.refillAllAmmo();
     this.updateAmmoUI();
+    this.updateWeaponUI();
 
     window.soundSystem.playWaveClear();
 
@@ -425,25 +1021,127 @@ class GameEngine {
     }
   }
 
-  updateAmmoUI() {
-    document.getElementById('ammo-current').textContent = this.player.ammo;
-    document.getElementById('ammo-max').textContent = this.player.magSize;
+  updateWeaponUI() {
+    if (!this.player) return;
+    const current = this.player.currentWeapon;
+    const nameEl = document.getElementById('weapon-name');
+    const catEl = document.getElementById('weapon-category');
+    const tagEl = document.getElementById('weapon-tag');
 
-    // Update ammo pill bars
-    const pills = document.querySelectorAll('.ammo-pill');
-    pills.forEach((pill, idx) => {
-      if (idx < this.player.ammo) {
-        pill.classList.remove('spent');
-        if (this.player.ammo <= 8) {
-          pill.classList.add('low');
-        } else {
-          pill.classList.remove('low');
-        }
+    if (nameEl) {
+      nameEl.textContent = current.name;
+      nameEl.style.color = current.color;
+    }
+    if (catEl) {
+      catEl.textContent = current.category;
+    }
+    if (tagEl) {
+      tagEl.textContent = current.tag;
+      tagEl.style.borderColor = current.color;
+      tagEl.style.color = current.color;
+    }
+
+    // Update active highlight in arsenal dock
+    const slots = document.querySelectorAll('.arsenal-slot');
+    slots.forEach(slot => {
+      if (slot.dataset.weaponId === current.id) {
+        slot.classList.add('active');
       } else {
-        pill.classList.add('spent');
-        pill.classList.remove('low');
+        slot.classList.remove('active');
       }
     });
+
+    // Update crosshair tint and dynamics
+    if (this.crosshair) {
+      this.crosshair.style.setProperty('--ch-color', current.color);
+    }
+
+    this.showWeaponToast(current);
+  }
+
+  showWeaponToast(weapon) {
+    const toast = document.getElementById('weapon-toast');
+    if (!toast) return;
+
+    document.getElementById('toast-key').textContent = `[${weapon.key}]`;
+    const toastName = document.getElementById('toast-name');
+    toastName.textContent = weapon.name;
+    toastName.style.color = weapon.color;
+    document.getElementById('toast-desc').textContent = `${weapon.category} // ${weapon.tag}`;
+
+    toast.classList.remove('hidden');
+    clearTimeout(this._toastTimeout);
+    this._toastTimeout = setTimeout(() => {
+      toast.classList.add('hidden');
+    }, 1200);
+  }
+
+  updateAmmoUI() {
+    if (!this.player) return;
+    const current = this.player.currentWeapon;
+    const currentEl = document.getElementById('ammo-current');
+    const maxEl = document.getElementById('ammo-max');
+    if (currentEl) currentEl.textContent = current.ammo;
+    if (maxEl) maxEl.textContent = current.magSize;
+
+    // Update slot ammo displays in arsenal dock
+    for (const id in this.player.inventory.weapons) {
+      const w = this.player.inventory.weapons[id];
+      const slotAmmoEl = document.getElementById(`slot-ammo-${id}`);
+      if (slotAmmoEl) {
+        slotAmmoEl.textContent = `${w.ammo}/${w.magSize}`;
+        if (w.ammo === 0) {
+          slotAmmoEl.classList.add('empty');
+        } else {
+          slotAmmoEl.classList.remove('empty');
+        }
+      }
+    }
+
+    // Dynamic ammo visual pills tailored to active weapon magazine
+    const pillsContainer = document.getElementById('ammo-pills');
+    if (pillsContainer) {
+      if (pillsContainer.children.length !== current.magSize) {
+        pillsContainer.innerHTML = '';
+        for (let i = 0; i < current.magSize; i++) {
+          const pill = document.createElement('div');
+          pill.className = 'ammo-pill';
+          pill.style.setProperty('--pill-color', current.color);
+          pillsContainer.appendChild(pill);
+        }
+      }
+
+      const pills = pillsContainer.children;
+      const lowThreshold = Math.max(2, Math.floor(current.magSize * 0.25));
+      for (let idx = 0; idx < pills.length; idx++) {
+        const pill = pills[idx];
+        pill.style.setProperty('--pill-color', current.color);
+        if (idx < current.ammo) {
+          pill.classList.remove('spent');
+          if (current.ammo <= lowThreshold) {
+            pill.classList.add('low');
+          } else {
+            pill.classList.remove('low');
+          }
+        } else {
+          pill.classList.add('spent');
+          pill.classList.remove('low');
+        }
+      }
+    }
+
+    // Crosshair Reload Spinner Toggle
+    if (this.crosshair) {
+      if (current.isReloading) {
+        this.crosshair.classList.add('reloading');
+        const reloadInd = document.getElementById('reload-indicator');
+        if (reloadInd) reloadInd.classList.remove('hidden');
+      } else {
+        this.crosshair.classList.remove('reloading');
+        const reloadInd = document.getElementById('reload-indicator');
+        if (reloadInd) reloadInd.classList.add('hidden');
+      }
+    }
   }
 
   // --- Render Tactical Flashlight & Atmosphere ---
@@ -597,6 +1295,11 @@ class GameEngine {
     // 1. Draw Map & Environment
     this.map.draw(this.ctx, this.camera);
 
+    // 1.5. Draw Medkits (Health Packs)
+    for (const medkit of this.medkits) {
+      medkit.draw(this.ctx);
+    }
+
     // 2. Draw Enemies
     for (const enemy of this.enemies) {
       enemy.draw(this.ctx);
@@ -605,6 +1308,13 @@ class GameEngine {
     // 3. Draw Bullets
     for (const bullet of this.bullets) {
       bullet.draw(this.ctx);
+    }
+
+    // 3.5. Draw Enemy Projectiles (Acid Spit)
+    if (this.enemyProjectiles) {
+      for (const proj of this.enemyProjectiles) {
+        proj.draw(this.ctx);
+      }
     }
 
     // 4. Draw Player & Remote Operatives

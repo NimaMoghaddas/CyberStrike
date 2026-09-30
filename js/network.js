@@ -28,6 +28,16 @@ class NetworkSystem {
     this.callsign = 'GHOST';
     this.color = '#00f0ff';
 
+    // Multiplayer Lobby & Team Battle State
+    this.lobbyMode = 'teams';
+    this.myTeam = 'alpha';
+    this.isHost = false;
+    this.hostId = null;
+    this.alphaColor = '#00f0ff';
+    this.betaColor = '#ff3366';
+    this.lockedColors = [];
+    this.lobbyPlayers = [];
+
     // Chat State
     this.chatOpen = false;
 
@@ -79,6 +89,18 @@ class NetworkSystem {
         this.serverPort = data.port;
         this.updateServerIpDisplay(data.serverIp, data.port, data.allIps);
 
+        if (data.mapId && this.game && this.game.map) {
+          this.game.map.setMap(data.mapId);
+        }
+
+        if (data.medkits && this.game && this.game.syncMedkits) {
+          this.game.syncMedkits(data.medkits);
+        }
+
+        if (data.lobby) {
+          this.handleLobbySync(data.lobby);
+        }
+
         // Pre-populate any existing remote players
         if (data.players) {
           data.players.forEach(p => {
@@ -90,6 +112,18 @@ class NetworkSystem {
         }
       });
 
+      // 1.2. Synchronized Multiplayer Lobby State
+      this.socket.on('lobby_sync', (data) => {
+        this.handleLobbySync(data);
+      });
+
+      // 1.5. Synchronized Map Switch from Server
+      this.socket.on('map_sync', (data) => {
+        if (data.mapId && this.game && this.game.map) {
+          this.game.map.setMap(data.mapId);
+        }
+      });
+
       // 2. Acknowledge Join
       this.socket.on('joined_successfully', (data) => {
         const p = data.player;
@@ -97,10 +131,16 @@ class NetworkSystem {
         this.game.player.y = p.y;
         this.game.player.color = p.color;
         this.game.player.name = p.name;
-        this.game.player.invulnerableTime = p.invulnerableTimer || 2.0;
+        this.game.player.invulnerableTime = p.invulnerableTimer || 2.5;
         this.game.player.alive = true;
         this.game.player.hp = p.hp;
         this.game.localPlayerId = this.myId;
+        if (p.skinId && this.game.player.setSkin) {
+          this.game.player.setSkin(p.skinId);
+        }
+        if (data.mapId && this.game.map) {
+          this.game.map.setMap(data.mapId);
+        }
       });
 
       // 3. Another Player Joined
@@ -186,6 +226,22 @@ class NetworkSystem {
         window.soundSystem.playWaveClear();
       });
 
+      // 8.5. Enemy Ranged Attack: Acid Spit
+      this.socket.on('enemy_spit', (data) => {
+        if (this.game && this.game.spawnAcidSpit) {
+          this.game.spawnAcidSpit(data.x, data.y, data.angle, data.speed, data.damage);
+        }
+      });
+
+      this.socket.on('enemy_windup', (data) => {
+        if (this.game && this.game.enemies) {
+          const enemy = this.game.enemies.find(e => e.id === data.enemyId);
+          if (enemy) {
+            enemy.spitWindupTimer = data.duration;
+          }
+        }
+      });
+
       // 9. PvP: Damage Taken
       this.socket.on('player_damaged', (data) => {
         this.game.player.hp = data.hp;
@@ -234,12 +290,8 @@ class NetworkSystem {
 
       this.socket.on('player_respawned', (data) => {
         if (data.id === this.myId) {
-          this.game.player.x = data.x;
-          this.game.player.y = data.y;
-          this.game.player.hp = data.hp;
-          this.game.player.alive = true;
-          this.game.player.invulnerableTime = data.invulnerableTimer || 2.5;
-          this.game.player.ammo = this.game.player.magSize;
+          this.game.isRespawning = false;
+          this.game.player.respawn(data.x, data.y);
           this.hideRespawnOverlay();
           this.game.updateHUD();
           this.game.updateAmmoUI();
@@ -265,6 +317,19 @@ class NetworkSystem {
         window.soundSystem.playExplosion();
         window.particleSystem.emitExplosion(data.x, data.y, data.blastRadius || 170);
         this.game.addScreenShake(10);
+      });
+
+      // 11.5. Tactical Medkits (+50 HP)
+      this.socket.on('medkit_spawned', (medkit) => {
+        if (this.game && this.game.onMedkitSpawned) {
+          this.game.onMedkitSpawned(medkit);
+        }
+      });
+
+      this.socket.on('medkit_collected', (data) => {
+        if (this.game && this.game.onMedkitCollected) {
+          this.game.onMedkitCollected(data);
+        }
       });
 
       // 12. Tactical Kill Feed Messages
@@ -317,7 +382,8 @@ class NetworkSystem {
         isReloading: p.isReloading,
         isMoving: p.isMoving,
         walkCycle: Number(p.walkCycle.toFixed(2)),
-        recoilOffset: Number(p.recoilOffset.toFixed(1))
+        recoilOffset: Number(p.recoilOffset.toFixed(1)),
+        weapon: p.currentWeaponId
       });
     }
 
@@ -335,14 +401,25 @@ class NetworkSystem {
   }
 
   // --- Broadcast Shoot Event ---
-  emitShoot(x, y, angle, isCritical, damage) {
+  emitShoot(x, y, angle, isCritical, damage, color, weaponType, speed, range, radius, penetrating, explosive, splashDamage, blastRadius) {
     if (!this.connected || !this.socket) return;
+    // In multiplayer, bullets are colored with the player's operative color
+    const bulletColor = (this.game && this.game.player) ? (this.game.player.color || '#00f0ff') : (color || '#00f0ff');
     this.socket.emit('player_shoot', {
       x: Math.round(x),
       y: Math.round(y),
       angle: Number(angle.toFixed(3)),
       isCritical: !!isCritical,
-      damage
+      damage,
+      color: bulletColor,
+      weaponType: weaponType || (this.game.player ? this.game.player.currentWeaponId : 'rifle'),
+      speed,
+      range,
+      radius,
+      penetrating: !!penetrating,
+      explosive: !!explosive,
+      splashDamage,
+      blastRadius
     });
   }
 
@@ -379,24 +456,38 @@ class NetworkSystem {
   // --- Remote Shoot Handler ---
   handleRemoteShoot(data) {
     const rp = this.remotePlayers[data.shooterId];
+    const weaponType = data.weaponType || 'rifle';
     if (rp) {
-      rp.recoilOffset = 6;
+      rp.weapon = weaponType;
+      rp.recoilOffset = weaponType === 'railgun' ? 16 : (weaponType === 'shotgun' ? 14 : 6);
       rp.muzzleFlashTimer = 0.06;
     }
 
-    // Spawn visual bullet projectile in game
+    const bulletColor = data.color || (rp ? rp.color : '#00f0ff');
+
+    // Spawn matching projectile with custom physics
     const bullet = new Bullet(data.x, data.y, data.angle, {
-      speed: 1100,
+      speed: data.speed || 1100,
       damage: data.damage,
-      range: 1400
+      range: data.range || 1400,
+      radius: data.radius || 4,
+      color: bulletColor,
+      glowColor: bulletColor,
+      weaponType: weaponType,
+      penetrating: !!data.penetrating,
+      explosive: !!data.explosive,
+      splashDamage: data.splashDamage,
+      blastRadius: data.blastRadius,
+      shooterId: data.shooterId
     });
     bullet.isCritical = data.isCritical;
     bullet.shooterId = data.shooterId;
+    bullet.color = bulletColor;
     this.game.bullets.push(bullet);
 
-    // Audio & Effects
-    window.soundSystem.playShoot();
-    window.particleSystem.emitMuzzleFlash(data.x, data.y, data.angle);
+    // Audio & Effects tailored to weapon
+    window.soundSystem.playWeaponShoot(weaponType);
+    window.particleSystem.emitMuzzleFlash(data.x, data.y, data.angle, bulletColor);
     window.particleSystem.ejectShell(data.x, data.y, data.angle);
   }
 
@@ -426,12 +517,15 @@ class NetworkSystem {
         rp.hp = pData.hp;
         rp.maxHp = pData.maxHp;
         rp.alive = pData.alive;
+        if (pData.team) rp.team = pData.team;
+        if (pData.color) rp.color = pData.color;
         rp.invulnerableTimer = pData.invulnerableTimer;
         rp.isDashing = pData.isDashing;
         rp.isReloading = pData.isReloading;
         rp.isMoving = pData.isMoving;
         rp.walkCycle = pData.walkCycle;
         rp.recoilOffset = pData.recoilOffset;
+        if (pData.weapon) rp.weapon = pData.weapon;
         rp.score = pData.score;
         rp.kills = pData.kills;
         rp.deaths = pData.deaths;
@@ -467,6 +561,17 @@ class NetworkSystem {
         enemy.angle = eData.angle;
         enemy.hp = eData.hp;
         enemy.maxHp = eData.maxHp;
+
+        // Prevent synced enemy from clipping inside local player's body
+        if (this.game.player && this.game.player.alive) {
+          const pDist = Math.hypot(enemy.x - this.game.player.x, enemy.y - this.game.player.y);
+          const minP = enemy.radius + this.game.player.radius;
+          if (pDist < minP && pDist > 0.0001) {
+            const push = minP - pDist;
+            enemy.x += ((enemy.x - this.game.player.x) / pDist) * push;
+            enemy.y += ((enemy.y - this.game.player.y) / pDist) * push;
+          }
+        }
       });
 
       // Remove enemies not in server list
@@ -483,7 +588,15 @@ class NetworkSystem {
       document.getElementById('enemies-left').textContent = snapshot.wave.enemiesLeft;
     }
 
+    // 4. Synchronize Medkits from snapshot
+    if (snapshot.medkits && this.game && this.game.syncMedkits) {
+      this.game.syncMedkits(snapshot.medkits);
+    }
+
     this.updateScoreboard();
+    if (this.game && this.game.updateLiveRoster) {
+      this.game.updateLiveRoster();
+    }
   }
 
   // --- Add Remote Player Instance ---
@@ -491,7 +604,10 @@ class NetworkSystem {
     const rp = new Player(pData.x, pData.y);
     rp.id = pData.id;
     rp.name = pData.name;
+    rp.team = pData.team || 'solo';
     rp.color = pData.color;
+    rp.skinId = pData.skinId || 'spectre';
+    rp.weapon = pData.weapon || 'rifle';
     rp.hp = pData.hp;
     rp.maxHp = pData.maxHp || 100;
     rp.score = pData.score || 0;
@@ -516,11 +632,6 @@ class NetworkSystem {
 
       // 2. Tactical Head Tag (Callsign + Mini Health Bar)
       this.drawHeadTag(ctx, rp);
-    }
-
-    // Draw local player shield if invulnerable
-    if (this.game.player.alive && this.game.player.invulnerableTime > 0) {
-      this.drawForceShield(ctx, this.game.player);
     }
   }
 
@@ -547,60 +658,32 @@ class NetworkSystem {
     ctx.fillRect(-12, -10 + legSway, 12, 6);
     ctx.fillRect(-12, 4 - legSway, 12, 6);
 
-    // Rifle
-    ctx.fillStyle = '#111824';
-    ctx.fillRect(4, 5, 28, 6);
-    ctx.fillStyle = '#374151';
-    ctx.fillRect(32, 6.5, 8, 3);
+    const skin = (window.SKIN_DEFINITIONS && window.SKIN_DEFINITIONS[p.skinId]) || (window.SKIN_DEFINITIONS && window.SKIN_DEFINITIONS.spectre);
+    if (window.drawOperativeModel && skin) {
+      window.drawOperativeModel(ctx, skin, p.weapon || 'rifle', 0, 1.0);
+    } else {
+      // Fallback Operative Rendering
+      if (window.drawTacticalWeapon) {
+        window.drawTacticalWeapon(ctx, p.weapon || 'rifle', p.color, false);
+      } else {
+        ctx.fillStyle = '#111824';
+        ctx.fillRect(4, 5, 28, 6);
+      }
 
-    // Gun Rail LED in player color
-    ctx.fillStyle = p.color;
-    ctx.shadowColor = p.color;
-    ctx.shadowBlur = 6;
-    ctx.fillRect(12, 4.5, 12, 1.5);
-    ctx.shadowBlur = 0;
+      ctx.fillStyle = '#1d2836';
+      ctx.beginPath();
+      ctx.ellipse(-2, 0, 15, 12, 0, 0, Math.PI * 2);
+      ctx.fill();
 
-    // Tactical Arms & Hands
-    ctx.fillStyle = '#2b394a';
-    ctx.beginPath();
-    ctx.ellipse(8, -6, 7, 5, 0.4, 0, Math.PI * 2);
-    ctx.ellipse(14, 8, 8, 5, -0.2, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Gloves
-    ctx.fillStyle = '#151c24';
-    ctx.beginPath();
-    ctx.arc(22, 7, 3.5, 0, Math.PI * 2);
-    ctx.arc(16, -3, 3.5, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Torso & Armor Vest
-    ctx.fillStyle = '#1d2836';
-    ctx.beginPath();
-    ctx.ellipse(-2, 0, 15, 12, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Ceramic Armor Plate
-    ctx.fillStyle = '#2d3d52';
-    ctx.beginPath();
-    ctx.ellipse(-1, 0, 11, 8, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Helmet
-    ctx.fillStyle = '#0f1724';
-    ctx.beginPath();
-    ctx.arc(-2, 0, 8.5, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Cyber Visor (Glows with player's custom color)
-    ctx.fillStyle = p.color;
-    ctx.shadowColor = p.color;
-    ctx.shadowBlur = 10;
-    ctx.beginPath();
-    ctx.arc(3, 0, 5, -Math.PI / 2.5, Math.PI / 2.5);
-    ctx.lineTo(2, 0);
-    ctx.fill();
-    ctx.shadowBlur = 0;
+      ctx.fillStyle = p.color;
+      ctx.shadowColor = p.color;
+      ctx.shadowBlur = 10;
+      ctx.beginPath();
+      ctx.arc(3, 0, 5, -Math.PI / 2.5, Math.PI / 2.5);
+      ctx.lineTo(2, 0);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
 
     // Laser Sight Beam
     ctx.save();
@@ -629,10 +712,7 @@ class NetworkSystem {
 
     ctx.restore();
 
-    // Force Field if invulnerable
-    if (p.invulnerableTimer > 0) {
-      this.drawForceShield(ctx, p);
-    }
+
   }
 
   // --- Draw Holographic Force Shield ---
@@ -676,11 +756,14 @@ class NetworkSystem {
     ctx.font = '600 11px Orbitron, sans-serif';
     ctx.textAlign = 'center';
 
+    const teamTag = (p.team && p.team !== 'solo') ? ` [${p.team.toUpperCase()}]` : '';
+    const label = `${p.name}${teamTag}`;
+
     // Callsign text shadow & fill
     ctx.shadowColor = p.color;
     ctx.shadowBlur = 8;
     ctx.fillStyle = p.color;
-    ctx.fillText(p.name, 0, -4);
+    ctx.fillText(label, 0, -4);
     ctx.shadowBlur = 0;
 
     // 2. Health Bar Track
@@ -784,15 +867,40 @@ class NetworkSystem {
       this.callsign = nameInput.value.trim().toUpperCase();
     }
 
+    const skinId = this.game.selectedSkinId || 'spectre';
+    const mapId = this.game.selectedMapId || 'sector_09';
+    const weapon = this.game.selectedWeaponId || 'rifle';
+
+    this.game.player.name = this.callsign;
+    this.game.player.setSkin(skinId);
+    this.game.player.equipWeapon(weapon);
+    this.game.map.setMap(mapId);
+    this.game.player.team = this.myTeam;
+    this.game.player.color = this.color;
+
     if (this.socket && this.connected) {
       this.socket.emit('join_game', {
         name: this.callsign,
-        color: this.color
+        color: this.color,
+        team: this.myTeam,
+        skinId: skinId,
+        mapId: mapId,
+        weapon: weapon
       });
-    } else {
-      // Standalone single-player mode
-      this.game.player.color = this.color;
-      this.game.player.name = this.callsign;
+    }
+  }
+
+  // --- Report Self Death (Weapon splash or suicidal blast) ---
+  reportSelfDeath(reason) {
+    if (this.socket && this.connected) {
+      this.socket.emit('player_died', { reason: reason || 'self_destruction' });
+    }
+  }
+
+  // --- Report Medkit Pickup (+50 HP) ---
+  reportMedkitPickup(id) {
+    if (this.socket && this.connected) {
+      this.socket.emit('pickup_medkit', { id });
     }
   }
 
@@ -1049,34 +1157,107 @@ class NetworkSystem {
     }
   }
 
-  // --- Start Screen Lobby UI ---
+  // --- Start Screen Lobby UI & Team Battle Handling ---
   initLobbyUI() {
-    // 1. Color Picker Badges
+    // 1. Submode buttons (Team Battle vs FFA)
+    const btnTeams = document.getElementById('btn-submode-teams');
+    const btnFfa = document.getElementById('btn-submode-ffa');
+    if (btnTeams) {
+      btnTeams.addEventListener('click', () => {
+        if (this.socket && this.connected && this.isHost) {
+          this.socket.emit('lobby_set_mode', { mode: 'teams' });
+        }
+      });
+    }
+    if (btnFfa) {
+      btnFfa.addEventListener('click', () => {
+        if (this.socket && this.connected && this.isHost) {
+          this.socket.emit('lobby_set_mode', { mode: 'ffa' });
+        }
+      });
+    }
+
+    // 2. Join Team Buttons
+    const btnJoinAlpha = document.getElementById('btn-join-alpha');
+    const btnJoinBeta = document.getElementById('btn-join-beta');
+    if (btnJoinAlpha) {
+      btnJoinAlpha.addEventListener('click', () => {
+        if (this.socket && this.connected) {
+          this.socket.emit('lobby_join_team', { team: 'alpha' });
+        }
+      });
+    }
+    if (btnJoinBeta) {
+      btnJoinBeta.addEventListener('click', () => {
+        if (this.socket && this.connected) {
+          this.socket.emit('lobby_join_team', { team: 'beta' });
+        }
+      });
+    }
+
+    // 3. Team Color Swatches (Host Only)
+    const alphaSwatches = document.querySelectorAll('#alpha-color-swatches .color-swatch-btn');
+    alphaSwatches.forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (this.socket && this.connected && this.isHost) {
+          const col = btn.getAttribute('data-color');
+          this.socket.emit('lobby_set_team_color', { team: 'alpha', color: col });
+        }
+      });
+    });
+
+    const betaSwatches = document.querySelectorAll('#beta-color-swatches .color-swatch-btn');
+    betaSwatches.forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (this.socket && this.connected && this.isHost) {
+          const col = btn.getAttribute('data-color');
+          this.socket.emit('lobby_set_team_color', { team: 'beta', color: col });
+        }
+      });
+    });
+
+    // 4. Color Picker Badges (FFA color locking)
     const colorSwatches = document.querySelectorAll('.color-swatch');
     colorSwatches.forEach(swatch => {
       swatch.addEventListener('click', () => {
+        const chosen = swatch.getAttribute('data-color');
+        if (this.lockedColors.includes(chosen) && this.color !== chosen) {
+          return; // Color locked by another operative
+        }
         colorSwatches.forEach(s => s.classList.remove('selected'));
         swatch.classList.add('selected');
-        this.color = swatch.getAttribute('data-color');
+        this.color = chosen;
 
-        // Update preview visor
+        if (this.socket && this.connected) {
+          this.socket.emit('lobby_select_color', { color: chosen });
+        }
+
         const previewVisor = document.getElementById('operative-visor-preview');
         if (previewVisor) previewVisor.style.background = this.color;
       });
     });
 
-    // 2. Random Tactical Callsign Generator Button
+    // 5. Random Tactical Callsign Generator Button
     const randomBtn = document.getElementById('random-callsign-btn');
-    if (randomBtn) {
+    const input = document.getElementById('operative-callsign-input');
+    if (randomBtn && input) {
       const callsigns = ['GHOST', 'VIPER', 'TITAN', 'REAPER', 'SPECTRE', 'VALKYRIE', 'FROST', 'HAZARD', 'SHADOW', 'NEXUS'];
       randomBtn.addEventListener('click', () => {
         const rand = callsigns[Math.floor(Math.random() * callsigns.length)];
-        const input = document.getElementById('operative-callsign-input');
-        if (input) input.value = `${rand}-${Math.floor(10 + Math.random() * 90)}`;
+        input.value = `${rand}-${Math.floor(10 + Math.random() * 90)}`;
+        if (this.socket && this.connected) {
+          this.socket.emit('lobby_update_name', { name: input.value });
+        }
+      });
+      input.addEventListener('input', () => {
+        const val = input.value.trim().toUpperCase();
+        if (val.length > 0 && this.socket && this.connected) {
+          this.socket.emit('lobby_update_name', { name: val });
+        }
       });
     }
 
-    // 3. Copy LAN URL Button
+    // 6. Copy LAN URL Button
     const copyBtn = document.getElementById('copy-lan-btn');
     if (copyBtn) {
       copyBtn.addEventListener('click', () => {
@@ -1091,6 +1272,160 @@ class NetworkSystem {
         });
       });
     }
+  }
+
+  handleLobbySync(data) {
+    if (!data) return;
+    this.lobbyMode = data.mode || 'teams';
+    this.isHost = (this.myId && data.hostId === this.myId);
+    this.hostId = data.hostId;
+    this.alphaColor = data.alphaColor || '#00f0ff';
+    this.betaColor = data.betaColor || '#ff3366';
+    this.lockedColors = data.lockedColors || [];
+    this.lobbyPlayers = data.players || [];
+
+    const me = this.lobbyPlayers.find(p => p.id === this.myId);
+    if (me) {
+      this.myTeam = me.team;
+      this.color = me.color;
+      if (this.game && this.game.player) {
+        this.game.player.team = me.team;
+        this.game.player.color = me.color;
+      }
+    }
+
+    this.renderLobbyUI();
+  }
+
+  renderLobbyUI() {
+    // 1. Submode buttons
+    const btnTeams = document.getElementById('btn-submode-teams');
+    const btnFfa = document.getElementById('btn-submode-ffa');
+    if (btnTeams) btnTeams.classList.toggle('active', this.lobbyMode === 'teams');
+    if (btnFfa) btnFfa.classList.toggle('active', this.lobbyMode === 'ffa');
+
+    // 2. Team Battle vs FFA
+    const teamGrid = document.getElementById('team-battle-grid');
+    if (teamGrid) {
+      teamGrid.style.display = this.lobbyMode === 'teams' ? 'grid' : 'none';
+    }
+
+    // 3. Host Tags & Permissions
+    const alphaHostTag = document.getElementById('alpha-host-tag');
+    const betaHostTag = document.getElementById('beta-host-tag');
+    if (alphaHostTag) {
+      alphaHostTag.textContent = this.isHost ? 'ROOM HOST (YOU)' : 'ROOM HOST ONLY';
+      alphaHostTag.style.color = this.isHost ? '#00ff88' : 'rgba(255,255,255,0.4)';
+    }
+    if (betaHostTag) {
+      betaHostTag.textContent = this.isHost ? 'ROOM HOST (YOU)' : 'ROOM HOST ONLY';
+      betaHostTag.style.color = this.isHost ? '#00ff88' : 'rgba(255,255,255,0.4)';
+    }
+
+    // 4. Team Colors & Dots
+    const alphaDot = document.getElementById('team-alpha-dot');
+    if (alphaDot) {
+      alphaDot.style.background = this.alphaColor;
+      alphaDot.style.boxShadow = `0 0 10px ${this.alphaColor}`;
+    }
+    const betaDot = document.getElementById('team-beta-dot');
+    if (betaDot) {
+      betaDot.style.background = this.betaColor;
+      betaDot.style.boxShadow = `0 0 10px ${this.betaColor}`;
+    }
+
+    // Swatches active states
+    document.querySelectorAll('#alpha-color-swatches .color-swatch-btn').forEach(btn => {
+      const col = btn.getAttribute('data-color');
+      btn.classList.toggle('active', col === this.alphaColor);
+      btn.style.opacity = this.isHost ? '1' : '0.5';
+      btn.style.cursor = this.isHost ? 'pointer' : 'not-allowed';
+    });
+    document.querySelectorAll('#beta-color-swatches .color-swatch-btn').forEach(btn => {
+      const col = btn.getAttribute('data-color');
+      btn.classList.toggle('active', col === this.betaColor);
+      btn.style.opacity = this.isHost ? '1' : '0.5';
+      btn.style.cursor = this.isHost ? 'pointer' : 'not-allowed';
+    });
+
+    // 5. Team Members
+    const alphaBox = document.getElementById('team-alpha-members');
+    const betaBox = document.getElementById('team-beta-members');
+    const alphaMembers = this.lobbyPlayers.filter(p => p.team === 'alpha');
+    const betaMembers = this.lobbyPlayers.filter(p => p.team === 'beta');
+
+    const alphaCount = document.getElementById('team-alpha-count');
+    if (alphaCount) {
+      alphaCount.textContent = `${alphaMembers.length} OPERATIVE${alphaMembers.length !== 1 ? 'S' : ''}`;
+    }
+    const betaCount = document.getElementById('team-beta-count');
+    if (betaCount) {
+      betaCount.textContent = `${betaMembers.length} OPERATIVE${betaMembers.length !== 1 ? 'S' : ''}`;
+    }
+
+    if (alphaBox) {
+      if (alphaMembers.length === 0) {
+        alphaBox.innerHTML = '<div class="team-empty-hint">NO OPERATIVES IN TEAM ALPHA</div>';
+      } else {
+        alphaBox.innerHTML = '';
+        alphaMembers.forEach(m => {
+          const item = document.createElement('div');
+          item.className = 'team-member-item';
+          item.innerHTML = `
+            <span class="member-dot" style="background: ${this.alphaColor}; box-shadow: 0 0 6px ${this.alphaColor};"></span>
+            <span class="member-name">${m.name} ${m.id === this.myId ? '(YOU)' : ''}</span>
+            ${m.isHost ? '<span class="member-host-badge">HOST</span>' : ''}
+          `;
+          alphaBox.appendChild(item);
+        });
+      }
+    }
+
+    if (betaBox) {
+      if (betaMembers.length === 0) {
+        betaBox.innerHTML = '<div class="team-empty-hint">NO OPERATIVES IN TEAM BETA</div>';
+      } else {
+        betaBox.innerHTML = '';
+        betaMembers.forEach(m => {
+          const item = document.createElement('div');
+          item.className = 'team-member-item';
+          item.innerHTML = `
+            <span class="member-dot" style="background: ${this.betaColor}; box-shadow: 0 0 6px ${this.betaColor};"></span>
+            <span class="member-name">${m.name} ${m.id === this.myId ? '(YOU)' : ''}</span>
+            ${m.isHost ? '<span class="member-host-badge">HOST</span>' : ''}
+          `;
+          betaBox.appendChild(item);
+        });
+      }
+    }
+
+    // 6. Join Buttons
+    const btnJoinAlpha = document.getElementById('btn-join-alpha');
+    const btnJoinBeta = document.getElementById('btn-join-beta');
+    const cardAlpha = document.getElementById('team-card-alpha');
+    const cardBeta = document.getElementById('team-card-beta');
+
+    if (btnJoinAlpha) {
+      const isAlpha = this.myTeam === 'alpha';
+      btnJoinAlpha.classList.toggle('joined', isAlpha);
+      btnJoinAlpha.innerHTML = isAlpha ? '<span>✓</span> JOINED TEAM ALPHA' : '<span>➔</span> JOIN TEAM ALPHA';
+      if (cardAlpha) cardAlpha.classList.toggle('my-team', isAlpha);
+    }
+    if (btnJoinBeta) {
+      const isBeta = this.myTeam === 'beta';
+      btnJoinBeta.classList.toggle('joined', isBeta);
+      btnJoinBeta.innerHTML = isBeta ? '<span>✓</span> JOINED TEAM BETA' : '<span>➔</span> JOIN TEAM BETA';
+      if (cardBeta) cardBeta.classList.toggle('my-team', isBeta);
+    }
+
+    // 7. Color Locking in FFA
+    const swatches = document.querySelectorAll('.color-swatch');
+    swatches.forEach(s => {
+      const col = s.getAttribute('data-color');
+      const isLocked = this.lockedColors.includes(col) && (col !== this.color);
+      s.classList.toggle('locked', isLocked && this.lobbyMode === 'ffa');
+      s.title = isLocked ? 'Color chosen by another operative' : '';
+    });
   }
 
   updateServerIpDisplay(ip, port, allIps) {

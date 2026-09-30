@@ -38,7 +38,7 @@ class ParticleSystem {
   }
 
   // --- Gun Muzzle Flash Effect ---
-  emitMuzzleFlash(x, y, angle) {
+  emitMuzzleFlash(x, y, angle, flashColor = '#ffe066') {
     // 1. Sparks shooting forward
     this.emit(x, y, 7, {
       angle: angle,
@@ -46,7 +46,7 @@ class ParticleSystem {
       speed: 380,
       life: 0.12,
       size: 2.5,
-      color: '#ffe066',
+      color: flashColor,
       drag: 0.86
     });
 

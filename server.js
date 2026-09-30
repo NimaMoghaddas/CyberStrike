@@ -28,8 +28,14 @@ const io = new Server(server, {
 });
 
 const PORT = process.env.PORT || 3000;
-const MAP_WIDTH = 2400;
-const MAP_HEIGHT = 2400;
+
+// Load modular map configurations
+const { MAP_DEFINITIONS, MAP_WIDTH, MAP_HEIGHT } = require('./js/maps_data');
+let currentMapId = 'sector_09';
+
+function getActiveMap() {
+  return MAP_DEFINITIONS[currentMapId] || MAP_DEFINITIONS.sector_09;
+}
 
 // Serve static frontend files
 app.use(express.static(path.join(__dirname)));
@@ -62,65 +68,14 @@ app.get('/api/network-info', (req, res) => {
   });
 });
 
-// --- MAP GEOMETRY (Matching map.js for server collision & enemy AI) ---
-const cx = MAP_WIDTH / 2;
-const cy = MAP_HEIGHT / 2;
-
-const mapWalls = [
-  // Boundaries
-  { x: 0, y: 0, w: MAP_WIDTH, h: 50 },
-  { x: 0, y: MAP_HEIGHT - 50, w: MAP_WIDTH, h: 50 },
-  { x: 0, y: 0, w: 50, h: MAP_HEIGHT },
-  { x: MAP_WIDTH - 50, y: 0, w: 50, h: MAP_HEIGHT },
-  // Center barriers
-  { x: cx - 120, y: cy - 20, w: 240, h: 40 },
-  { x: cx - 20, y: cy - 120, w: 40, h: 240 },
-  // Quadrant 1 (NW)
-  { x: 250, y: 250, w: 180, h: 90 },
-  { x: 470, y: 250, w: 90, h: 180 },
-  { x: 250, y: 480, w: 140, h: 80 },
-  { x: 680, y: 350, w: 80, h: 260 },
-  { x: 350, y: 720, w: 300, h: 50 },
-  // Quadrant 2 (NE)
-  { x: MAP_WIDTH - 450, y: 250, w: 200, h: 90 },
-  { x: MAP_WIDTH - 700, y: 280, w: 70, h: 280 },
-  { x: MAP_WIDTH - 580, y: 560, w: 320, h: 60 },
-  { x: MAP_WIDTH - 400, y: 740, w: 120, h: 120 },
-  // Quadrant 3 (SW)
-  { x: 250, y: MAP_HEIGHT - 420, w: 220, h: 90 },
-  { x: 550, y: MAP_HEIGHT - 420, w: 80, h: 200 },
-  { x: 300, y: MAP_HEIGHT - 750, w: 320, h: 60 },
-  { x: 720, y: MAP_HEIGHT - 650, w: 60, h: 280 },
-  // Quadrant 4 (SE)
-  { x: MAP_WIDTH - 500, y: MAP_HEIGHT - 450, w: 240, h: 100 },
-  { x: MAP_WIDTH - 780, y: MAP_HEIGHT - 550, w: 160, h: 80 },
-  { x: MAP_WIDTH - 400, y: MAP_HEIGHT - 780, w: 80, h: 240 },
-  { x: MAP_WIDTH - 700, y: MAP_HEIGHT - 850, w: 280, h: 60 },
-  // Midfield
-  { x: cx - 500, y: cy - 40, w: 180, h: 80 },
-  { x: cx + 320, y: cy - 40, w: 180, h: 80 },
-  { x: cx - 40, y: cy - 500, w: 80, h: 180 },
-  { x: cx - 40, y: cy + 320, w: 80, h: 180 }
-];
-
-const mapPillars = [
-  { x: cx - 260, y: cy - 260, radius: 45 },
-  { x: cx + 260, y: cy - 260, radius: 45 },
-  { x: cx - 260, y: cy + 260, radius: 45 },
-  { x: cx + 260, y: cy + 260, radius: 45 },
-  { x: 520, y: cy, radius: 40 },
-  { x: MAP_WIDTH - 520, y: cy, radius: 40 },
-  { x: cx, y: 520, radius: 40 },
-  { x: cx, y: MAP_HEIGHT - 520, radius: 40 }
-];
-
+// --- MAP GEOMETRY (Driven by active map definition for server collision & enemy AI) ---
 function isCollidingWithMap(x, y, radius = 20) {
-  // Boundaries
-  if (x < 50 + radius || x > MAP_WIDTH - 50 - radius || y < 50 + radius || y > MAP_HEIGHT - 50 - radius) {
+  const map = getActiveMap();
+  if (x < 50 + radius || x > map.width - 50 - radius || y < 50 + radius || y > map.height - 50 - radius) {
     return true;
   }
-  // Walls
-  for (const w of mapWalls) {
+  for (const w of map.walls) {
+    if (w.type === 'boundary') continue;
     const nearX = Math.max(w.x, Math.min(x, w.x + w.w));
     const nearY = Math.max(w.y, Math.min(y, w.y + w.h));
     const dx = x - nearX;
@@ -129,8 +84,7 @@ function isCollidingWithMap(x, y, radius = 20) {
       return true;
     }
   }
-  // Pillars
-  for (const p of mapPillars) {
+  for (const p of map.pillars) {
     const dx = x - p.x;
     const dy = y - p.y;
     const minD = radius + p.radius;
@@ -141,25 +95,66 @@ function isCollidingWithMap(x, y, radius = 20) {
   return false;
 }
 
-// Tactical Spawn Points for Operatives
-const SPAWN_POINTS = [
-  { x: cx, y: cy + 140 },
-  { x: cx, y: cy - 140 },
-  { x: cx - 140, y: cy },
-  { x: cx + 140, y: cy },
-  { x: 420, y: 420 },
-  { x: MAP_WIDTH - 420, y: 420 },
-  { x: 420, y: MAP_HEIGHT - 420 },
-  { x: MAP_WIDTH - 420, y: MAP_HEIGHT - 420 }
-];
+function resolveCircleCollision(entity) {
+  const map = getActiveMap();
+  let collided = false;
+  const r = entity.radius;
 
+  // 1. Boundaries
+  const pad = 52 + r;
+  if (entity.x < pad) { entity.x = pad; collided = true; }
+  if (entity.x > map.width - pad) { entity.x = map.width - pad; collided = true; }
+  if (entity.y < pad) { entity.y = pad; collided = true; }
+  if (entity.y > map.height - pad) { entity.y = map.height - pad; collided = true; }
+
+  // 2. Rectangular Walls
+  for (const wall of map.walls) {
+    if (wall.type === 'boundary') continue;
+    const nearestX = Math.max(wall.x, Math.min(entity.x, wall.x + wall.w));
+    const nearestY = Math.max(wall.y, Math.min(entity.y, wall.y + wall.h));
+    const dx = entity.x - nearestX;
+    const dy = entity.y - nearestY;
+    const distSq = dx * dx + dy * dy;
+
+    if (distSq < r * r) {
+      collided = true;
+      const dist = Math.sqrt(distSq);
+      if (dist === 0) {
+        entity.x = wall.x - r;
+      } else {
+        const overlap = r - dist;
+        entity.x += (dx / dist) * overlap;
+        entity.y += (dy / dist) * overlap;
+      }
+    }
+  }
+
+  // 3. Pillars
+  for (const pillar of map.pillars) {
+    const dx = entity.x - pillar.x;
+    const dy = entity.y - pillar.y;
+    const minDist = r + pillar.radius;
+    const distSq = dx * dx + dy * dy;
+
+    if (distSq < minDist * minDist) {
+      collided = true;
+      const dist = Math.sqrt(distSq) || 1;
+      const overlap = minDist - dist;
+      entity.x += (dx / dist) * overlap;
+      entity.y += (dy / dist) * overlap;
+    }
+  }
+
+  return collided;
+}
+
+// Tactical Spawn Points for Operatives
 function getRandomSpawnPoint() {
-  const idx = Math.floor(Math.random() * SPAWN_POINTS.length);
-  const pt = SPAWN_POINTS[idx];
-  // Add small random jitter
+  const map = getActiveMap();
+  const spawn = map.spawnPoint || { x: 1200, y: 1200 };
   return {
-    x: pt.x + (Math.random() - 0.5) * 40,
-    y: pt.y + (Math.random() - 0.5) * 40
+    x: spawn.x + (Math.random() - 0.5) * 120,
+    y: spawn.y + (Math.random() - 0.5) * 120
   };
 }
 
@@ -180,25 +175,41 @@ const players = {};
 let nextEnemyId = 1;
 const enemies = {};
 
-// Barrel States
-const initialBarrels = [
-  { id: 1, x: cx - 180, y: cy - 180, radius: 18, hp: 35, exploded: false },
-  { id: 2, x: cx + 180, y: cy - 180, radius: 18, hp: 35, exploded: false },
-  { id: 3, x: cx - 180, y: cy + 180, radius: 18, hp: 35, exploded: false },
-  { id: 4, x: cx + 180, y: cy + 180, radius: 18, hp: 35, exploded: false },
-  { id: 5, x: 420, y: 450, radius: 18, hp: 35, exploded: false },
-  { id: 6, x: 460, y: 450, radius: 18, hp: 35, exploded: false },
-  { id: 7, x: MAP_WIDTH - 420, y: 450, radius: 18, hp: 35, exploded: false },
-  { id: 8, x: MAP_WIDTH - 460, y: 450, radius: 18, hp: 35, exploded: false },
-  { id: 9, x: 420, y: MAP_HEIGHT - 450, radius: 18, hp: 35, exploded: false },
-  { id: 10, x: MAP_WIDTH - 420, y: MAP_HEIGHT - 450, radius: 18, hp: 35, exploded: false },
-  { id: 11, x: cx - 350, y: cy, radius: 18, hp: 35, exploded: false },
-  { id: 12, x: cx + 350, y: cy, radius: 18, hp: 35, exploded: false },
-  { id: 13, x: cx, y: cy - 350, radius: 18, hp: 35, exploded: false },
-  { id: 14, x: cx, y: cy + 350, radius: 18, hp: 35, exploded: false }
-];
+// Multiplayer Lobby & Team Battle State
+const lobbyState = {
+  mode: 'teams', // 'teams' | 'ffa'
+  hostId: null,
+  alphaColor: '#00f0ff',
+  betaColor: '#ff3366',
+  players: {}, // [socketId]: { id, name, team: 'alpha'|'beta'|'solo', color, isHost }
+  lockedColors: {} // [color]: socketId
+};
 
-let barrels = JSON.parse(JSON.stringify(initialBarrels));
+function broadcastLobbySync() {
+  io.emit('lobby_sync', {
+    mode: lobbyState.mode,
+    hostId: lobbyState.hostId,
+    alphaColor: lobbyState.alphaColor,
+    betaColor: lobbyState.betaColor,
+    lockedColors: Object.keys(lobbyState.lockedColors),
+    players: Object.values(lobbyState.players)
+  });
+}
+
+// Barrel States Generator
+function getInitialBarrelsForMap(mapId) {
+  const map = MAP_DEFINITIONS[mapId] || MAP_DEFINITIONS.sector_09;
+  return (map.barrels || []).map((b, idx) => ({
+    id: idx + 1,
+    x: b.x,
+    y: b.y,
+    radius: 18,
+    hp: 35,
+    exploded: false
+  }));
+}
+
+let barrels = getInitialBarrelsForMap(currentMapId);
 
 // Shared Wave State
 const waveManager = {
@@ -211,12 +222,43 @@ const waveManager = {
   spawnTimer: 0
 };
 
+// Tactical Health Pack (Medkit) System - Spawns every 5 seconds
+let nextMedkitId = 1;
+const medkits = {}; // { [id]: { id, x, y, heal: 50 } }
+let medkitTimer = 0;
+const MEDKIT_SPAWN_INTERVAL = 5.0; // 5 seconds
+const MAX_SERVER_MEDKITS = 8;
+
+function spawnServerMedkit() {
+  const map = getActiveMap();
+  let spawnX, spawnY;
+  let attempts = 0;
+  const pad = 120;
+  do {
+    spawnX = pad + Math.random() * (map.width - pad * 2);
+    spawnY = pad + Math.random() * (map.height - pad * 2);
+    attempts++;
+  } while (attempts < 30 && isCollidingWithMap(spawnX, spawnY, 35));
+
+  const medkitId = `med_${nextMedkitId++}`;
+  const medkit = {
+    id: medkitId,
+    x: Math.round(spawnX),
+    y: Math.round(spawnY),
+    heal: 50
+  };
+  medkits[medkitId] = medkit;
+
+  io.emit('medkit_spawned', medkit);
+}
+
 function startWave(waveNum) {
   waveManager.wave = waveNum;
   waveManager.state = 'intermission';
   waveManager.timer = 3.0;
 
-  const count = 5 + waveNum * 3;
+  // In Multiplayer, keep enemy count compact (2 to 4 max) because players are also in PvP/PvPvE combat
+  const count = Math.min(4, 2 + Math.floor(waveNum * 0.5));
   waveManager.enemiesToSpawn = count;
   waveManager.totalEnemiesInWave = count;
   waveManager.spawnTimer = 0.5;
@@ -224,28 +266,63 @@ function startWave(waveNum) {
   io.emit('wave_start', {
     wave: waveManager.wave,
     totalEnemies: waveManager.totalEnemiesInWave,
-    message: `HOSTILE WAVE ${waveNum} DETECTED`
+    message: `HOSTILE WAVE ${waveNum}`
   });
 }
 
 function spawnServerEnemy() {
   const roll = Math.random();
   let type = 'normal';
-  let radius = 22, maxHp = 90, speed = 155, damage = 20, scoreValue = 100, color = '#00ff88', attackCooldown = 0.85, attackRange = 32;
+  let radius = 22, maxHp = 90, speed = 155, damage = 20, scoreValue = 100, color = '#00ff88', attackCooldown = 0.85, attackRange = 48;
 
-  if (waveManager.wave >= 3 && roll < 0.22) {
-    type = 'tank';
-    radius = 34; maxHp = 350; speed = 85; damage = 38; scoreValue = 400; color = '#ff3366'; attackCooldown = 1.2; attackRange = 46;
-  } else if (waveManager.wave >= 2 && roll < 0.55) {
-    type = 'fast';
-    radius = 16; maxHp = 45; speed = 240; damage = 12; scoreValue = 150; color = '#00f0ff'; attackCooldown = 0.6; attackRange = 26;
+  if (waveManager.wave === 1) {
+    if (roll < 0.6) type = 'normal';
+    else {
+      type = 'fast';
+      radius = 16; maxHp = 45; speed = 240; damage = 12; scoreValue = 150; color = '#00f0ff'; attackCooldown = 0.6; attackRange = 40;
+    }
+  } else if (waveManager.wave === 2) {
+    if (roll < 0.35) {
+      type = 'normal';
+    } else if (roll < 0.65) {
+      type = 'fast';
+      radius = 16; maxHp = 45; speed = 240; damage = 12; scoreValue = 150; color = '#00f0ff'; attackCooldown = 0.6; attackRange = 40;
+    } else {
+      type = 'shielded';
+      radius = 24; maxHp = 160; speed = 130; damage = 22; scoreValue = 250; color = '#00d4ff'; attackCooldown = 0.9; attackRange = 45;
+    }
+  } else if (waveManager.wave === 3) {
+    if (roll < 0.35) {
+      type = 'shielded';
+      radius = 24; maxHp = 160; speed = 130; damage = 22; scoreValue = 250; color = '#00d4ff'; attackCooldown = 0.9; attackRange = 45;
+    } else if (roll < 0.7) {
+      type = 'sniper';
+      radius = 20; maxHp = 75; speed = 115; damage = 28; scoreValue = 300; color = '#b026ff'; attackCooldown = 1.0; attackRange = 40;
+    } else {
+      type = 'bomber';
+      radius = 18; maxHp = 60; speed = 210; damage = 50; scoreValue = 200; color = '#ff7700'; attackCooldown = 0.5; attackRange = 36;
+    }
+  } else { // Wave 4+
+    if (roll < 0.25) {
+      type = 'tank';
+      radius = 34; maxHp = 350; speed = 85; damage = 38; scoreValue = 400; color = '#ff3366'; attackCooldown = 1.2; attackRange = 60;
+    } else if (roll < 0.5) {
+      type = 'shielded';
+      radius = 24; maxHp = 160; speed = 130; damage = 22; scoreValue = 250; color = '#00d4ff'; attackCooldown = 0.9; attackRange = 45;
+    } else if (roll < 0.75) {
+      type = 'sniper';
+      radius = 20; maxHp = 75; speed = 115; damage = 28; scoreValue = 300; color = '#b026ff'; attackCooldown = 1.0; attackRange = 40;
+    } else {
+      type = 'bomber';
+      radius = 18; maxHp = 60; speed = 210; damage = 50; scoreValue = 200; color = '#ff7700'; attackCooldown = 0.5; attackRange = 36;
+    }
   }
 
   // Pick random alive player as anchor to spawn around
   const alivePlayers = Object.values(players).filter(p => p.alive);
   const anchor = alivePlayers.length > 0
     ? alivePlayers[Math.floor(Math.random() * alivePlayers.length)]
-    : { x: cx, y: cy };
+    : { x: 1200, y: 1200 };
 
   let spawnX, spawnY;
   let attempts = 0;
@@ -278,7 +355,10 @@ function spawnServerEnemy() {
     color,
     attackCooldown,
     attackRange,
-    attackTimer: 0
+    attackTimer: 0,
+    spitCooldown: 3.2,
+    spitTimer: 1.5 + Math.random() * 2.0,
+    spitWindupTimer: 0
   };
 
   waveManager.enemiesToSpawn--;
@@ -402,10 +482,32 @@ function schedulePlayerRespawn(player) {
 io.on('connection', (socket) => {
   console.log(`[CONNECT] Operative connected: ${socket.id}`);
 
+  // Assign or retain Room Host
+  if (!lobbyState.hostId) {
+    lobbyState.hostId = socket.id;
+  }
+
   // Auto assign color and callsign
-  const colorIndex = Object.keys(players).length % OPERATIVE_COLORS.length;
-  const defaultColor = OPERATIVE_COLORS[colorIndex];
   const defaultName = `OPERATIVE-${socket.id.substring(0, 4).toUpperCase()}`;
+  let assignedColor = OPERATIVE_COLORS.find(c => !lobbyState.lockedColors[c]) || OPERATIVE_COLORS[0];
+  lobbyState.lockedColors[assignedColor] = socket.id;
+
+  // Auto-balance team
+  const alphaCount = Object.values(lobbyState.players).filter(p => p.team === 'alpha').length;
+  const betaCount = Object.values(lobbyState.players).filter(p => p.team === 'beta').length;
+  const assignedTeam = alphaCount <= betaCount ? 'alpha' : 'beta';
+
+  const playerColor = lobbyState.mode === 'teams'
+    ? (assignedTeam === 'alpha' ? lobbyState.alphaColor : lobbyState.betaColor)
+    : assignedColor;
+
+  lobbyState.players[socket.id] = {
+    id: socket.id,
+    name: defaultName,
+    team: assignedTeam,
+    color: playerColor,
+    isHost: socket.id === lobbyState.hostId
+  };
 
   // 1. Send initialization data to the new client
   socket.emit('init_data', {
@@ -416,6 +518,15 @@ io.on('connection', (socket) => {
     players: Object.values(players),
     enemies: Object.values(enemies),
     barrels,
+    medkits: Object.values(medkits),
+    lobby: {
+      mode: lobbyState.mode,
+      hostId: lobbyState.hostId,
+      alphaColor: lobbyState.alphaColor,
+      betaColor: lobbyState.betaColor,
+      lockedColors: Object.keys(lobbyState.lockedColors),
+      players: Object.values(lobbyState.players)
+    },
     waveInfo: {
       wave: waveManager.wave,
       state: waveManager.state,
@@ -425,18 +536,131 @@ io.on('connection', (socket) => {
     }
   });
 
+  broadcastLobbySync();
+
+  // Lobby: Update Operative Callsign
+  socket.on('lobby_update_name', (data) => {
+    const lp = lobbyState.players[socket.id];
+    if (lp && data && data.name) {
+      lp.name = data.name.trim().substring(0, 16);
+      broadcastLobbySync();
+    }
+  });
+
+  // Lobby: Host updates Mode (Teams vs FFA)
+  socket.on('lobby_set_mode', (data) => {
+    if (socket.id !== lobbyState.hostId) return;
+    if (data && (data.mode === 'teams' || data.mode === 'ffa')) {
+      lobbyState.mode = data.mode;
+      for (const pid in lobbyState.players) {
+        const lp = lobbyState.players[pid];
+        if (lobbyState.mode === 'teams') {
+          lp.color = lp.team === 'alpha' ? lobbyState.alphaColor : lobbyState.betaColor;
+        } else {
+          for (const col in lobbyState.lockedColors) {
+            if (lobbyState.lockedColors[col] === pid) {
+              lp.color = col;
+              break;
+            }
+          }
+        }
+        if (players[pid]) {
+          players[pid].color = lp.color;
+        }
+      }
+      broadcastLobbySync();
+    }
+  });
+
+  // Lobby: Host sets Team Color (Alpha or Beta)
+  socket.on('lobby_set_team_color', (data) => {
+    if (socket.id !== lobbyState.hostId) return;
+    if (!data || !data.team || !data.color) return;
+    if (data.team === 'alpha') {
+      lobbyState.alphaColor = data.color;
+    } else if (data.team === 'beta') {
+      lobbyState.betaColor = data.color;
+    }
+    for (const pid in lobbyState.players) {
+      const lp = lobbyState.players[pid];
+      if (lp.team === data.team) {
+        lp.color = data.color;
+        if (players[pid]) players[pid].color = data.color;
+      }
+    }
+    broadcastLobbySync();
+  });
+
+  // Lobby: Player Joins a Team
+  socket.on('lobby_join_team', (data) => {
+    const lp = lobbyState.players[socket.id];
+    if (lp && data && (data.team === 'alpha' || data.team === 'beta')) {
+      lp.team = data.team;
+      lp.color = data.team === 'alpha' ? lobbyState.alphaColor : lobbyState.betaColor;
+      if (players[socket.id]) {
+        players[socket.id].team = lp.team;
+        players[socket.id].color = lp.color;
+      }
+      broadcastLobbySync();
+    }
+  });
+
+  // Lobby: Player selects individual color in FFA mode
+  socket.on('lobby_select_color', (data) => {
+    const lp = lobbyState.players[socket.id];
+    if (lp && data && data.color) {
+      if (lobbyState.lockedColors[data.color] && lobbyState.lockedColors[data.color] !== socket.id) {
+        socket.emit('color_lock_rejected', { color: data.color });
+        return;
+      }
+      for (const col in lobbyState.lockedColors) {
+        if (lobbyState.lockedColors[col] === socket.id) {
+          delete lobbyState.lockedColors[col];
+        }
+      }
+      lobbyState.lockedColors[data.color] = socket.id;
+      lp.color = data.color;
+      if (players[socket.id]) {
+        players[socket.id].color = data.color;
+      }
+      broadcastLobbySync();
+    }
+  });
+
   // 2. Client joins active game
   socket.on('join_game', (data) => {
     const spawn = getRandomSpawnPoint();
+    const lp = lobbyState.players[socket.id];
     const name = (data && data.name && data.name.trim().length > 0)
       ? data.name.trim().substring(0, 16)
-      : defaultName;
-    const color = (data && data.color) ? data.color : defaultColor;
+      : (lp ? lp.name : defaultName);
+
+    if (lp) lp.name = name;
+
+    const team = (lobbyState.mode === 'teams' && lp) ? lp.team : 'solo';
+    const color = (lobbyState.mode === 'teams' && lp)
+      ? (lp.team === 'alpha' ? lobbyState.alphaColor : lobbyState.betaColor)
+      : (lp ? lp.color : assignedColor);
+
+    // Push pre-existing enemies away from spawn point so joining player is safe
+    for (const eid in enemies) {
+      const e = enemies[eid];
+      const d = Math.hypot(e.x - spawn.x, e.y - spawn.y);
+      if (d < 500) {
+        const angle = Math.atan2(e.y - spawn.y, e.x - spawn.x) || Math.random() * Math.PI * 2;
+        e.x = spawn.x + Math.cos(angle) * 650;
+        e.y = spawn.y + Math.sin(angle) * 650;
+        resolveCircleCollision(e);
+      }
+    }
 
     const newPlayer = {
       id: socket.id,
       name,
+      team,
       color,
+      skinId: (data && data.skinId) ? data.skinId : 'spectre',
+      weapon: (data && data.weapon) ? data.weapon : 'rifle',
       x: spawn.x,
       y: spawn.y,
       vx: 0,
@@ -448,7 +672,7 @@ io.on('connection', (socket) => {
       kills: 0,
       deaths: 0,
       alive: true,
-      invulnerableTimer: 2.0,
+      invulnerableTimer: 2.5,
       isDashing: false,
       isReloading: false,
       isMoving: false,
@@ -458,11 +682,21 @@ io.on('connection', (socket) => {
       lastUpdate: Date.now()
     };
 
+    // If a specific map is requested and no other players are active, set map
+    if (data && data.mapId && MAP_DEFINITIONS[data.mapId]) {
+      if (Object.keys(players).length === 0) {
+        currentMapId = data.mapId;
+        barrels = getInitialBarrelsForMap(currentMapId);
+        io.emit('map_sync', { mapId: currentMapId });
+      }
+    }
+
     players[socket.id] = newPlayer;
 
-    // Acknowledge to joined player
+    // Acknowledge to joined player with current map
     socket.emit('joined_successfully', {
-      player: newPlayer
+      player: newPlayer,
+      mapId: currentMapId
     });
 
     // Broadcast to other players
@@ -472,12 +706,12 @@ io.on('connection', (socket) => {
 
     // Killfeed notification
     io.emit('kill_feed_msg', {
-      text: `${name} DEPLOYED TO SECTOR`,
+      text: `${name} DEPLOYED TO SECTOR [${team.toUpperCase()}]`,
       type: 'join',
       color: newPlayer.color
     });
 
-    console.log(`[JOIN] ${name} (${socket.id}) entered battle. Total: ${Object.keys(players).length}`);
+    console.log(`[JOIN] ${name} (${socket.id}) entered battle on map [${currentMapId}] Team: ${team}. Total: ${Object.keys(players).length}`);
   });
 
   // 3. High-frequency Player Input / Position Update
@@ -495,6 +729,7 @@ io.on('connection', (socket) => {
     p.isMoving = !!data.isMoving;
     p.walkCycle = data.walkCycle || 0;
     p.recoilOffset = data.recoilOffset || 0;
+    p.weapon = data.weapon || p.weapon || 'rifle';
     p.lastUpdate = Date.now();
   });
 
@@ -503,14 +738,25 @@ io.on('connection', (socket) => {
     const p = players[socket.id];
     if (!p || !p.alive) return;
 
-    // Relay to other players
+    const bulletColor = data.color || p.color || '#00f0ff';
+
+    // Relay to other players with complete weapon & bullet physics
     socket.broadcast.emit('remote_shoot', {
       shooterId: socket.id,
       x: data.x,
       y: data.y,
       angle: data.angle,
       isCritical: !!data.isCritical,
-      damage: data.damage || 28
+      damage: data.damage || 28,
+      color: bulletColor,
+      weaponType: data.weaponType || p.weapon || 'rifle',
+      speed: data.speed,
+      range: data.range,
+      radius: data.radius,
+      penetrating: !!data.penetrating,
+      explosive: !!data.explosive,
+      splashDamage: data.splashDamage,
+      blastRadius: data.blastRadius
     });
   });
 
@@ -565,6 +811,11 @@ io.on('connection', (socket) => {
     if (!shooter || !target || !target.alive || socket.id === data.targetId) return;
     if (target.invulnerableTimer > 0) return; // Spawn / dash invulnerability
 
+    // Teammate friendly fire protection in Team Battle mode
+    if (lobbyState.mode === 'teams' && shooter.team && target.team && shooter.team === target.team) {
+      return;
+    }
+
     const damage = data.damage || 28;
     target.hp -= damage;
 
@@ -615,6 +866,59 @@ io.on('connection', (socket) => {
     }
   });
 
+  // 6.5. Player Self-Elimination / Environmental Death
+  socket.on('player_died', (data) => {
+    const p = players[socket.id];
+    if (!p || !p.alive) return;
+
+    p.hp = 0;
+    p.alive = false;
+    p.deaths++;
+
+    schedulePlayerRespawn(p);
+
+    io.emit('player_eliminated', {
+      killerId: p.id,
+      killerName: p.name,
+      killerColor: p.color,
+      victimId: p.id,
+      victimName: p.name,
+      victimColor: p.color,
+      isSelf: true
+    });
+
+    io.emit('kill_feed_msg', {
+      killer: p.name,
+      killerColor: p.color,
+      victim: (data && data.reason) ? data.reason : 'SELF (CRITICAL CASUALTY)',
+      type: 'pvp_death',
+      isSelf: true
+    });
+  });
+
+  // 6.8. Pickup Medkit (+50 HP)
+  socket.on('pickup_medkit', (data) => {
+    const p = players[socket.id];
+    if (!p || !p.alive) return;
+    const medkit = medkits[data.id];
+    if (!medkit) return;
+
+    const dx = p.x - medkit.x;
+    const dy = p.y - medkit.y;
+    if (dx * dx + dy * dy <= 60 * 60) {
+      delete medkits[data.id];
+      p.hp = Math.min(p.maxHp, p.hp + (medkit.heal || 50));
+      io.emit('medkit_collected', {
+        id: data.id,
+        collectorId: socket.id,
+        collectorName: p.name,
+        hp: p.hp,
+        x: medkit.x,
+        y: medkit.y
+      });
+    }
+  });
+
   // 7. Hit Barrel
   socket.on('hit_barrel', (data) => {
     const barrel = barrels.find(b => b.id === data.barrelId);
@@ -651,6 +955,22 @@ io.on('connection', (socket) => {
 
   // 10. Disconnect
   socket.on('disconnect', () => {
+    // Clean up from lobby
+    delete lobbyState.players[socket.id];
+    for (const col in lobbyState.lockedColors) {
+      if (lobbyState.lockedColors[col] === socket.id) {
+        delete lobbyState.lockedColors[col];
+      }
+    }
+    if (lobbyState.hostId === socket.id) {
+      const remaining = Object.keys(lobbyState.players);
+      lobbyState.hostId = remaining.length > 0 ? remaining[0] : null;
+      if (lobbyState.hostId && lobbyState.players[lobbyState.hostId]) {
+        lobbyState.players[lobbyState.hostId].isHost = true;
+      }
+    }
+    broadcastLobbySync();
+
     const p = players[socket.id];
     if (p) {
       console.log(`[DISCONNECT] ${p.name} left`);
@@ -663,6 +983,19 @@ io.on('connection', (socket) => {
         type: 'leave'
       });
       delete players[socket.id];
+    }
+
+    // Clean reset if room is completely empty
+    if (Object.keys(players).length === 0) {
+      for (const eid in enemies) delete enemies[eid];
+      for (const mid in medkits) delete medkits[mid];
+      waveManager.wave = 1;
+      waveManager.state = 'intermission';
+      waveManager.timer = 3.0;
+      waveManager.enemiesToSpawn = 0;
+      waveManager.totalEnemiesInWave = 0;
+      barrels = getInitialBarrelsForMap(currentMapId);
+      console.log('[RESET] All operatives disconnected. Sector restored to initial Wave 1.');
     }
   });
 });
@@ -684,6 +1017,15 @@ setInterval(() => {
 
   // 2. Wave Progression & Spawning
   if (alivePlayers.length > 0) {
+    // 2.1 Medkit Spawn Timer (Every 5 seconds)
+    medkitTimer += DT;
+    if (medkitTimer >= MEDKIT_SPAWN_INTERVAL) {
+      medkitTimer = 0;
+      if (Object.keys(medkits).length < MAX_SERVER_MEDKITS) {
+        spawnServerMedkit();
+      }
+    }
+
     if (waveManager.state === 'intermission') {
       waveManager.timer -= DT;
       if (waveManager.timer <= 0) {
@@ -746,44 +1088,159 @@ setInterval(() => {
         const dx = closestP.x - enemy.x;
         const dy = closestP.y - enemy.y;
         let targetAngle = Math.atan2(dy, dx);
+        const curDist = Math.hypot(dx, dy);
+        const minDistanceToPlayer = enemy.radius + 20; // 20 is player radius
 
-        // Simple obstacle probe ahead
-        const probeDist = enemy.radius * 2.0;
-        const probeX = enemy.x + Math.cos(targetAngle) * probeDist;
-        const probeY = enemy.y + Math.sin(targetAngle) * probeDist;
+        // 1. 5-Second Stuck Detection: If stalled in one spot for 5s against a wall, force a detour
+        enemy.stuckCheckTimer = (enemy.stuckCheckTimer || 0) + DT;
+        if (enemy.detourTimer > 0) enemy.detourTimer -= DT;
 
-        if (isCollidingWithMap(probeX, probeY, enemy.radius)) {
-          const leftAngle = targetAngle - Math.PI / 3;
-          const rightAngle = targetAngle + Math.PI / 3;
-          if (!isCollidingWithMap(enemy.x + Math.cos(leftAngle) * probeDist, enemy.y + Math.sin(leftAngle) * probeDist, enemy.radius)) {
-            targetAngle = leftAngle;
-          } else if (!isCollidingWithMap(enemy.x + Math.cos(rightAngle) * probeDist, enemy.y + Math.sin(rightAngle) * probeDist, enemy.radius)) {
-            targetAngle = rightAngle;
+        // Reset detour when arriving near player so enemy directly engages without circling
+        if (curDist <= minDistanceToPlayer + 25) {
+          enemy.detourTimer = 0;
+          enemy.stuckAccumTime = 0;
+        }
+
+        if (enemy.stuckCheckTimer >= 0.5) {
+          const distMoved = Math.hypot(enemy.x - (enemy.lastCheckX || enemy.x), enemy.y - (enemy.lastCheckY || enemy.y));
+          enemy.lastCheckX = enemy.x;
+          enemy.lastCheckY = enemy.y;
+          enemy.stuckCheckTimer = 0;
+
+          // Only accumulate stuck time if barely moved (< 12px in 0.5s) and far from player
+          if (distMoved < 12 && curDist > minDistanceToPlayer + 35) {
+            enemy.stuckAccumTime = (enemy.stuckAccumTime || 0) + 0.5;
+            if (enemy.stuckAccumTime >= 5.0) { // Exactly 5 seconds threshold
+              enemy.detourTimer = 1.8;
+              enemy.detourSign = Math.random() < 0.5 ? 1 : -1;
+              enemy.stuckAccumTime = 0;
+            }
           } else {
-            targetAngle += Math.PI / 2;
+            enemy.stuckAccumTime = Math.max(0, (enemy.stuckAccumTime || 0) - 0.5);
           }
         }
 
-        enemy.angle = targetAngle;
+        // 2. Obstacle Avoidance & Steering Feelers (Only when blocked by a wall)
+        const probeDist = Math.min(curDist, enemy.radius * 2.2);
+        const probeX = enemy.x + Math.cos(targetAngle) * probeDist;
+        const probeY = enemy.y + Math.sin(targetAngle) * probeDist;
+        const pathBlocked = isCollidingWithMap(probeX, probeY, enemy.radius);
 
-        // Move towards target
-        const stepX = Math.cos(enemy.angle) * enemy.speed * DT;
-        const stepY = Math.sin(enemy.angle) * enemy.speed * DT;
+        if ((pathBlocked || enemy.detourTimer > 0) && curDist > minDistanceToPlayer + 20) {
+          const detourSign = enemy.detourSign || 1;
+          const offsets = [
+            detourSign * (Math.PI / 4),
+            detourSign * (Math.PI / 2),
+            -detourSign * (Math.PI / 4),
+            -detourSign * (Math.PI / 2),
+            detourSign * (Math.PI * 0.75),
+            -detourSign * (Math.PI * 0.75)
+          ];
 
-        const nextX = enemy.x + stepX;
-        const nextY = enemy.y + stepY;
+          for (const off of offsets) {
+            const testA = targetAngle + off;
+            const tx = enemy.x + Math.cos(testA) * probeDist;
+            const ty = enemy.y + Math.sin(testA) * probeDist;
 
-        if (!isCollidingWithMap(nextX, nextY, enemy.radius)) {
-          enemy.x = nextX;
-          enemy.y = nextY;
+            if (!isCollidingWithMap(tx, ty, enemy.radius)) {
+              targetAngle = testA;
+              break;
+            }
+          }
         }
 
-        // Melee Attack Check
-        if (minDistance <= enemy.attackRange + closestP.radius && enemy.attackTimer <= 0) {
+        // Smooth rotation towards target (eliminates jittery direction changes)
+        let angleDiff = targetAngle - enemy.angle;
+        while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+        while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+        enemy.angle += Math.sign(angleDiff) * Math.min(Math.abs(angleDiff), 9.0 * DT);
+
+        // Move towards target
+        let stepX = Math.cos(enemy.angle) * enemy.speed * DT;
+        let stepY = Math.sin(enemy.angle) * enemy.speed * DT;
+
+        // Stop forward velocity into player when already touching player's body
+        if (curDist <= minDistanceToPlayer + 4 && curDist > 0.001) {
+          const toPx = (closestP.x - enemy.x) / curDist;
+          const toPy = (closestP.y - enemy.y) / curDist;
+          const dot = stepX * toPx + stepY * toPy;
+          if (dot > 0) {
+            stepX -= toPx * dot;
+            stepY -= toPy * dot;
+          }
+        }
+
+        // Apply movement with wall sliding
+        enemy.x += stepX;
+        resolveCircleCollision(enemy);
+        enemy.y += stepY;
+        resolveCircleCollision(enemy);
+
+        // Solid Player Collision Resolution (Enemy cannot enter inside player's body)
+        const afterDist = Math.hypot(closestP.x - enemy.x, closestP.y - enemy.y);
+        if (afterDist < minDistanceToPlayer && afterDist > 0.0001) {
+          const pushOut = minDistanceToPlayer - afterDist;
+          const nx = (enemy.x - closestP.x) / afterDist;
+          const ny = (enemy.y - closestP.y) / afterDist;
+          enemy.x += nx * pushOut;
+          enemy.y += ny * pushOut;
+          resolveCircleCollision(enemy);
+        }
+
+        // Ranged Acid Spit Attack for Normal Enemies
+        if (enemy.type === 'normal') {
+          if (enemy.spitTimer === undefined) enemy.spitTimer = 1.5 + Math.random() * 2.0;
+          if (enemy.spitWindupTimer > 0) {
+            enemy.spitWindupTimer -= DT;
+            if (enemy.spitWindupTimer <= 0) {
+              const mouthX = enemy.x + Math.cos(enemy.angle) * (enemy.radius + 6);
+              const mouthY = enemy.y + Math.sin(enemy.angle) * (enemy.radius + 6);
+              io.emit('enemy_spit', {
+                enemyId: enemy.id,
+                x: mouthX,
+                y: mouthY,
+                angle: enemy.angle,
+                speed: 460,
+                damage: 16
+              });
+            }
+          } else {
+            enemy.spitTimer -= DT;
+            if (enemy.spitTimer <= 0 && curDist >= 85 && curDist <= 340) {
+              enemy.spitTimer = 3.4 + Math.random() * 1.2;
+              enemy.spitWindupTimer = 0.38;
+              io.emit('enemy_windup', { enemyId: enemy.id, duration: 0.38 });
+            }
+          }
+        }
+
+        // Melee Attack Check (Reliable reach when reaching/touching player)
+        const distAfterMove = Math.hypot(closestP.x - enemy.x, closestP.y - enemy.y);
+        const attackReach = enemy.radius + 20 + 12;
+        if (distAfterMove <= attackReach && enemy.attackTimer <= 0) {
           enemy.attackTimer = enemy.attackCooldown;
 
           if (closestP.invulnerableTimer <= 0) {
-            closestP.hp -= enemy.damage;
+            closestP.hp = Math.max(0, closestP.hp - enemy.damage);
+            closestP.invulnerableTimer = 0.25;
+
+            // Defensive repulsion on surrounding hostiles to prevent crowding
+            const repulseRadius = 320;
+            for (const oeId in enemies) {
+              const oe = enemies[oeId];
+              const edx = oe.x - closestP.x;
+              const edy = oe.y - closestP.y;
+              const edist = Math.hypot(edx, edy);
+              if (edist < repulseRadius) {
+                const targetDist = 240;
+                const pushForce = Math.max(180, targetDist - edist);
+                const pushAngle = edist > 0.001 ? Math.atan2(edy, edx) : Math.random() * Math.PI * 2;
+                oe.x += Math.cos(pushAngle) * pushForce;
+                oe.y += Math.sin(pushAngle) * pushForce;
+                oe.attackTimer = Math.max(oe.attackTimer || 0, 0.75);
+                resolveCircleCollision(oe);
+              }
+            }
 
             if (closestP.hp <= 0) {
               closestP.hp = 0;
@@ -835,6 +1292,7 @@ setInterval(() => {
     players: Object.values(players).map(p => ({
       id: p.id,
       name: p.name,
+      team: p.team || 'solo',
       color: p.color,
       x: Math.round(p.x),
       y: Math.round(p.y),
@@ -852,7 +1310,8 @@ setInterval(() => {
       isReloading: p.isReloading,
       isMoving: p.isMoving,
       walkCycle: Number(p.walkCycle.toFixed(2)),
-      recoilOffset: Number(p.recoilOffset.toFixed(1))
+      recoilOffset: Number(p.recoilOffset.toFixed(1)),
+      weapon: p.weapon || 'rifle'
     })),
     enemies: Object.values(enemies).map(e => ({
       id: e.id,
@@ -865,6 +1324,7 @@ setInterval(() => {
       radius: e.radius,
       color: e.color
     })),
+    medkits: Object.values(medkits),
     wave: {
       wave: waveManager.wave,
       state: waveManager.state,
