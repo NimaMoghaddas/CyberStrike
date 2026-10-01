@@ -433,6 +433,11 @@ class Player {
     this.accel = 1800;
     this.friction = 1400;
 
+    // Safe Ground Tracking & Unstuck Failsafe
+    this.lastSafeX = x;
+    this.lastSafeY = y;
+    this.stuckTimer = 0;
+
     // Health & Stats
     this.maxHp = 100;
     this.hp = 100;
@@ -671,8 +676,20 @@ class Player {
 
     if (this.isDashing) {
       this.dashTimer -= dt;
-      this.x += Math.cos(this.dashAngle) * this.dashSpeed * dt;
-      this.y += Math.sin(this.dashAngle) * this.dashSpeed * dt;
+
+      // Sub-stepped dash movement (max 8px per step) to strictly prevent tunneling through thin walls
+      const totalDashDist = this.dashSpeed * dt;
+      const stepDist = 8;
+      const steps = Math.max(1, Math.ceil(totalDashDist / stepDist));
+      const stepX = (Math.cos(this.dashAngle) * totalDashDist) / steps;
+      const stepY = (Math.sin(this.dashAngle) * totalDashDist) / steps;
+
+      for (let s = 0; s < steps; s++) {
+        this.x += stepX;
+        map.resolveCircleCollision(this);
+        this.y += stepY;
+        map.resolveCircleCollision(this);
+      }
 
       // Spawn Ghost Trail
       if (Math.random() > 0.3) {
@@ -731,15 +748,19 @@ class Player {
         this.startDash(Math.atan2(this.vy, this.vx));
       }
 
-      // Apply Velocity
+      // Axis-Decoupled Movement with wall sliding (prevents corner traps and sticky geometry)
       this.x += this.vx * dt;
+      if (map.resolveCircleCollision(this)) {
+        this.vx *= 0.1;
+      }
+
       this.y += this.vy * dt;
+      if (map.resolveCircleCollision(this)) {
+        this.vy *= 0.1;
+      }
     }
 
-    // Resolve Map Wall & Barrier Collisions
-    map.resolveCircleCollision(this);
-
-    // Resolve Solid Body Collisions against Alive Enemies
+    // Resolve Solid Body Collisions against Alive Enemies (distributed pushback)
     if (game && game.enemies) {
       for (const enemy of game.enemies) {
         if (!enemy.alive) continue;
@@ -747,11 +768,32 @@ class Player {
         const minDist = this.radius + enemy.radius;
         if (edist < minDist && edist > 0.0001) {
           const push = minDist - edist;
-          this.x += ((this.x - enemy.x) / edist) * push;
-          this.y += ((this.y - enemy.y) / edist) * push;
+          const nx = (this.x - enemy.x) / edist;
+          const ny = (this.y - enemy.y) / edist;
+
+          // Repel both player and enemy mutually so player isn't crushed through walls
+          this.x += nx * (push * 0.5);
+          this.y += ny * (push * 0.5);
+          enemy.x -= nx * (push * 0.5);
+          enemy.y -= ny * (push * 0.5);
+          map.resolveCircleCollision(enemy);
         }
       }
       map.resolveCircleCollision(this);
+    }
+
+    // Fail-safe Ground Check & Auto-Unstuck Recovery
+    if (!map.isColliding(this.x, this.y, this.radius)) {
+      this.lastSafeX = this.x;
+      this.lastSafeY = this.y;
+      this.stuckTimer = 0;
+    } else {
+      this.stuckTimer = (this.stuckTimer || 0) + dt;
+      if (this.stuckTimer > 0.05) {
+        // Automatically rescue player out of obstacle
+        map.unstuckEntity(this);
+        this.stuckTimer = 0;
+      }
     }
 
     // 3. Update Dash Ghost Trails
@@ -878,8 +920,10 @@ class Player {
         splashDamage: w.splashDamage,
         blastRadius: w.blastRadius,
         screenShake: w.screenShake,
-        shooterId: game.localPlayerId || null
+        shooterId: game.localPlayerId || null,
+        shooterTeam: this.team || (game.network ? game.network.myTeam : null)
       });
+      bullet.shooterTeam = this.team || (game.network ? game.network.myTeam : null);
 
       game.bullets.push(bullet);
 

@@ -27,9 +27,9 @@ const MAP_DEFINITIONS = {
     spawnPoint: { x: 450, y: 450 },
     spawns: [
       { x: 450, y: 450 },     // NW Forklift Bay
-      { x: 1950, y: 1950 },   // SE Fuel Depot
-      { x: 450, y: 1950 },    // SW Container Terminal
-      { x: 1950, y: 550 }     // NE Foundry
+      { x: 1960, y: 1950 },   // SE Fuel Depot
+      { x: 480, y: 2040 },    // SW Container Terminal
+      { x: 2000, y: 550 }     // NE Foundry
     ],
     width: MAP_WIDTH,
     height: MAP_HEIGHT,
@@ -90,9 +90,9 @@ const MAP_DEFINITIONS = {
     ],
     pillars: [
       // Smelting Vats & Hydraulic Crane Columns (Irregular)
-      { x: 1650, y: 320, radius: 48 },
+      { x: 1655, y: 330, radius: 36 },
       { x: 2120, y: 420, radius: 42 },
-      { x: 1450, y: 650, radius: 36 },
+      { x: 1525, y: 650, radius: 36 },
       { x: 1480, y: 1520, radius: 44 },
       { x: 1680, y: 1520, radius: 44 },
       { x: 550, y: 1050, radius: 38 },
@@ -125,12 +125,12 @@ const MAP_DEFINITIONS = {
     badge: 'TIGHT CQB // FLANKING AISLES',
     hazardLevel: 'INTENSE',
     description: 'Subterranean classified installation with tight server bank corridors, cryo-stasis vaults, and heavy blast doors.',
-    spawnPoint: { x: 380, y: 1200 },
+    spawnPoint: { x: 440, y: 1210 },
     spawns: [
-      { x: 380, y: 1200 },    // Server Vault Core
-      { x: 2050, y: 550 },    // Cryo-Stasis Bay
+      { x: 440, y: 1210 },    // Server Vault Aisle
+      { x: 2000, y: 610 },    // Cryo-Stasis Bay
       { x: 1350, y: 2050 },   // Decontamination Airlock
-      { x: 1050, y: 450 }     // Tech Access Tunnel
+      { x: 1080, y: 510 }     // Tech Access Tunnel
     ],
     width: MAP_WIDTH,
     height: MAP_HEIGHT,
@@ -185,16 +185,16 @@ const MAP_DEFINITIONS = {
     ],
     pillars: [
       // Cryo-Stasis Cylinders (Asymmetric pod layout)
-      { x: 1200, y: 320, radius: 38 },
-      { x: 1350, y: 320, radius: 38 },
+      { x: 1375, y: 350, radius: 36 },
+      { x: 1350, y: 325, radius: 36 },
       { x: 1500, y: 320, radius: 38 },
       { x: 1850, y: 380, radius: 46 },
-      { x: 1950, y: 520, radius: 46 },
+      { x: 1960, y: 460, radius: 36 },
       // Command Hub Structural Reactor Columns
       { x: 1080, y: 1080, radius: 44 },
       { x: 1620, y: 1150, radius: 44 },
       // South Airlock Filter Pylons
-      { x: 1380, y: 1720, radius: 40 }
+      { x: 1565, y: 1720, radius: 36 }
     ],
     barrels: [
       // Chemical agent & fuel canisters in side-alcoves
@@ -226,9 +226,9 @@ const MAP_DEFINITIONS = {
     spawnPoint: { x: 380, y: 380 },
     spawns: [
       { x: 380, y: 380 },     // North-West Boulevard Entry
-      { x: 2050, y: 2050 },   // South-East Metro Exit
-      { x: 420, y: 1950 },    // South-West Night Market
-      { x: 1950, y: 450 }     // North-East Tenement Rooftop
+      { x: 2030, y: 2020 },   // South-East Metro Exit
+      { x: 400, y: 1860 },    // South-West Night Market
+      { x: 1930, y: 430 }     // North-East Tenement Rooftop
     ],
     width: MAP_WIDTH,
     height: MAP_HEIGHT,
@@ -290,7 +290,7 @@ const MAP_DEFINITIONS = {
       { x: 880, y: 1350, radius: 45 },
       { x: 1450, y: 1150, radius: 50 },
       { x: 1850, y: 1050, radius: 45 },
-      { x: 1750, y: 1650, radius: 45 },
+      { x: 1765, y: 1650, radius: 36 },
       { x: 1120, y: 1880, radius: 40 }
     ],
     barrels: [
@@ -325,9 +325,9 @@ const MAP_DEFINITIONS = {
     spawnPoint: { x: 450, y: 850 },
     spawns: [
       { x: 450, y: 850 },     // NW Cooling Basin
-      { x: 1950, y: 1650 },   // SE Transformer Field
-      { x: 1100, y: 450 },    // North Perimeter Station
-      { x: 1450, y: 2050 }    // South Slag Drain
+      { x: 2020, y: 1650 },   // SE Transformer Field
+      { x: 1140, y: 510 },    // North Perimeter Station
+      { x: 1390, y: 2080 }    // South Slag Drain
     ],
     width: MAP_WIDTH,
     height: MAP_HEIGHT,
@@ -381,12 +381,12 @@ const MAP_DEFINITIONS = {
     ],
     pillars: [
       // Cracked Cooling Towers & Massive Tungsten Reactor Rods (Asymmetrical)
-      { x: 480, y: 480, radius: 64 },   // Giant breached cooling tower
-      { x: 1250, y: 350, radius: 48 },  // Primary coolant pylon
-      { x: 1950, y: 450, radius: 42 },  // Sub-reactor rod
-      { x: 880, y: 1250, radius: 52 },  // Island rock bastion
-      { x: 1550, y: 880, radius: 46 },  // Catwalk anchor tower
-      { x: 1620, y: 1580, radius: 56 }, // High-voltage coil
+      { x: 585, y: 480, radius: 36 },   // Giant breached cooling tower
+      { x: 1250, y: 535, radius: 36 },  // Primary coolant pylon
+      { x: 1995, y: 450, radius: 36 },  // Sub-reactor rod
+      { x: 885, y: 1260, radius: 36 },  // Island rock bastion
+      { x: 1585, y: 880, radius: 36 },  // Catwalk anchor tower
+      { x: 1620, y: 1580, radius: 36 }, // High-voltage coil
       { x: 980, y: 1750, radius: 44 }   // Slag drain stack
     ],
     barrels: [
@@ -418,12 +418,12 @@ const MAP_DEFINITIONS = {
     badge: 'ZERO-G // VOID CHASM',
     hazardLevel: 'EXTREME',
     description: 'Deep-space orbital battlestation with reinforced titanium catwalks, solar collectors, and open void chasms.',
-    spawnPoint: { x: 420, y: 420 },
+    spawnPoint: { x: 390, y: 360 },
     spawns: [
-      { x: 420, y: 420 },     // Airlock Dock Bay
+      { x: 390, y: 360 },     // Airlock Dock Bay
       { x: 1980, y: 1980 },   // Observation Deck
-      { x: 1980, y: 480 },    // Solar Array Node
-      { x: 450, y: 1950 }     // Thruster Engine Bank
+      { x: 2060, y: 570 },    // Solar Array Node
+      { x: 420, y: 1890 }     // Thruster Engine Bank
     ],
     width: MAP_WIDTH,
     height: MAP_HEIGHT,
@@ -471,12 +471,12 @@ const MAP_DEFINITIONS = {
     ],
     pillars: [
       // Magnetic Dock Pylons & Gravity Anchor Coils
-      { x: 520, y: 320, radius: 44 },
-      { x: 1720, y: 320, radius: 48 },
+      { x: 570, y: 330, radius: 36 },
+      { x: 1815, y: 320, radius: 32 },
       { x: 1070, y: 720, radius: 42 },
       { x: 1070, y: 1120, radius: 42 },
       { x: 480, y: 1750, radius: 50 },
-      { x: 1650, y: 1780, radius: 46 },
+      { x: 1655, y: 1805, radius: 36 },
       { x: 2050, y: 950, radius: 40 }
     ],
     barrels: [

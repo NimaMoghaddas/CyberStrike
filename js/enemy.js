@@ -54,20 +54,31 @@ class AcidSpit {
 
     // Purple sniper beams pierce through walls!
     if (!this.ignoreWalls && this.color !== '#b026ff') {
-      if (map && map.isColliding(this.x, this.y, this.radius)) {
+      if (this.distanceTraveled > 24 && map && map.isColliding(this.x, this.y, this.radius)) {
         this.explode(game);
         return;
       }
     }
 
-    if (player && player.alive) {
-      const dist = Math.hypot(this.x - player.x, this.y - player.y);
-      if (dist <= this.radius + player.radius) {
-        player.takeDamage(this.damage);
+    // Check collision with local player and remote players
+    const targets = [];
+    if (player && player.alive) targets.push(player);
+    if (game && game.network && game.network.remotePlayers) {
+      for (const rId in game.network.remotePlayers) {
+        const rp = game.network.remotePlayers[rId];
+        if (rp && rp.alive) targets.push(rp);
+      }
+    }
+
+    for (let i = 0; i < targets.length; i++) {
+      const targetP = targets[i];
+      const dist = Math.hypot(this.x - targetP.x, this.y - targetP.y);
+      if (dist <= this.radius + targetP.radius) {
+        if (targetP.takeDamage) targetP.takeDamage(this.damage);
         // Green enemy acid ball DoT: 3 seconds duration, 3 HP per second
         if (this.color === '#39ff14' || this.color === '#00ff88' || !this.color.includes('b026ff')) {
-          if (player.applyAcidDoT) {
-            player.applyAcidDoT(3.0, 3);
+          if (targetP.applyAcidDoT) {
+            targetP.applyAcidDoT(3.0, 3);
           }
         }
         if (game) game.addScreenShake(5);
@@ -371,11 +382,17 @@ class Enemy {
       map.resolveCircleCollision(this);
     }
 
-    // Normal Bio-Grunt Ranged Acid Spit Attack
-    if (this.type === 'normal' && player && player.alive) {
+    if (map && map.isColliding(this.x, this.y, this.radius)) {
+      map.unstuckEntity(this);
+    }
+
+    // Normal Bio-Grunt (Green Enemy) Periodic Acid Spit Attack (Every 5 seconds unconditionally)
+    if (this.type === 'normal') {
       if (this.spitWindupTimer > 0) {
         this.spitWindupTimer -= dt;
-        this.angle = Math.atan2(dy, dx);
+        if (player && player.alive) {
+          this.angle = Math.atan2(dy, dx);
+        }
         moveVx *= 0.12;
         moveVy *= 0.12;
 
@@ -391,21 +408,18 @@ class Enemy {
         }
 
         if (this.spitWindupTimer <= 0) {
-          const mouthX = this.x + Math.cos(this.angle) * (this.radius + 6);
-          const mouthY = this.y + Math.sin(this.angle) * (this.radius + 6);
+          this.spitWindupTimer = 0;
+          const mouthX = this.x + Math.cos(this.angle) * (this.radius + 8);
+          const mouthY = this.y + Math.sin(this.angle) * (this.radius + 8);
           if (game && game.spawnAcidSpit) {
             game.spawnAcidSpit(mouthX, mouthY, this.angle, 460, 16);
           }
         }
       } else {
         if (this.spitTimer > 0) this.spitTimer -= dt;
-        if (this.spitTimer <= 0 && distToPlayer >= 85 && distToPlayer <= 650) {
-          const midX = (this.x + player.x) * 0.5;
-          const midY = (this.y + player.y) * 0.5;
-          if (!map.isColliding(midX, midY, 8)) {
-            this.spitWindupTimer = 0.35;
-            this.spitTimer = 5.0; // Spit once every 5 seconds
-          }
+        if (this.spitTimer <= 0) {
+          this.spitWindupTimer = 0.35;
+          this.spitTimer = 5.0; // Shoot every 5 seconds unconditionally wherever they are!
         }
       }
     }
@@ -508,18 +522,35 @@ class Enemy {
     window.particleSystem.emitBlood(this.x, this.y, 0, isTank ? 30 : 16, true);
 
     if (isTank || isBomber) {
-      const radius = isBomber ? 120 : 70;
+      const radius = isBomber ? 140 : 70;
       window.particleSystem.emitExplosion(this.x, this.y, radius);
       if (window.soundSystem && window.soundSystem.playExplosion) {
         window.soundSystem.playExplosion();
       }
-      if (isBomber && window.gameInstance) {
+      if (isBomber) {
         const game = window.gameInstance;
-        if (game.player && game.player.alive) {
+        const blastRadius = 160;
+        // 1. Damage player
+        if (game && game.player && game.player.alive) {
           const d = Math.hypot(game.player.x - this.x, game.player.y - this.y);
-          if (d < 140) {
-            const dmg = Math.round(45 * (1 - d / 140));
+          if (d < blastRadius) {
+            const dmg = Math.round(55 * (1 - d / blastRadius));
             game.player.takeDamage(dmg, game, 'EXPLOSIVE');
+          }
+        }
+        // 2. Damage SURROUNDING ENEMIES (Explosive chain reaction!)
+        if (game && game.enemies) {
+          for (let i = 0; i < game.enemies.length; i++) {
+            const other = game.enemies[i];
+            if (other === this || !other.alive) continue;
+            const ed = Math.hypot(other.x - this.x, other.y - this.y);
+            if (ed < blastRadius) {
+              const blastDmg = Math.round(90 * (1 - ed / blastRadius));
+              other.takeDamage(blastDmg, other.x, other.y, 0, false, 'cannon');
+              if (window.particleSystem && window.particleSystem.addDamageNumber) {
+                window.particleSystem.addDamageNumber(other.x, other.y - 14, blastDmg, true);
+              }
+            }
           }
         }
       }
@@ -539,7 +570,6 @@ class Enemy {
     this._lastRenderTime = now;
     this.animTimer = (this.animTimer || 0) + frameDt * (this.type === 'fast' ? 1.5 : this.type === 'tank' ? 0.8 : 1.0);
     if (this.hitFlashTimer > 0) this.hitFlashTimer -= frameDt;
-    if (this.spitWindupTimer > 0) this.spitWindupTimer -= frameDt;
 
     ctx.save();
     ctx.translate(this.x, this.y);
@@ -1756,41 +1786,225 @@ class Enemy {
   }
 
   // =========================================================================
-  // 6. KAMIKAZE BOMBER // VOLATILE EXPLOSIVE DRONE
+  // 6. KAMIKAZE BOMBER // HIGH-TECH VOLATILE EXPLOSIVE DRONE
   // =========================================================================
   drawKamikazeBomber(ctx, isHit) {
     ctx.save();
-    const pulse = 0.5 + 0.5 * Math.sin((this.animTimer || 0) * 12);
-    const cCore = isHit ? '#ffffff' : (pulse > 0.5 ? '#ff3300' : '#ff7700');
+    const t = (this.animTimer || 0);
+    const pulse = 0.5 + 0.5 * Math.sin(t * 14);
+    const fastPulse = 0.5 + 0.5 * Math.sin(t * 26);
+    const isPriming = (this.fuseTimer && this.fuseTimer > 0);
+    const warningPulse = isPriming ? fastPulse : pulse;
 
-    // 4 Stabilizer Fins
-    ctx.fillStyle = '#1c1917';
-    ctx.fillRect(-16, -16, 6, 6);
-    ctx.fillRect(-16, 10, 6, 6);
-    ctx.fillRect(6, -16, 6, 6);
-    ctx.fillRect(6, 10, 6, 6);
+    // 1. Dual Rear Directional Thruster Jets with Animated Plasma Plumes
+    const thrusterOffset = 8;
+    const flameLen = 10 + warningPulse * 12 + Math.random() * 4;
+    [-thrusterOffset, thrusterOffset].forEach(offsetY => {
+      // Thruster Bell Housing
+      ctx.fillStyle = '#1c1917';
+      ctx.strokeStyle = '#44403c';
+      ctx.lineWidth = 1.5;
+      ctx.fillRect(-17, offsetY - 3, 5, 6);
+      ctx.strokeRect(-17, offsetY - 3, 5, 6);
 
-    // Drone Outer Shell
-    ctx.fillStyle = isHit ? '#ffffff' : '#291811';
-    ctx.strokeStyle = '#ff7700';
-    ctx.lineWidth = 2;
+      // Flickering Plasma Exhaust Flame
+      const flameGrad = ctx.createLinearGradient(-17, offsetY, -17 - flameLen, offsetY);
+      flameGrad.addColorStop(0, '#ffffff');
+      flameGrad.addColorStop(0.25, '#ffaa00');
+      flameGrad.addColorStop(0.7, '#ff3300');
+      flameGrad.addColorStop(1, 'rgba(255, 51, 0, 0)');
+
+      ctx.beginPath();
+      ctx.moveTo(-17, offsetY - 2.5);
+      ctx.lineTo(-17 - flameLen, offsetY);
+      ctx.lineTo(-17, offsetY + 2.5);
+      ctx.closePath();
+      ctx.fillStyle = flameGrad;
+      ctx.fill();
+    });
+
+    // 2. Lateral Volatile Payload Canisters (Left & Right Nitro-Glycerin Plasma Vials)
+    [-13, 13].forEach(offsetY => {
+      // Metallic Mount Strut
+      ctx.fillStyle = '#292524';
+      ctx.fillRect(-6, offsetY > 0 ? 9 : -12, 12, 3);
+
+      // Glass Payload Tube
+      ctx.fillStyle = '#0c0a09';
+      ctx.strokeStyle = warningPulse > 0.5 ? '#ff7700' : '#d97706';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.roundRect ? ctx.roundRect(-8, offsetY - 3.5, 16, 7, 2) : ctx.rect(-8, offsetY - 3.5, 16, 7);
+      ctx.fill();
+      ctx.stroke();
+
+      // Glowing Volatile Plasma Fluid Inside Canister
+      const fluidGrad = ctx.createLinearGradient(-7, offsetY, 7, offsetY);
+      fluidGrad.addColorStop(0, '#ff3300');
+      fluidGrad.addColorStop(0.5, '#ffcc00');
+      fluidGrad.addColorStop(1, '#ff5500');
+      ctx.fillStyle = isHit ? '#ffffff' : fluidGrad;
+      ctx.fillRect(-6, offsetY - 2, 12, 4);
+
+      // Hazard tick marks on vial
+      ctx.fillStyle = '#1c1917';
+      ctx.fillRect(-2, offsetY - 2.5, 1, 5);
+      ctx.fillRect(2, offsetY - 2.5, 1, 5);
+    });
+
+    // 3. Swept Aerodynamic Stabilizer Wings & Hazard Chevron Fins
+    ctx.fillStyle = isHit ? '#ffffff' : '#1c1917';
+    ctx.strokeStyle = isHit ? '#ffffff' : '#ea580c';
+    ctx.lineWidth = 1.5;
+
+    // Upper Wing
     ctx.beginPath();
-    ctx.arc(0, 0, 16, 0, Math.PI * 2);
+    ctx.moveTo(-4, -10);
+    ctx.lineTo(-16, -18);
+    ctx.lineTo(-8, -18);
+    ctx.lineTo(6, -11);
+    ctx.closePath();
     ctx.fill();
     ctx.stroke();
 
-    // Pulsating Molten Bomb Core
-    ctx.fillStyle = cCore;
-    ctx.shadowColor = '#ff3300';
-    ctx.shadowBlur = 12 * pulse;
+    // Lower Wing
     ctx.beginPath();
-    ctx.arc(0, 0, 8 * (0.8 + 0.3 * pulse), 0, Math.PI * 2);
+    ctx.moveTo(-4, 10);
+    ctx.lineTo(-16, 18);
+    ctx.lineTo(-8, 18);
+    ctx.lineTo(6, 11);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Hazard Stripes on Wings (Yellow/Orange diagonal slashes)
+    ctx.strokeStyle = '#f59e0b';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(-13, -17); ctx.lineTo(-9, -13);
+    ctx.moveTo(-9, -17); ctx.lineTo(-5, -13);
+    ctx.moveTo(-13, 17); ctx.lineTo(-9, 13);
+    ctx.moveTo(-9, 17); ctx.lineTo(-5, 13);
+    ctx.stroke();
+
+    // 4. Main Armored Hexagonal Hull Chassis
+    ctx.beginPath();
+    const hexR = 15;
+    for (let i = 0; i < 8; i++) {
+      const a = (i * Math.PI) / 4;
+      const hx = Math.cos(a) * hexR;
+      const hy = Math.sin(a) * hexR;
+      if (i === 0) ctx.moveTo(hx, hy);
+      else ctx.lineTo(hx, hy);
+    }
+    ctx.closePath();
+
+    // Carbon-fiber / dark titanium body
+    const bodyGrad = ctx.createRadialGradient(-3, -3, 2, 0, 0, hexR);
+    if (isHit) {
+      bodyGrad.addColorStop(0, '#ffffff');
+      bodyGrad.addColorStop(1, '#93c5fd');
+    } else {
+      bodyGrad.addColorStop(0, '#44403c');
+      bodyGrad.addColorStop(0.6, '#292524');
+      bodyGrad.addColorStop(1, '#0c0a09');
+    }
+    ctx.fillStyle = bodyGrad;
+    ctx.fill();
+    ctx.strokeStyle = isHit ? '#ffffff' : (isPriming ? '#ef4444' : '#f97316');
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Rivet studs around hull vertices
+    ctx.fillStyle = '#78716c';
+    for (let i = 0; i < 8; i++) {
+      const a = (i * Math.PI) / 4;
+      const rx = Math.cos(a) * (hexR - 2.5);
+      const ry = Math.sin(a) * (hexR - 2.5);
+      ctx.beginPath();
+      ctx.arc(rx, ry, 1, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 5. Rotating Magnetic Containment Iris Ring
+    ctx.save();
+    ctx.rotate(t * 3.5);
+    ctx.strokeStyle = isHit ? '#ffffff' : 'rgba(255, 115, 0, 0.6)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([3, 4]);
+    ctx.beginPath();
+    ctx.arc(0, 0, 10, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    // 6. Volatile Superheated Plasma Reactor Core
+    const coreR = 6.5 + warningPulse * 2.5;
+    const coreGrad = ctx.createRadialGradient(0, 0, 1, 0, 0, coreR);
+    if (isHit) {
+      coreGrad.addColorStop(0, '#ffffff');
+      coreGrad.addColorStop(1, '#60a5fa');
+    } else if (isPriming) {
+      coreGrad.addColorStop(0, '#ffffff');
+      coreGrad.addColorStop(0.3, '#ff2200');
+      coreGrad.addColorStop(1, '#7f1d1d');
+    } else {
+      coreGrad.addColorStop(0, '#ffffff');
+      coreGrad.addColorStop(0.35, '#ffaa00');
+      coreGrad.addColorStop(0.8, '#ff3300');
+      coreGrad.addColorStop(1, 'rgba(185, 28, 28, 0.9)');
+    }
+
+    ctx.save();
+    ctx.shadowColor = isPriming ? '#ff0000' : '#ff5500';
+    ctx.shadowBlur = 14 + warningPulse * 12;
+    ctx.fillStyle = coreGrad;
+    ctx.beginPath();
+    ctx.arc(0, 0, coreR, 0, Math.PI * 2);
     ctx.fill();
 
-    // Hazard Cross Warning Marker
-    ctx.fillStyle = '#0a0a0a';
-    ctx.fillRect(-1, -5, 2, 10);
-    ctx.fillRect(-5, -1, 10, 2);
+    // Arcing electric discharge sparks over core
+    if (warningPulse > 0.4) {
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      const sparkA = t * 18;
+      ctx.moveTo(Math.cos(sparkA) * 3, Math.sin(sparkA) * 3);
+      ctx.lineTo(Math.cos(sparkA + 1.2) * (coreR - 1), Math.sin(sparkA + 1.2) * (coreR - 1));
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // 7. Forward Optical Cyclops Eye & Targeting Laser Diode
+    const eyeX = 11;
+    ctx.fillStyle = '#0c0a09';
+    ctx.fillRect(eyeX - 1, -3, 3, 6);
+    ctx.fillStyle = isHit ? '#ffffff' : (warningPulse > 0.5 ? '#ff0033' : '#ff5500');
+    ctx.shadowColor = '#ff0000';
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.arc(eyeX + 1.5, 0, 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Forward Laser Rangefinder Target Tick
+    if (!isHit) {
+      ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(eyeX + 4, 0);
+      ctx.lineTo(eyeX + 14, 0);
+      ctx.stroke();
+    }
+
+    // 8. Warning Strobe Beacon on top of chassis
+    const strobeAlpha = fastPulse > 0.6 ? 1.0 : 0.15;
+    ctx.fillStyle = `rgba(255, 30, 0, ${strobeAlpha})`;
+    ctx.shadowColor = '#ff0000';
+    ctx.shadowBlur = fastPulse > 0.6 ? 12 : 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, 2, 0, Math.PI * 2);
+    ctx.fill();
+
     ctx.restore();
   }
 }

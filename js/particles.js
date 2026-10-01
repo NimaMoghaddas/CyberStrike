@@ -172,17 +172,36 @@ class ParticleSystem {
     }
   }
 
-  // --- Floating Combat Damage Numbers ---
+  // --- Floating Combat Damage & Heal Numbers ---
   addDamageNumber(x, y, amount, isCritical = false) {
     this.damageNumbers.push({
       x: x + (Math.random() - 0.5) * 20,
       y: y - 10,
       vy: -90,
-      amount: Math.round(amount),
+      amount: typeof amount === 'number' ? Math.round(amount) : amount,
       isCritical: isCritical,
-      life: 0.6,
-      maxLife: 0.6,
+      isHeal: false,
+      life: 0.65,
+      maxLife: 0.65,
       scale: isCritical ? 1.5 : 1.0
+    });
+  }
+
+  emitDamageNumber(x, y, amount, isCritical = false) {
+    this.addDamageNumber(x, y, amount, isCritical);
+  }
+
+  addHealNumber(x, y, amount) {
+    this.damageNumbers.push({
+      x: x + (Math.random() - 0.5) * 16,
+      y: y - 15,
+      vy: -75,
+      amount: Math.round(amount),
+      isCritical: false,
+      isHeal: true,
+      life: 0.9,
+      maxLife: 0.9,
+      scale: 1.25
     });
   }
 
@@ -325,7 +344,7 @@ class ParticleSystem {
       ctx.restore();
     }
 
-    // Floating Damage Numbers
+    // Floating Damage & Heal Numbers
     for (const d of this.damageNumbers) {
       const alpha = Math.min(1, d.life / (d.maxLife * 0.4));
       ctx.save();
@@ -333,7 +352,12 @@ class ParticleSystem {
       ctx.font = `bold ${Math.round(14 * d.scale)}px 'Orbitron', sans-serif`;
       ctx.textAlign = 'center';
 
-      if (d.isCritical) {
+      if (d.isHeal) {
+        ctx.fillStyle = '#00ff88';
+        ctx.shadowColor = '#00ff88';
+        ctx.shadowBlur = 12;
+        ctx.fillText(`+${d.amount} HP`, d.x, d.y);
+      } else if (d.isCritical) {
         ctx.fillStyle = '#ffb703';
         ctx.shadowColor = '#ffb703';
         ctx.shadowBlur = 10;

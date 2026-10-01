@@ -142,7 +142,7 @@ class GameEngine {
         }
         if (startBtn) {
           const btnText = startBtn.querySelector('.btn-text');
-          if (btnText) btnText.textContent = 'DEPLOY SOLO';
+          if (btnText) btnText.textContent = 'START';
         }
         if (rosterBadge) rosterBadge.textContent = 'SOLO';
       } else {
@@ -152,7 +152,9 @@ class GameEngine {
         }
         if (startBtn) {
           const btnText = startBtn.querySelector('.btn-text');
-          if (btnText) btnText.textContent = 'DEPLOY SQUAD';
+          if (btnText) {
+            btnText.textContent = (this.network && this.network.isReady) ? 'READY ✓' : 'READY';
+          }
         }
         if (rosterBadge) rosterBadge.textContent = 'MULTIPLAYER';
         if (this.network && this.network.renderLobbyUI) {
@@ -704,25 +706,18 @@ class GameEngine {
     // UI Buttons
     document.getElementById('start-btn').addEventListener('click', () => {
       window.soundSystem.init();
-      if (this.gameMode === 'multiplayer' && this.network && this.network.connected) {
-        if (this.network.isHost) {
-          // Leader deploys all operatives into the match!
-          this.network.socket.emit('leader_start_game');
-          this.startGame();
-        } else if (this.network.gameStarted) {
-          // Match already in progress -> drop in immediately!
+      const inMultiplayerParty = (this.gameMode === 'multiplayer') ||
+        (this.network && this.network.connected && this.network.lobbyPlayers && this.network.lobbyPlayers.length > 1) ||
+        (this.network && this.network.connected && !this.network.isHost);
+
+      if (inMultiplayerParty && this.network && this.network.connected) {
+        if (this.network.gameStarted) {
+          // Mid-game join -> deploy straight into the ongoing match
+          this.network.deployToBattlefield();
           this.startGame();
         } else {
-          // Squad member waiting for leader
-          const statusText = document.getElementById('match-status-text');
-          if (statusText) {
-            statusText.textContent = 'WAITING FOR SQUAD LEADER TO START MATCH';
-            statusText.style.color = '#ff3366';
-            setTimeout(() => {
-              statusText.textContent = 'WAITING FOR LEADER TO START MATCH';
-              statusText.style.color = 'var(--accent-cyan)';
-            }, 2500);
-          }
+          // In multiplayer lobby -> toggle READY state
+          this.network.toggleReady();
         }
       } else {
         this.startGame();
@@ -790,11 +785,14 @@ class GameEngine {
     this.map.setMap(this.selectedMapId);
 
     // Position player safely at first spawn point of the chosen map
-    if (this.map.data && this.map.data.spawns && this.map.data.spawns.length > 0) {
-      const spawn = this.map.data.spawns[0];
-      this.player.x = spawn.x;
-      this.player.y = spawn.y;
-    }
+    const spawn = (this.map.spawns && this.map.spawns.length > 0) ? this.map.spawns[0] : (this.map.spawnPoint || { x: 1200, y: 1200 });
+    this.player.x = spawn.x;
+    this.player.y = spawn.y;
+    this.player.lastSafeX = spawn.x;
+    this.player.lastSafeY = spawn.y;
+    this.player.vx = 0;
+    this.player.vy = 0;
+    this.map.resolveCircleCollision(this.player);
 
     this.medkits = [];
     this.medkitTimer = 0;
@@ -812,6 +810,16 @@ class GameEngine {
       this.startWave(1);
     }
 
+    // Team Battle Scoreboard HUD visibility
+    const teamHud = document.getElementById('team-scoreboard-hud');
+    if (teamHud) {
+      if (this.gameMode === 'multiplayer' && this.network && this.network.lobbyMode === 'teams') {
+        teamHud.classList.remove('hidden');
+      } else {
+        teamHud.classList.add('hidden');
+      }
+    }
+
     this.updateHUD();
     this.updateAmmoUI();
     this.updateWeaponUI();
@@ -822,13 +830,16 @@ class GameEngine {
     document.getElementById('game-over-screen').classList.add('hidden');
     this.isRespawning = false;
 
-    let startX = 1200, startY = 1200;
-    if (this.map.data && this.map.data.spawns && this.map.data.spawns.length > 0) {
-      startX = this.map.data.spawns[0].x;
-      startY = this.map.data.spawns[0].y;
-    }
+    const spawn = (this.map.spawns && this.map.spawns.length > 0) ? this.map.spawns[0] : (this.map.spawnPoint || { x: 1200, y: 1200 });
+    const startX = spawn.x;
+    const startY = spawn.y;
 
     this.player = new Player(startX, startY);
+    this.player.maxHp = 100;
+    this.player.hp = 100;
+    this.player.lastSafeX = startX;
+    this.player.lastSafeY = startY;
+    this.map.resolveCircleCollision(this.player);
     this.player.setSkin(this.selectedSkinId);
     this.player.equipWeapon(this.selectedWeaponId);
 
@@ -882,26 +893,31 @@ class GameEngine {
 
   spawnEnemy() {
     // Pick enemy archetype: Blue enemies (fast, shielded) completely removed!
-    // Heavy preference for standard grunts and agile bombers over big tanks.
+    // Archetype selection with agile speed enemies, explosive bombers, snipers, and tanks
     let type = 'normal';
     const roll = Math.random();
 
     if (this.wave === 1) {
-      type = roll < 0.85 ? 'normal' : 'bomber';
+      if (roll < 0.55) type = 'normal';
+      else if (roll < 0.80) type = 'fast'; // Agile speed enemy
+      else type = 'bomber';
     } else if (this.wave === 2) {
-      if (roll < 0.70) type = 'normal';
-      else if (roll < 0.90) type = 'bomber';
+      if (roll < 0.40) type = 'normal';
+      else if (roll < 0.65) type = 'fast'; // Agile speed enemy
+      else if (roll < 0.85) type = 'bomber';
       else type = 'sniper';
     } else if (this.wave === 3) {
-      if (roll < 0.60) type = 'normal';
-      else if (roll < 0.80) type = 'bomber';
-      else if (roll < 0.94) type = 'sniper';
-      else type = 'tank'; // rare
-    } else { // Wave 4+
-      if (roll < 0.50) type = 'normal';
+      if (roll < 0.30) type = 'normal';
+      else if (roll < 0.55) type = 'fast'; // Agile speed enemy
       else if (roll < 0.75) type = 'bomber';
       else if (roll < 0.90) type = 'sniper';
-      else type = 'tank'; // rare big enemy
+      else type = 'tank'; // Heavy armored behemoth
+    } else { // Wave 4+
+      if (roll < 0.25) type = 'normal';
+      else if (roll < 0.50) type = 'fast'; // Agile speed enemy
+      else if (roll < 0.70) type = 'bomber';
+      else if (roll < 0.88) type = 'sniper';
+      else type = 'tank';
     }
 
     // Find safe spawn location: minimum 550px from player, walkable floor
@@ -1081,23 +1097,52 @@ class GameEngine {
     this.waveState = 'cleared';
     this.score += 1000;
 
-    // Restore partial health and refill all weapons as a wave reward
-    this.player.hp = Math.min(this.player.maxHp, this.player.hp + 35);
+    // Exponential Max HP scaling:
+    // Base: 100 HP
+    // Wave 1: +15 -> 115 Max HP
+    // Wave 2: +24 -> 139 Max HP
+    // Wave 3: +38 -> 177 Max HP
+    // Wave 4: +61 -> 238 Max HP
+    // Wave 5: +98 -> 336 Max HP
+    const maxHpBonus = Math.round(15 * Math.pow(1.6, this.wave - 1));
+    this.player.maxHp = (this.player.maxHp || 100) + maxHpBonus;
+    const healAmount = maxHpBonus + 25;
+    this.player.hp = Math.min(this.player.maxHp, this.player.hp + healAmount);
     this.player.refillAllAmmo();
     this.updateAmmoUI();
     this.updateWeaponUI();
+    this.updateHUD();
+
+    // Floating combat text & visual heal particles
+    if (window.particleSystem) {
+      if (window.particleSystem.addHealNumber) {
+        window.particleSystem.addHealNumber(this.player.x, this.player.y, healAmount);
+      } else {
+        window.particleSystem.addDamageNumber(this.player.x, this.player.y, healAmount);
+      }
+      window.particleSystem.emit(this.player.x, this.player.y, 25, {
+        speed: 110,
+        color: '#00ff88',
+        life: 0.6,
+        size: 4
+      });
+    }
 
     window.soundSystem.playWaveClear();
 
-    // Show Wave Clear Banner
+    // Show Wave Clear Banner with exponential max HP information
     const clearBanner = document.getElementById('wave-clear-banner');
     document.getElementById('cleared-wave-title').textContent = `WAVE ${this.wave} COMPLETE`;
+    const bonusEl = clearBanner ? clearBanner.querySelector('.clear-bonus') : null;
+    if (bonusEl) {
+      bonusEl.textContent = `+1,000 COMBAT BONUS • MAX VITALITY UPGRADE +${maxHpBonus} (MAX HP: ${this.player.maxHp})`;
+    }
     clearBanner.classList.remove('hidden');
 
     setTimeout(() => {
       clearBanner.classList.add('hidden');
       this.startWave(this.wave + 1);
-    }, 2800);
+    }, 3000);
   }
 
   handleGameOver() {

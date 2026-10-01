@@ -906,78 +906,103 @@ class GameMap {
 
   // --- Collision Detection & Sliding Resolution ---
   resolveCircleCollision(entity) {
-    let collided = false;
-    const r = entity.radius;
+    let hadCollision = false;
+    const r = entity.radius || 20;
+    const maxPasses = 4; // Multi-pass relaxation solver to resolve corners and multiple intersecting obstacles
 
-    // 1. Check against Map Boundaries
-    const pad = 52 + r;
-    if (entity.x < pad) { entity.x = pad; collided = true; }
-    if (entity.x > this.width - pad) { entity.x = this.width - pad; collided = true; }
-    if (entity.y < pad) { entity.y = pad; collided = true; }
-    if (entity.y > this.height - pad) { entity.y = this.height - pad; collided = true; }
+    for (let pass = 0; pass < maxPasses; pass++) {
+      let collidedThisPass = false;
 
-    // 2. Check against Rectangular Walls & Containers
-    for (const wall of this.walls) {
-      if (wall.type === 'boundary') continue; // already handled by pad
+      // 1. Check against Map Boundaries
+      const pad = 52 + r;
+      if (entity.x < pad) { entity.x = pad; collidedThisPass = true; }
+      if (entity.x > this.width - pad) { entity.x = this.width - pad; collidedThisPass = true; }
+      if (entity.y < pad) { entity.y = pad; collidedThisPass = true; }
+      if (entity.y > this.height - pad) { entity.y = this.height - pad; collidedThisPass = true; }
 
-      // Nearest point on wall rect to circle center
-      const nearestX = Math.max(wall.x, Math.min(entity.x, wall.x + wall.w));
-      const nearestY = Math.max(wall.y, Math.min(entity.y, wall.y + wall.h));
+      // 2. Check against Rectangular Walls & Containers
+      for (let i = 0; i < this.walls.length; i++) {
+        const wall = this.walls[i];
+        if (wall.type === 'boundary') continue; // already handled by pad
 
-      const dx = entity.x - nearestX;
-      const dy = entity.y - nearestY;
-      const distSq = dx * dx + dy * dy;
+        // Case A: Circle center is INSIDE the rectangle (Deep Penetration)
+        if (entity.x >= wall.x && entity.x <= wall.x + wall.w &&
+            entity.y >= wall.y && entity.y <= wall.y + wall.h) {
+          collidedThisPass = true;
+          // Calculate distance to all 4 edges to find Minimum Translation Vector (MTV)
+          const dLeft = entity.x - wall.x;
+          const dRight = (wall.x + wall.w) - entity.x;
+          const dTop = entity.y - wall.y;
+          const dBottom = (wall.y + wall.h) - entity.y;
+          const min = Math.min(dLeft, dRight, dTop, dBottom);
 
-      if (distSq < r * r) {
-        collided = true;
-        const dist = Math.sqrt(distSq);
-
-        if (dist === 0) {
-          // Entity was inside, push out horizontally
-          entity.x = wall.x - r;
+          // Eject along the nearest edge with a slight safety offset (0.5px)
+          if (min === dLeft) {
+            entity.x = wall.x - r - 0.5;
+          } else if (min === dRight) {
+            entity.x = wall.x + wall.w + r + 0.5;
+          } else if (min === dTop) {
+            entity.y = wall.y - r - 0.5;
+          } else {
+            entity.y = wall.y + wall.h + r + 0.5;
+          }
         } else {
-          // Push circle out along collision normal
-          const overlap = r - dist;
-          entity.x += (dx / dist) * overlap;
-          entity.y += (dy / dist) * overlap;
+          // Case B: Circle center is OUTSIDE the rectangle, check corner/edge penetration
+          const nearestX = Math.max(wall.x, Math.min(entity.x, wall.x + wall.w));
+          const nearestY = Math.max(wall.y, Math.min(entity.y, wall.y + wall.h));
+          const dx = entity.x - nearestX;
+          const dy = entity.y - nearestY;
+          const distSq = dx * dx + dy * dy;
+
+          if (distSq < r * r) {
+            collidedThisPass = true;
+            const dist = Math.sqrt(distSq);
+            if (dist > 0.0001) {
+              const overlap = r - dist + 0.5;
+              entity.x += (dx / dist) * overlap;
+              entity.y += (dy / dist) * overlap;
+            } else {
+              entity.x = wall.x - r - 0.5;
+            }
+          }
         }
       }
-    }
 
-    // 3. Check against Cylindrical Pillars
-    for (const pillar of this.pillars) {
-      const dx = entity.x - pillar.x;
-      const dy = entity.y - pillar.y;
-      const minDist = r + pillar.radius;
-      const distSq = dx * dx + dy * dy;
+      // 3. Check against Cylindrical Pillars
+      for (let i = 0; i < this.pillars.length; i++) {
+        const pillar = this.pillars[i];
+        const dx = entity.x - pillar.x;
+        const dy = entity.y - pillar.y;
+        const minDist = r + pillar.radius;
+        const distSq = dx * dx + dy * dy;
 
-      if (distSq < minDist * minDist) {
-        collided = true;
-        const dist = Math.sqrt(distSq) || 1;
-        const overlap = minDist - dist;
-        entity.x += (dx / dist) * overlap;
-        entity.y += (dy / dist) * overlap;
+        if (distSq < minDist * minDist) {
+          collidedThisPass = true;
+          const dist = Math.sqrt(distSq);
+          if (dist > 0.0001) {
+            const overlap = minDist - dist + 0.5;
+            entity.x += (dx / dist) * overlap;
+            entity.y += (dy / dist) * overlap;
+          } else {
+            entity.x = pillar.x + minDist + 0.5;
+          }
+        }
+      }
+
+      if (collidedThisPass) {
+        hadCollision = true;
+      } else {
+        // All constraints satisfied, no more overlaps
+        break;
       }
     }
 
-    // 4. Check against Unexploded Barrels
-    for (const barrel of this.barrels) {
-      if (barrel.exploded) continue;
-      const dx = entity.x - barrel.x;
-      const dy = entity.y - barrel.y;
-      const minDist = r + barrel.radius;
-      const distSq = dx * dx + dy * dy;
-
-      if (distSq < minDist * minDist) {
-        collided = true;
-        const dist = Math.sqrt(distSq) || 1;
-        const overlap = minDist - dist;
-        entity.x += (dx / dist) * overlap;
-        entity.y += (dy / dist) * overlap;
-      }
+    // Ultimate safeguard: if entity is still colliding after 4 relaxation passes, trigger unstuck rescue
+    if (hadCollision && this.isColliding(entity.x, entity.y, r)) {
+      this.unstuckEntity(entity);
     }
 
-    return collided;
+    return hadCollision;
   }
 
   // --- Point / Circle Overlap check (used for bullet & spawn tests) ---
@@ -989,30 +1014,76 @@ class GameMap {
     }
 
     // Wall rect check
-    for (const w of this.walls) {
+    for (let i = 0; i < this.walls.length; i++) {
+      const w = this.walls[i];
       if (w.type === 'boundary') continue;
-      const nx = Math.max(w.x, Math.min(x, w.x + w.w));
-      const ny = Math.max(w.y, Math.min(y, w.y + w.h));
-      const distSq = (x - nx) * (x - nx) + (y - ny) * (y - ny);
-      if (distSq < radius * radius) return true;
+
+      // Inside rectangle check
+      if (x >= w.x && x <= w.x + w.w && y >= w.y && y <= w.y + w.h) {
+        return true;
+      }
+
+      if (radius > 0) {
+        const nx = Math.max(w.x, Math.min(x, w.x + w.w));
+        const ny = Math.max(w.y, Math.min(y, w.y + w.h));
+        const dx = x - nx;
+        const dy = y - ny;
+        if (dx * dx + dy * dy < radius * radius) {
+          return true;
+        }
+      }
     }
 
     // Pillar circle check
-    for (const p of this.pillars) {
-      const distSq = (x - p.x) * (x - p.x) + (y - p.y) * (y - p.y);
+    for (let i = 0; i < this.pillars.length; i++) {
+      const p = this.pillars[i];
+      const dx = x - p.x;
+      const dy = y - p.y;
       const r = radius + p.radius;
-      if (distSq < r * r) return true;
-    }
-
-    // Barrel circle check
-    for (const b of this.barrels) {
-      if (b.exploded) continue;
-      const distSq = (x - b.x) * (x - b.x) + (y - b.y) * (y - b.y);
-      const r = radius + b.radius;
-      if (distSq < r * r) return true;
+      if (dx * dx + dy * dy < r * r) return true;
     }
 
     return false;
+  }
+
+  // --- Emergency Auto-Unstuck Recovery Failsafe ---
+  unstuckEntity(entity) {
+    const r = entity.radius || 20;
+    if (!this.isColliding(entity.x, entity.y, r)) {
+      return false; // Entity is free
+    }
+
+    // Radial search sweep (8 concentric rings in 16 directions)
+    const testRadii = [16, 32, 48, 64, 85, 115, 160, 220];
+    for (let d = 0; d < testRadii.length; d++) {
+      const dist = testRadii[d];
+      for (let a = 0; a < 16; a++) {
+        const theta = (a / 16) * Math.PI * 2;
+        const tx = entity.x + Math.cos(theta) * dist;
+        const ty = entity.y + Math.sin(theta) * dist;
+        if (!this.isColliding(tx, ty, r)) {
+          entity.x = tx;
+          entity.y = ty;
+          if (entity.vx !== undefined) entity.vx = 0;
+          if (entity.vy !== undefined) entity.vy = 0;
+          return true;
+        }
+      }
+    }
+
+    // Ultimate fallback: safely restore to last confirmed safe coordinate or spawn point
+    if (entity.lastSafeX !== undefined && entity.lastSafeY !== undefined && !this.isColliding(entity.lastSafeX, entity.lastSafeY, r)) {
+      entity.x = entity.lastSafeX;
+      entity.y = entity.lastSafeY;
+    } else {
+      const sp = (this.spawns && this.spawns[0]) || this.spawnPoint || { x: 1200, y: 1200 };
+      entity.x = sp.x;
+      entity.y = sp.y;
+    }
+
+    if (entity.vx !== undefined) entity.vx = 0;
+    if (entity.vy !== undefined) entity.vy = 0;
+    return true;
   }
 
   // Check line of sight between two points (returns false if blocked by wall/pillar)

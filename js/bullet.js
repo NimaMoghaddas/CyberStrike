@@ -185,12 +185,18 @@ class Bullet {
     // 4. Collision with Other Players (PvP / Friendly Fire)
     if (game && game.network) {
       const isMyBullet = !this.shooterId || this.shooterId === game.localPlayerId;
+      const isTeamsMode = game.network.lobbyMode === 'teams';
 
       if (isMyBullet) {
+        const myTeam = (game.player && game.player.team) ? game.player.team : this.shooterTeam;
         for (const rId in game.network.remotePlayers) {
           const rp = game.network.remotePlayers[rId];
           if (!rp.alive || (rp.invulnerableTimer && rp.invulnerableTimer > 0)) continue;
-          if (game.player && game.player.team && rp.team && game.player.team === rp.team) continue;
+
+          // Friendly Fire Protection: Bullet passes right through teammate without collision!
+          if (isTeamsMode && myTeam && rp.team && myTeam === rp.team) {
+            continue;
+          }
 
           const distSq = (this.x - rp.x) ** 2 + (this.y - rp.y) ** 2;
           if (distSq < (this.radius + rp.radius) ** 2) {
@@ -224,7 +230,14 @@ class Bullet {
         }
       } else {
         // Bullet was fired by a remote player: check if it hits local player
-        if (game.player && game.player.alive && game.player.invulnerableTime <= 0) {
+        const shooterRp = game.network.remotePlayers[this.shooterId];
+        const shooterTeam = this.shooterTeam || (shooterRp ? shooterRp.team : null);
+        const myTeam = game.player ? game.player.team : null;
+
+        // Teammate bullets pass completely through local player without stopping!
+        const isTeammateBullet = isTeamsMode && shooterTeam && myTeam && shooterTeam === myTeam;
+
+        if (!isTeammateBullet && game.player && game.player.alive && game.player.invulnerableTime <= 0) {
           const distSq = (this.x - game.player.x) ** 2 + (this.y - game.player.y) ** 2;
           if (distSq < (this.radius + game.player.radius) ** 2) {
             if (this.explosive) {
@@ -286,11 +299,15 @@ class Bullet {
       }
     }
 
-    // 3. Splash Damage to Remote Players in PvP
+    // 3. Splash Damage to Remote Players in PvP (Teammates immune in Teams mode)
+    const isTeamsMode = game && game.network && game.network.lobbyMode === 'teams';
     if (game && game.network && isMyBullet) {
+      const myTeam = (game.player && game.player.team) ? game.player.team : this.shooterTeam;
       for (const rId in game.network.remotePlayers) {
         const rp = game.network.remotePlayers[rId];
         if (!rp.alive || (rp.invulnerableTimer && rp.invulnerableTimer > 0)) continue;
+        if (isTeamsMode && myTeam && rp.team && myTeam === rp.team) continue; // Immune!
+
         const d = Math.hypot(this.x - rp.x, this.y - rp.y);
         if (d <= this.blastRadius + rp.radius) {
           const falloff = Math.max(0.35, 1 - (d / (this.blastRadius + rp.radius)) * 0.65);
@@ -302,12 +319,19 @@ class Bullet {
       }
     }
 
-    // 4. Splash Damage to Local Player if near blast
+    // 4. Splash Damage to Local Player if near blast (Immune if blast is from a teammate)
     if (game && game.player && game.player.alive && game.player.invulnerableTime <= 0) {
-      const d = Math.hypot(this.x - game.player.x, this.y - game.player.y);
-      if (d <= this.blastRadius * 0.75 + game.player.radius) {
-        const splash = Math.round(this.splashDamage * 0.5);
-        game.player.takeDamage(splash);
+      const shooterRp = (game.network && game.network.remotePlayers) ? game.network.remotePlayers[this.shooterId] : null;
+      const shooterTeam = this.shooterTeam || (shooterRp ? shooterRp.team : null);
+      const myTeam = game.player.team;
+      const isTeammateBlast = isTeamsMode && shooterTeam && myTeam && shooterTeam === myTeam && this.shooterId !== game.localPlayerId;
+
+      if (!isTeammateBlast) {
+        const d = Math.hypot(this.x - game.player.x, this.y - game.player.y);
+        if (d <= this.blastRadius * 0.75 + game.player.radius) {
+          const splash = Math.round(this.splashDamage * 0.5);
+          game.player.takeDamage(splash);
+        }
       }
     }
   }

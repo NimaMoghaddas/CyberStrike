@@ -37,6 +37,8 @@ class NetworkSystem {
     this.betaColor = '#ff3366';
     this.lockedColors = [];
     this.lobbyPlayers = [];
+    this.myUserCode = '----';
+    this.isReady = false;
 
     // Chat State
     this.chatOpen = false;
@@ -85,9 +87,13 @@ class NetworkSystem {
       // 1. Initial State from Server
       this.socket.on('init_data', (data) => {
         this.myId = data.yourId;
+        this.myUserCode = data.userCode || (this.myId ? this.myId.substring(0, 4) : '----');
         this.serverIp = data.serverIp;
         this.serverPort = data.port;
         this.updateServerIpDisplay(data.serverIp, data.port, data.allIps);
+
+        const myIdEl = document.getElementById('my-operative-id');
+        if (myIdEl) myIdEl.textContent = this.myUserCode;
 
         if (data.mapId && this.game && this.game.map) {
           this.game.map.setMap(data.mapId);
@@ -112,6 +118,40 @@ class NetworkSystem {
         }
       });
 
+      // 1.1. Lobby Errors & Notifications
+      this.socket.on('lobby_error', (data) => {
+        if (data && data.message) {
+          alert(data.message);
+        }
+      });
+
+      this.socket.on('lobby_joined_room', (data) => {
+        console.log(`[NETWORK] Joined squad of leader [${data.roomCode}]`);
+        if (data.mapId && this.game && this.game.map) {
+          this.game.selectedMapId = data.mapId;
+          this.game.map.setMap(data.mapId);
+        }
+        if (this.game) {
+          this.game.gameMode = 'multiplayer';
+        }
+        const spBtn = document.getElementById('btn-mode-singleplayer');
+        const mpBtn = document.getElementById('btn-mode-multiplayer');
+        if (spBtn) spBtn.classList.remove('active');
+        if (mpBtn) mpBtn.classList.add('active');
+        const teamHub = document.getElementById('multiplayer-team-hub');
+        if (teamHub) teamHub.classList.remove('hidden');
+
+        this.renderLobbyUI();
+
+        // Smoothly scroll the terminal modal down so the operative and READY button are immediately visible
+        const modal = document.querySelector('.terminal-modal');
+        if (modal) {
+          setTimeout(() => {
+            modal.scrollTo({ top: modal.scrollHeight, behavior: 'smooth' });
+          }, 150);
+        }
+      });
+
       // 1.2. Synchronized Multiplayer Lobby State
       this.socket.on('lobby_sync', (data) => {
         this.handleLobbySync(data);
@@ -120,12 +160,37 @@ class NetworkSystem {
       // 1.3. Leader Game Start Signal (or Late Join deploy)
       this.socket.on('game_start_signal', (data) => {
         this.gameStarted = true;
-        if (data.mapId && this.game && this.game.map) {
+        if (data && data.mapId && this.game && this.game.map) {
           this.game.selectedMapId = data.mapId;
           this.game.map.setMap(data.mapId);
         }
+        const teamHud = document.getElementById('team-scoreboard-hud');
+        if (teamHud) {
+          if (data && data.mode === 'teams') {
+            teamHud.classList.remove('hidden');
+          } else {
+            teamHud.classList.add('hidden');
+          }
+        }
+        const teamOverModal = document.getElementById('team-match-over-screen');
+        if (teamOverModal) teamOverModal.classList.add('hidden');
+
         if (this.game && this.game.gameState !== 'playing') {
           this.game.startGame();
+        }
+      });
+
+      // 1.4. Team Battle Scoreboard & Target Kills Sync
+      this.socket.on('team_stats_update', (data) => {
+        if (data && data.teamStats) {
+          this.updateTeamScoreboardHUD(data.teamStats);
+        }
+      });
+
+      // 1.45. Team Battle Conclusion (Target 20 kills reached, Highest Score Wins)
+      this.socket.on('team_match_finished', (data) => {
+        if (data && data.teamStats) {
+          this.showTeamMatchOverScreen(data.teamStats, data.winner);
         }
       });
 
@@ -229,16 +294,39 @@ class NetworkSystem {
 
       this.socket.on('wave_cleared', (data) => {
         const clearBanner = document.getElementById('wave-clear-banner');
+        const maxHpBonus = data.maxHpBonus || Math.round(15 * Math.pow(1.6, ((data.wave || 1) - 1)));
+        this.game.player.maxHp = (this.game.player.maxHp || 100) + maxHpBonus;
+        const healAmount = maxHpBonus + 25;
+        this.game.player.hp = Math.min(this.game.player.maxHp, this.game.player.hp + healAmount);
+        this.game.player.ammo = this.game.player.magSize;
+        this.game.score += data.bonus || 1000;
+        this.game.updateAmmoUI();
+        this.game.updateWeaponUI();
+        this.game.updateHUD();
+
         if (clearBanner) {
           document.getElementById('cleared-wave-title').textContent = `WAVE ${data.wave} COMPLETE`;
+          const bonusEl = clearBanner.querySelector('.clear-bonus');
+          if (bonusEl) {
+            bonusEl.textContent = `+1,000 BONUS • MAX VITALITY UPGRADE +${maxHpBonus} (MAX HP: ${this.game.player.maxHp})`;
+          }
           clearBanner.classList.remove('hidden');
-          setTimeout(() => clearBanner.classList.add('hidden'), 3000);
+          setTimeout(() => clearBanner.classList.add('hidden'), 3200);
         }
-        this.game.score += data.bonus;
-        this.game.player.hp = Math.min(this.game.player.maxHp, this.game.player.hp + 35);
-        this.game.player.ammo = this.game.player.magSize;
-        this.game.updateAmmoUI();
-        this.game.updateHUD();
+
+        if (window.particleSystem) {
+          if (window.particleSystem.addHealNumber) {
+            window.particleSystem.addHealNumber(this.game.player.x, this.game.player.y, healAmount);
+          } else {
+            window.particleSystem.addDamageNumber(this.game.player.x, this.game.player.y, healAmount);
+          }
+          window.particleSystem.emit(this.game.player.x, this.game.player.y, 25, {
+            speed: 110,
+            color: '#00ff88',
+            life: 0.6,
+            size: 4
+          });
+        }
         window.soundSystem.playWaveClear();
       });
 
@@ -423,6 +511,7 @@ class NetworkSystem {
     if (this.game && this.game.gameMode !== 'multiplayer') return;
     // In multiplayer, bullets are colored with the player's operative color
     const bulletColor = (this.game && this.game.player) ? (this.game.player.color || '#00f0ff') : (color || '#00f0ff');
+    const bulletTeam = (this.game && this.game.player && this.game.player.team) ? this.game.player.team : this.myTeam;
     this.socket.emit('player_shoot', {
       x: Math.round(x),
       y: Math.round(y),
@@ -430,6 +519,7 @@ class NetworkSystem {
       isCritical: !!isCritical,
       damage,
       color: bulletColor,
+      team: bulletTeam,
       weaponType: weaponType || (this.game.player ? this.game.player.currentWeaponId : 'rifle'),
       speed,
       range,
@@ -502,6 +592,7 @@ class NetworkSystem {
     });
     bullet.isCritical = data.isCritical;
     bullet.shooterId = data.shooterId;
+    bullet.shooterTeam = data.team || (rp ? rp.team : null);
     bullet.color = bulletColor;
     this.game.bullets.push(bullet);
 
@@ -1192,25 +1283,79 @@ class NetworkSystem {
     }
   }
 
+  // --- Toggle Ready Status in Multiplayer Lobby ---
+  toggleReady() {
+    if (!this.connected || !this.socket) return;
+    this.isReady = !this.isReady;
+    this.socket.emit('lobby_toggle_ready', { isReady: this.isReady });
+    this.renderLobbyUI();
+  }
+
   // --- Start Screen Lobby UI & Team Battle Handling ---
   initLobbyUI() {
+    // 0. Squad ID Actions (Copy ID, Join by ID, Leave Squad)
+    const btnCopyId = document.getElementById('btn-copy-my-id');
+    if (btnCopyId) {
+      btnCopyId.addEventListener('click', () => {
+        if (!this.myUserCode || this.myUserCode === '----') return;
+        navigator.clipboard.writeText(this.myUserCode).then(() => {
+          btnCopyId.textContent = 'COPIED!';
+          setTimeout(() => { btnCopyId.textContent = 'COPY ID'; }, 2000);
+        });
+      });
+    }
+
+    const btnJoinById = document.getElementById('btn-join-by-id');
+    const inputJoinId = document.getElementById('join-leader-id-input');
+    if (btnJoinById && inputJoinId) {
+      const doJoin = () => {
+        const targetId = inputJoinId.value.trim().toUpperCase();
+        if (targetId.length > 0 && this.socket && this.connected) {
+          const nameInput = document.getElementById('operative-callsign-input');
+          const name = nameInput ? nameInput.value.trim().toUpperCase() : '';
+          this.socket.emit('lobby_join_by_id', {
+            targetId,
+            name,
+            modelType: this.game.selectedModelType || 'commando',
+            skinId: this.game.selectedSkinId || 'spectre'
+          });
+        }
+      };
+      btnJoinById.addEventListener('click', doJoin);
+      inputJoinId.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') doJoin();
+      });
+    }
+
+    const btnLeaveRoom = document.getElementById('btn-leave-room');
+    if (btnLeaveRoom) {
+      btnLeaveRoom.addEventListener('click', () => {
+        if (this.socket && this.connected) {
+          this.socket.emit('lobby_leave_room');
+          this.isReady = false;
+        }
+      });
+    }
+
     // 1. Submode buttons (Team Battle vs FFA)
     const btnTeams = document.getElementById('btn-submode-teams');
     const btnFfa = document.getElementById('btn-submode-ffa');
     if (btnTeams) {
       btnTeams.addEventListener('click', () => {
+        if (!this.isHost) return; // Only squad leader can change mode
         this.lobbyMode = 'teams';
         this.renderLobbyUI();
-        if (this.socket && this.connected && this.isHost) {
+        if (this.socket && this.connected) {
           this.socket.emit('lobby_set_mode', { mode: 'teams' });
         }
       });
     }
     if (btnFfa) {
       btnFfa.addEventListener('click', () => {
+        if (!this.isHost) return; // Only squad leader can change mode
         this.lobbyMode = 'ffa';
         this.renderLobbyUI();
-        if (this.socket && this.connected && this.isHost) {
+        if (this.socket && this.connected) {
           this.socket.emit('lobby_set_mode', { mode: 'ffa' });
         }
       });
@@ -1230,6 +1375,18 @@ class NetworkSystem {
       btnJoinBeta.addEventListener('click', () => {
         if (this.socket && this.connected) {
           this.socket.emit('lobby_join_team', { team: 'beta' });
+        }
+      });
+    }
+
+    // 2.6. Team Match Over Return Button
+    const returnBtn = document.getElementById('team-match-return-btn');
+    if (returnBtn) {
+      returnBtn.addEventListener('click', () => {
+        const teamMatchScreen = document.getElementById('team-match-over-screen');
+        if (teamMatchScreen) teamMatchScreen.classList.add('hidden');
+        if (this.game) {
+          this.game.showScreen('start-screen');
         }
       });
     }
@@ -1261,7 +1418,7 @@ class NetworkSystem {
       swatch.addEventListener('click', () => {
         const chosen = swatch.getAttribute('data-color');
         if (this.lockedColors.includes(chosen) && this.color !== chosen) {
-          return; // Color locked by another operative
+          return;
         }
         colorSwatches.forEach(s => s.classList.remove('selected'));
         swatch.classList.add('selected');
@@ -1336,21 +1493,53 @@ class NetworkSystem {
     if (me) {
       this.myTeam = me.team;
       this.color = me.color;
+      this.isReady = !!me.isReady;
       if (this.game && this.game.player) {
         this.game.player.team = me.team;
         this.game.player.color = me.color;
       }
     }
 
+    // If connected to a party leader or squad, guarantee gameMode is multiplayer
+    if (this.connected && (!this.isHost || this.lobbyPlayers.length > 1)) {
+      if (this.game) this.game.gameMode = 'multiplayer';
+      const spBtn = document.getElementById('btn-mode-singleplayer');
+      const mpBtn = document.getElementById('btn-mode-multiplayer');
+      if (spBtn) spBtn.classList.remove('active');
+      if (mpBtn) mpBtn.classList.add('active');
+      const teamHub = document.getElementById('multiplayer-team-hub');
+      if (teamHub) teamHub.classList.remove('hidden');
+    }
+
     this.renderLobbyUI();
   }
 
   renderLobbyUI() {
-    // 1. Submode buttons
+    // 0. Update Operative ID
+    const myIdEl = document.getElementById('my-operative-id');
+    if (myIdEl) myIdEl.textContent = this.myUserCode;
+
+    // Leave Button visibility: Only show if you are in someone else's squad
+    const btnLeaveRoom = document.getElementById('btn-leave-room');
+    if (btnLeaveRoom) {
+      btnLeaveRoom.classList.toggle('hidden', this.isHost);
+    }
+
+    // 1. Submode buttons (Leader Only)
     const btnTeams = document.getElementById('btn-submode-teams');
     const btnFfa = document.getElementById('btn-submode-ffa');
-    if (btnTeams) btnTeams.classList.toggle('active', this.lobbyMode === 'teams');
-    if (btnFfa) btnFfa.classList.toggle('active', this.lobbyMode === 'ffa');
+    if (btnTeams) {
+      btnTeams.classList.toggle('active', this.lobbyMode === 'teams');
+      btnTeams.style.opacity = this.isHost ? '1' : '0.6';
+      btnTeams.style.cursor = this.isHost ? 'pointer' : 'not-allowed';
+      btnTeams.title = this.isHost ? '' : 'Controlled by squad leader';
+    }
+    if (btnFfa) {
+      btnFfa.classList.toggle('active', this.lobbyMode === 'ffa');
+      btnFfa.style.opacity = this.isHost ? '1' : '0.6';
+      btnFfa.style.cursor = this.isHost ? 'pointer' : 'not-allowed';
+      btnFfa.title = this.isHost ? '' : 'Controlled by squad leader';
+    }
 
     // 2. Team Battle vs FFA Grids
     const teamGrid = document.getElementById('team-battle-grid');
@@ -1360,11 +1549,11 @@ class NetworkSystem {
     }
     if (ffaGrid) {
       ffaGrid.style.display = this.lobbyMode === 'ffa' ? 'block' : 'none';
-      const ffaBox = document.getElementById('ffa-members-list');
+      const ffaBox = document.getElementById('ffa-members');
       if (ffaBox) {
         ffaBox.innerHTML = '';
         if (this.lobbyPlayers.length === 0) {
-          ffaBox.innerHTML = '<div class="team-empty-hint">NO OPERATIVES IN COMBAT SECTOR</div>';
+          ffaBox.innerHTML = '<div class="team-empty-hint">NO OPERATIVES IN ARENA</div>';
         } else {
           this.lobbyPlayers.forEach(m => {
             const item = document.createElement('div');
@@ -1373,11 +1562,14 @@ class NetworkSystem {
               <span class="member-dot" style="background: ${m.color || '#00f0ff'}; box-shadow: 0 0 6px ${m.color || '#00f0ff'};"></span>
               <span class="member-name">${m.name} ${m.id === this.myId ? '(YOU)' : ''}</span>
               ${m.isHost ? '<span class="member-host-badge">LEADER</span>' : ''}
+              <span class="member-ready-badge ${m.isReady ? 'ready' : 'waiting'}">${m.isReady ? 'READY ✓' : 'WAITING'}</span>
             `;
             ffaBox.appendChild(item);
           });
         }
       }
+      const ffaCount = document.getElementById('ffa-operatives-count');
+      if (ffaCount) ffaCount.textContent = this.lobbyPlayers.length;
     }
 
     // 3. Leader Pill & Match Status
@@ -1399,29 +1591,43 @@ class NetworkSystem {
 
     const matchStatusText = document.getElementById('match-status-text');
     const startBtn = document.getElementById('start-btn');
+    const readyCount = this.lobbyPlayers.filter(p => p.isReady).length;
+    const total = this.lobbyPlayers.length;
+
     if (matchStatusText) {
       if (this.gameStarted) {
-        matchStatusText.textContent = 'MATCH IN PROGRESS — SELECT TEAM TO DROP IN';
+        matchStatusText.textContent = 'MATCH IN PROGRESS — CHOOSE TEAM & CLICK READY TO DROP IN';
         matchStatusText.style.color = '#00ff88';
       } else if (this.isHost) {
-        matchStatusText.textContent = 'LEADER READY — CLICK START TO LAUNCH SQUAD';
-        matchStatusText.style.color = '#ffb400';
+        matchStatusText.textContent = (readyCount === total && total > 0)
+          ? 'ALL OPERATIVES READY — MATCH STARTING!'
+          : `SQUAD READY: ${readyCount} / ${total} — WAITING FOR OPERATIVES`;
+        matchStatusText.style.color = (readyCount === total && total > 0) ? '#00ff88' : '#ffb400';
       } else {
-        matchStatusText.textContent = 'WAITING FOR SQUAD LEADER TO START MATCH';
-        matchStatusText.style.color = 'var(--accent-cyan)';
+        matchStatusText.textContent = `SQUAD READY: ${readyCount} / ${total} — CLICK READY TO ENTER COMBAT`;
+        matchStatusText.style.color = this.isReady ? '#00ff88' : 'var(--accent-cyan)';
       }
     }
 
-    if (startBtn && this.game && this.game.gameMode === 'multiplayer') {
+    if (startBtn) {
       const btnText = startBtn.querySelector('.btn-text');
-      if (btnText) {
-        if (this.gameStarted) {
-          btnText.textContent = 'DROP INTO MATCH';
-        } else if (this.isHost) {
-          btnText.textContent = 'START MATCH (LEADER)';
-        } else {
-          btnText.textContent = 'WAITING FOR LEADER';
+      const inMultiplayer = (this.game && this.game.gameMode === 'multiplayer') || (!this.isHost) || (this.lobbyPlayers.length > 1);
+      if (inMultiplayer) {
+        if (btnText) {
+          if (this.gameStarted) {
+            btnText.textContent = 'READY (DROP IN)';
+            startBtn.classList.remove('ready-active');
+          } else if (this.isReady) {
+            btnText.textContent = 'READY ✓';
+            startBtn.classList.add('ready-active');
+          } else {
+            btnText.textContent = 'READY';
+            startBtn.classList.remove('ready-active');
+          }
         }
+      } else {
+        if (btnText) btnText.textContent = 'START';
+        startBtn.classList.remove('ready-active');
       }
     }
 
@@ -1490,6 +1696,7 @@ class NetworkSystem {
             <span class="member-dot" style="background: ${this.alphaColor}; box-shadow: 0 0 6px ${this.alphaColor};"></span>
             <span class="member-name">${m.name} ${m.id === this.myId ? '(YOU)' : ''}</span>
             ${m.isHost ? '<span class="member-host-badge">LEADER</span>' : ''}
+            <span class="member-ready-badge ${m.isReady ? 'ready' : 'waiting'}">${m.isReady ? 'READY ✓' : 'WAITING'}</span>
           `;
           alphaBox.appendChild(item);
         });
@@ -1508,6 +1715,7 @@ class NetworkSystem {
             <span class="member-dot" style="background: ${this.betaColor}; box-shadow: 0 0 6px ${this.betaColor};"></span>
             <span class="member-name">${m.name} ${m.id === this.myId ? '(YOU)' : ''}</span>
             ${m.isHost ? '<span class="member-host-badge">LEADER</span>' : ''}
+            <span class="member-ready-badge ${m.isReady ? 'ready' : 'waiting'}">${m.isReady ? 'READY ✓' : 'WAITING'}</span>
           `;
           betaBox.appendChild(item);
         });
@@ -1523,13 +1731,13 @@ class NetworkSystem {
     if (btnJoinAlpha) {
       const isAlpha = this.myTeam === 'alpha';
       btnJoinAlpha.classList.toggle('joined', isAlpha);
-      btnJoinAlpha.innerHTML = isAlpha ? '<span>✓</span> JOINED TEAM ALPHA' : '<span>➔</span> JOIN TEAM ALPHA';
+      btnJoinAlpha.innerHTML = isAlpha ? '<span>✓</span> JOINED TEAM ALPHA' : 'JOIN TEAM ALPHA';
       if (cardAlpha) cardAlpha.classList.toggle('my-team', isAlpha);
     }
     if (btnJoinBeta) {
       const isBeta = this.myTeam === 'beta';
       btnJoinBeta.classList.toggle('joined', isBeta);
-      btnJoinBeta.innerHTML = isBeta ? '<span>✓</span> JOINED TEAM BETA' : '<span>➔</span> JOIN TEAM BETA';
+      btnJoinBeta.innerHTML = isBeta ? '<span>✓</span> JOINED TEAM BETA' : 'JOIN TEAM BETA';
       if (cardBeta) cardBeta.classList.toggle('my-team', isBeta);
     }
 
@@ -1576,6 +1784,106 @@ class NetworkSystem {
     if (countEl) {
       const count = Object.keys(this.remotePlayers).length + 1;
       countEl.textContent = `${count} OPERATIVE${count > 1 ? 'S' : ''} CONNECTED`;
+    }
+  }
+
+  updateTeamScoreboardHUD(teamStats) {
+    const hud = document.getElementById('team-scoreboard-hud');
+    if (!hud) return;
+
+    if (this.game && this.game.gameMode === 'multiplayer' && this.lobbyMode === 'teams') {
+      hud.classList.remove('hidden');
+    } else {
+      hud.classList.add('hidden');
+      return;
+    }
+
+    const alpha = teamStats.alpha || { kills: 0, score: 0 };
+    const beta = teamStats.beta || { kills: 0, score: 0 };
+
+    const alphaKills = document.getElementById('hud-alpha-kills');
+    const alphaScore = document.getElementById('hud-alpha-score');
+    const betaKills = document.getElementById('hud-beta-kills');
+    const betaScore = document.getElementById('hud-beta-score');
+
+    if (alphaKills) alphaKills.textContent = `${alpha.kills} / 20`;
+    if (alphaScore) alphaScore.textContent = Number(alpha.score || 0).toLocaleString();
+    if (betaKills) betaKills.textContent = `${beta.kills} / 20`;
+    if (betaScore) betaScore.textContent = Number(beta.score || 0).toLocaleString();
+
+    const alphaDot = document.getElementById('hud-alpha-dot');
+    const betaDot = document.getElementById('hud-beta-dot');
+    if (alphaDot) alphaDot.style.background = this.alphaColor || '#00f0ff';
+    if (betaDot) betaDot.style.background = this.betaColor || '#ff3366';
+  }
+
+  showTeamMatchOverScreen(teamStats, winner) {
+    const screen = document.getElementById('team-match-over-screen');
+    if (!screen) return;
+
+    const alpha = teamStats.alpha || { kills: 0, score: 0 };
+    const beta = teamStats.beta || { kills: 0, score: 0 };
+
+    const title = document.getElementById('team-match-title');
+    const sub = document.getElementById('team-match-sub');
+    const cardAlpha = document.getElementById('res-card-alpha');
+    const cardBeta = document.getElementById('res-card-beta');
+    const badgeAlpha = document.getElementById('res-alpha-badge');
+    const badgeBeta = document.getElementById('res-beta-badge');
+
+    const killsAlpha = document.getElementById('res-alpha-kills');
+    const scoreAlpha = document.getElementById('res-alpha-score');
+    const killsBeta = document.getElementById('res-beta-kills');
+    const scoreBeta = document.getElementById('res-beta-score');
+
+    if (killsAlpha) killsAlpha.textContent = `${alpha.kills} / 20`;
+    if (scoreAlpha) scoreAlpha.textContent = Number(alpha.score).toLocaleString() + ' PTS';
+    if (killsBeta) killsBeta.textContent = `${beta.kills} / 20`;
+    if (scoreBeta) scoreBeta.textContent = Number(beta.score).toLocaleString() + ' PTS';
+
+    if (winner === 'alpha') {
+      if (title) {
+        title.textContent = 'TEAM ALPHA VICTORIOUS';
+        title.style.color = this.alphaColor || '#00f0ff';
+        title.style.textShadow = `0 0 20px ${this.alphaColor || '#00f0ff'}`;
+      }
+      if (cardAlpha) { cardAlpha.className = 'team-result-card winner'; }
+      if (cardBeta) { cardBeta.className = 'team-result-card defeated'; }
+      if (badgeAlpha) { badgeAlpha.className = 'team-result-badge win-badge'; badgeAlpha.textContent = 'VICTORY (HIGHEST SCORE)'; }
+      if (badgeBeta) { badgeBeta.className = 'team-result-badge defeat-badge'; badgeBeta.textContent = 'DEFEATED'; }
+    } else if (winner === 'beta') {
+      if (title) {
+        title.textContent = 'TEAM BETA VICTORIOUS';
+        title.style.color = this.betaColor || '#ff3366';
+        title.style.textShadow = `0 0 20px ${this.betaColor || '#ff3366'}`;
+      }
+      if (cardAlpha) { cardAlpha.className = 'team-result-card defeated'; }
+      if (cardBeta) { cardBeta.className = 'team-result-card winner'; }
+      if (badgeAlpha) { badgeAlpha.className = 'team-result-badge defeat-badge'; badgeAlpha.textContent = 'DEFEATED'; }
+      if (badgeBeta) { badgeBeta.className = 'team-result-badge win-badge'; badgeBeta.textContent = 'VICTORY (HIGHEST SCORE)'; }
+    } else {
+      if (title) {
+        title.textContent = 'MATCH CONCLUDED — DRAW';
+        title.style.color = '#ffd166';
+      }
+      if (cardAlpha) { cardAlpha.className = 'team-result-card'; }
+      if (cardBeta) { cardBeta.className = 'team-result-card'; }
+      if (badgeAlpha) { badgeAlpha.className = 'team-result-badge'; badgeAlpha.textContent = 'DRAW'; }
+      if (badgeBeta) { badgeBeta.className = 'team-result-badge'; badgeBeta.textContent = 'DRAW'; }
+    }
+
+    if (sub) {
+      sub.textContent = `A squad reached the 20 rival kills target! Final victory is determined by HIGHEST COMBINED SCORE (Rival Eliminations + AI Neutralizations).`;
+    }
+
+    screen.classList.remove('hidden');
+
+    if (window.soundSystem) {
+      if (this.myTeam === winner) {
+        window.soundSystem.playWaveClear();
+      } else {
+        window.soundSystem.playGameOver();
+      }
     }
   }
 }

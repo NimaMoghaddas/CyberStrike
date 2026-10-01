@@ -743,20 +743,24 @@ html, body {
    MODAL / OVERLAY SCREENS
    ========================================================================== */
 .screen-overlay {
-  position: absolute;
+  position: fixed;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(4, 7, 14, 0.85);
+  background: rgba(4, 7, 14, 0.88);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   z-index: 100;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   pointer-events: auto;
   transition: opacity 0.3s ease;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 20px 0;
+  box-sizing: border-box;
 }
 
 .screen-overlay.hidden {
@@ -1686,14 +1690,33 @@ html, body {
 .terminal-modal {
   max-width: 1040px !important;
   width: 95vw !important;
-  max-height: 94vh !important;
+  max-height: 88vh !important;
   display: flex !important;
   flex-direction: column !important;
-  padding: 22px 26px !important;
-  background: rgba(10, 15, 26, 0.95) !important;
+  padding: 20px 24px !important;
+  background: rgba(10, 15, 26, 0.96) !important;
   border: 1px solid rgba(0, 240, 255, 0.35) !important;
   box-shadow: 0 12px 48px rgba(0, 0, 0, 0.8), 0 0 30px rgba(0, 240, 255, 0.12) !important;
-  overflow: hidden !important;
+  overflow-y: scroll !important;
+  overflow-x: hidden !important;
+  scrollbar-width: thin;
+  scrollbar-color: var(--accent-cyan) rgba(10, 15, 26, 0.8);
+  -webkit-overflow-scrolling: touch;
+}
+
+.terminal-modal::-webkit-scrollbar {
+  width: 7px;
+}
+
+.terminal-modal::-webkit-scrollbar-track {
+  background: rgba(10, 15, 26, 0.8);
+  border-radius: 4px;
+}
+
+.terminal-modal::-webkit-scrollbar-thumb {
+  background: var(--accent-cyan);
+  border-radius: 4px;
+  box-shadow: 0 0 6px rgba(0, 240, 255, 0.5);
 }
 
 .terminal-header {
@@ -1742,9 +1765,9 @@ html, body {
   display: grid;
   grid-template-columns: 290px 1fr;
   gap: 20px;
-  min-height: 0;
-  flex: 1;
-  overflow: hidden;
+  min-height: auto !important;
+  flex: none !important;
+  overflow: visible !important;
 }
 
 @media (max-width: 860px) {
@@ -1762,6 +1785,8 @@ html, body {
 .terminal-col-preview {
   display: flex;
   flex-direction: column;
+  height: auto !important;
+  overflow: visible !important;
 }
 
 .preview-panel-box {
@@ -1772,8 +1797,8 @@ html, body {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  height: 100%;
-  overflow-y: auto;
+  height: auto !important;
+  overflow: visible !important;
 }
 
 .panel-section-title {
@@ -2002,9 +2027,20 @@ html, body {
 }
 
 .btn-deploy {
-  padding: 12px 18px !important;
-  font-size: 13px !important;
-  margin-top: auto;
+  padding: 13px 20px !important;
+  font-size: 14px !important;
+  font-weight: 800 !important;
+  letter-spacing: 2px !important;
+  margin-top: 10px;
+  width: 100% !important;
+  transition: all 0.25s ease !important;
+}
+
+.btn-deploy.ready-active {
+  background: linear-gradient(135deg, rgba(0, 255, 136, 0.45), rgba(0, 200, 100, 0.65)) !important;
+  border-color: var(--accent-green) !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 24px rgba(0, 255, 136, 0.5) !important;
 }
 
 .keybind-guide.compact {
@@ -2018,8 +2054,9 @@ html, body {
 .terminal-col-tabs {
   display: flex;
   flex-direction: column;
-  min-height: 0;
-  overflow: hidden;
+  min-height: auto !important;
+  height: auto !important;
+  overflow: visible !important;
 }
 
 /* Tab Navigation Bar */
@@ -2066,9 +2103,10 @@ html, body {
 /* Tab Content Areas */
 .terminal-tab-content {
   display: none;
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
+  flex: none !important;
+  min-height: auto !important;
+  height: auto !important;
+  overflow: visible !important;
   padding-right: 6px;
 }
 
@@ -3299,6 +3337,424 @@ html, body {
   border-color: var(--accent-cyan);
   color: var(--accent-cyan);
   box-shadow: 0 0 10px rgba(0, 240, 255, 0.35);
+}
+
+/* ==========================================================================
+   SQUAD LINK & OPERATIVE ROOM ID SYSTEM
+   ========================================================================== */
+.squad-id-bar {
+  display: flex;
+  gap: 12px;
+  background: rgba(14, 22, 38, 0.75);
+  border: 1px solid rgba(0, 240, 255, 0.25);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.squad-id-box {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex: 1;
+  min-width: 220px;
+}
+
+.squad-id-tag {
+  font-family: var(--font-display);
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
+.squad-id-val-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.squad-id-val {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 2px;
+  color: var(--accent-cyan);
+  background: rgba(0, 240, 255, 0.1);
+  border: 1px solid rgba(0, 240, 255, 0.35);
+  padding: 5px 12px;
+  border-radius: 4px;
+  text-shadow: 0 0 8px rgba(0, 240, 255, 0.5);
+  user-select: all;
+}
+
+#join-leader-id-input {
+  flex: 1;
+  background: rgba(7, 12, 22, 0.85);
+  border: 1px solid rgba(0, 240, 255, 0.3);
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-family: var(--font-display);
+  font-size: 12px;
+  letter-spacing: 1px;
+  color: #ffffff;
+  outline: none;
+  text-transform: uppercase;
+}
+
+#join-leader-id-input:focus {
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 8px rgba(0, 240, 255, 0.3);
+}
+
+.btn-squad-action {
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  padding: 6px 14px;
+  border-radius: 4px;
+  border: 1px solid var(--accent-cyan);
+  background: rgba(0, 240, 255, 0.15);
+  color: var(--accent-cyan);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.btn-squad-action:hover {
+  background: var(--accent-cyan);
+  color: #04070e;
+  box-shadow: 0 0 12px rgba(0, 240, 255, 0.5);
+}
+
+.btn-leave-action {
+  border-color: #ff3366 !important;
+  color: #ff3366 !important;
+  background: rgba(255, 51, 102, 0.15) !important;
+}
+
+.btn-leave-action:hover {
+  background: #ff3366 !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 12px rgba(255, 51, 102, 0.5) !important;
+}
+
+.member-ready-badge {
+  font-family: var(--font-display);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  padding: 2px 7px;
+  border-radius: 3px;
+  margin-left: auto;
+}
+
+.member-ready-badge.ready {
+  background: rgba(0, 255, 136, 0.2);
+  border: 1px solid var(--accent-green);
+  color: var(--accent-green);
+  box-shadow: 0 0 6px rgba(0, 255, 136, 0.4);
+}
+
+.member-ready-badge.waiting {
+  background: rgba(255, 183, 3, 0.15);
+  border: 1px solid rgba(255, 183, 3, 0.4);
+  color: #ffb703;
+}
+
+
+
+/* ==========================================================================
+   TOP TEAM SCOREBOARD HUD (ALPHA VS BETA)
+   ========================================================================== */
+.team-scoreboard-hud {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  background: rgba(6, 10, 18, 0.85);
+  border: 1px solid rgba(0, 240, 255, 0.25);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6), 0 0 15px rgba(0, 240, 255, 0.1);
+  border-radius: 8px;
+  padding: 6px 16px;
+  margin-bottom: 8px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  animation: hudFadeIn 0.3s ease;
+  pointer-events: none;
+}
+
+.team-scoreboard-hud.hidden {
+  display: none !important;
+}
+
+@keyframes hudFadeIn {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.team-hud-team {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.team-alpha-hud .team-hud-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.team-beta-hud .team-hud-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.team-hud-name {
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  color: #e2e8f0;
+}
+
+.team-hud-metrics {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.team-metric-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: rgba(15, 23, 42, 0.7);
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.team-metric-box .metric-label {
+  font-family: var(--font-display);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+}
+
+.team-metric-box .metric-val {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: 0.5px;
+}
+
+.team-alpha-hud .kills-box .metric-val {
+  color: #00f0ff;
+  text-shadow: 0 0 8px rgba(0, 240, 255, 0.4);
+}
+
+.team-beta-hud .kills-box .metric-val {
+  color: #ff3366;
+  text-shadow: 0 0 8px rgba(255, 51, 102, 0.4);
+}
+
+.team-alpha-hud .score-box .metric-val {
+  color: #ffd166;
+}
+
+.team-beta-hud .score-box .metric-val {
+  color: #ffd166;
+}
+
+.team-hud-divider {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.team-hud-target-pill {
+  font-family: var(--font-display);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 1.5px;
+  color: #00ff88;
+  background: rgba(0, 255, 136, 0.15);
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(0, 255, 136, 0.3);
+  white-space: nowrap;
+}
+
+.team-hud-win-rule {
+  font-family: var(--font-display);
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+  margin-top: 3px;
+  white-space: nowrap;
+}
+
+/* ==========================================================================
+   TEAM MATCH TERMINATION OVERLAY & COMPARISON CARDS
+   ========================================================================== */
+.team-match-over-box {
+  max-width: 720px !important;
+  width: 90vw !important;
+  padding: 32px 36px !important;
+  text-align: center;
+}
+
+.team-match-title {
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: 900;
+  letter-spacing: 3px;
+  color: #ffffff;
+  margin: 10px 0 6px 0;
+  text-shadow: 0 0 16px rgba(0, 240, 255, 0.5);
+}
+
+.team-match-sub {
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin-bottom: 24px;
+}
+
+.team-match-comparison-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+@media (max-width: 600px) {
+  .team-match-comparison-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.team-result-card {
+  background: rgba(10, 16, 28, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  transition: all 0.3s ease;
+}
+
+.team-result-card.winner {
+  border-color: #00ff88;
+  box-shadow: 0 0 20px rgba(0, 255, 136, 0.25);
+  background: rgba(10, 24, 20, 0.92);
+}
+
+.team-result-card.defeated {
+  opacity: 0.75;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.team-result-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.team-result-name {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  color: #ffffff;
+}
+
+.team-result-badge {
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 1.5px;
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+
+.team-result-badge.win-badge {
+  background: rgba(0, 255, 136, 0.2);
+  border: 1px solid #00ff88;
+  color: #00ff88;
+  box-shadow: 0 0 8px rgba(0, 255, 136, 0.4);
+}
+
+.team-result-badge.defeat-badge {
+  background: rgba(255, 51, 102, 0.2);
+  border: 1px solid #ff3366;
+  color: #ff3366;
+}
+
+.team-result-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.team-stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: rgba(5, 8, 15, 0.7);
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.team-stat-item.primary {
+  border-color: rgba(255, 209, 102, 0.3);
+  background: rgba(255, 209, 102, 0.05);
+}
+
+.team-stat-num {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 900;
+  color: #ffffff;
+}
+
+.team-stat-num.score-num {
+  color: #ffd166;
+  text-shadow: 0 0 10px rgba(255, 209, 102, 0.3);
+}
+
+.team-stat-lbl {
+  font-family: var(--font-display);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.team-match-action-row {
+  display: flex;
+  justify-content: center;
+  margin-top: 8px;
 }
 
 

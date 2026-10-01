@@ -2,6 +2,7 @@
  * CYBER STRIKE // DEDICATED LAN & ONLINE MULTIPLAYER SERVER
  * High-performance Node.js + Socket.io Server
  * Features:
+ * - Unique Operative Room / Squad IDs with Party Join & Leader Delegation
  * - Real-time Player Synchronization (WASD movement, aiming, dash, reload)
  * - PvP Combat (Friendly Fire / Player vs Player combat & damage)
  * - PvE Co-op Wave AI (Synchronized enemy hordes, wave progression, shared objectives)
@@ -33,8 +34,8 @@ const PORT = process.env.PORT || 3000;
 const { MAP_DEFINITIONS, MAP_WIDTH, MAP_HEIGHT } = require('./js/maps_data');
 let currentMapId = 'sector_09';
 
-function getActiveMap() {
-  return MAP_DEFINITIONS[currentMapId] || MAP_DEFINITIONS.sector_09;
+function getActiveMap(mapId = currentMapId) {
+  return MAP_DEFINITIONS[mapId] || MAP_DEFINITIONS.sector_09;
 }
 
 // Serve static frontend files
@@ -46,7 +47,6 @@ function getNetworkIps() {
   const addresses = [];
   for (const name of Object.keys(interfaces)) {
     for (const net of interfaces[name]) {
-      // IPv4 and non-internal
       if (net.family === 'IPv4' && !net.internal) {
         addresses.push({ interface: name, ip: net.address });
       }
@@ -60,31 +60,46 @@ const primaryLanIp = networkIps.length > 0 ? networkIps[0].ip : '127.0.0.1';
 
 // API: Network Info for connected clients
 app.get('/api/network-info', (req, res) => {
+  let totalActivePlayers = 0;
+  for (const rId in rooms) {
+    totalActivePlayers += Object.keys(rooms[rId].activePlayers).length;
+  }
   res.json({
     primaryIp: primaryLanIp,
     allIps: networkIps,
     port: PORT,
-    playersCount: Object.keys(players).length
+    playersCount: totalActivePlayers
   });
 });
 
-// --- MAP GEOMETRY (Driven by active map definition for server collision & enemy AI) ---
-function isCollidingWithMap(x, y, radius = 20) {
-  const map = getActiveMap();
-  if (x < 50 + radius || x > map.width - 50 - radius || y < 50 + radius || y > map.height - 50 - radius) {
+// --- MAP GEOMETRY (Collision for Server AI) ---
+function isCollidingWithMap(x, y, radius = 20, mapId = currentMapId) {
+  const map = getActiveMap(mapId);
+  const pad = 50 + radius;
+  if (x < pad || x > map.width - pad || y < pad || y > map.height - pad) {
     return true;
   }
-  for (const w of map.walls) {
+  for (let i = 0; i < map.walls.length; i++) {
+    const w = map.walls[i];
     if (w.type === 'boundary') continue;
-    const nearX = Math.max(w.x, Math.min(x, w.x + w.w));
-    const nearY = Math.max(w.y, Math.min(y, w.y + w.h));
-    const dx = x - nearX;
-    const dy = y - nearY;
-    if (dx * dx + dy * dy < radius * radius) {
+
+    // Inside rect check
+    if (x >= w.x && x <= w.x + w.w && y >= w.y && y <= w.y + w.h) {
       return true;
     }
+
+    if (radius > 0) {
+      const nearX = Math.max(w.x, Math.min(x, w.x + w.w));
+      const nearY = Math.max(w.y, Math.min(y, w.y + w.h));
+      const dx = x - nearX;
+      const dy = y - nearY;
+      if (dx * dx + dy * dy < radius * radius) {
+        return true;
+      }
+    }
   }
-  for (const p of map.pillars) {
+  for (let i = 0; i < map.pillars.length; i++) {
+    const p = map.pillars[i];
     const dx = x - p.x;
     const dy = y - p.y;
     const minD = radius + p.radius;
@@ -95,67 +110,148 @@ function isCollidingWithMap(x, y, radius = 20) {
   return false;
 }
 
-function resolveCircleCollision(entity) {
-  const map = getActiveMap();
-  let collided = false;
-  const r = entity.radius;
+function resolveCircleCollision(entity, mapId = currentMapId) {
+  const map = getActiveMap(mapId);
+  let hadCollision = false;
+  const r = entity.radius || 20;
+  const maxPasses = 4; // Multi-pass relaxation solver
 
-  // 1. Boundaries
-  const pad = 52 + r;
-  if (entity.x < pad) { entity.x = pad; collided = true; }
-  if (entity.x > map.width - pad) { entity.x = map.width - pad; collided = true; }
-  if (entity.y < pad) { entity.y = pad; collided = true; }
-  if (entity.y > map.height - pad) { entity.y = map.height - pad; collided = true; }
+  for (let pass = 0; pass < maxPasses; pass++) {
+    let collidedThisPass = false;
 
-  // 2. Rectangular Walls
-  for (const wall of map.walls) {
-    if (wall.type === 'boundary') continue;
-    const nearestX = Math.max(wall.x, Math.min(entity.x, wall.x + wall.w));
-    const nearestY = Math.max(wall.y, Math.min(entity.y, wall.y + wall.h));
-    const dx = entity.x - nearestX;
-    const dy = entity.y - nearestY;
-    const distSq = dx * dx + dy * dy;
+    // 1. Boundaries
+    const pad = 52 + r;
+    if (entity.x < pad) { entity.x = pad; collidedThisPass = true; }
+    if (entity.x > map.width - pad) { entity.x = map.width - pad; collidedThisPass = true; }
+    if (entity.y < pad) { entity.y = pad; collidedThisPass = true; }
+    if (entity.y > map.height - pad) { entity.y = map.height - pad; collidedThisPass = true; }
 
-    if (distSq < r * r) {
-      collided = true;
-      const dist = Math.sqrt(distSq);
-      if (dist === 0) {
-        entity.x = wall.x - r;
+    // 2. Rectangular Walls
+    for (let i = 0; i < map.walls.length; i++) {
+      const wall = map.walls[i];
+      if (wall.type === 'boundary') continue;
+
+      // Case A: Circle center is INSIDE the rectangle (Deep Penetration)
+      if (entity.x >= wall.x && entity.x <= wall.x + wall.w &&
+          entity.y >= wall.y && entity.y <= wall.y + wall.h) {
+        collidedThisPass = true;
+        // Calculate distance to all 4 edges to find Minimum Translation Vector (MTV)
+        const dLeft = entity.x - wall.x;
+        const dRight = (wall.x + wall.w) - entity.x;
+        const dTop = entity.y - wall.y;
+        const dBottom = (wall.y + wall.h) - entity.y;
+        const min = Math.min(dLeft, dRight, dTop, dBottom);
+
+        if (min === dLeft) {
+          entity.x = wall.x - r - 0.5;
+        } else if (min === dRight) {
+          entity.x = wall.x + wall.w + r + 0.5;
+        } else if (min === dTop) {
+          entity.y = wall.y - r - 0.5;
+        } else {
+          entity.y = wall.y + wall.h + r + 0.5;
+        }
       } else {
-        const overlap = r - dist;
-        entity.x += (dx / dist) * overlap;
-        entity.y += (dy / dist) * overlap;
+        // Case B: Circle center is outside
+        const nearestX = Math.max(wall.x, Math.min(entity.x, wall.x + wall.w));
+        const nearestY = Math.max(wall.y, Math.min(entity.y, wall.y + wall.h));
+        const dx = entity.x - nearestX;
+        const dy = entity.y - nearestY;
+        const distSq = dx * dx + dy * dy;
+
+        if (distSq < r * r) {
+          collidedThisPass = true;
+          const dist = Math.sqrt(distSq);
+          if (dist > 0.0001) {
+            const overlap = r - dist + 0.5;
+            entity.x += (dx / dist) * overlap;
+            entity.y += (dy / dist) * overlap;
+          } else {
+            entity.x = wall.x - r - 0.5;
+          }
+        }
+      }
+    }
+
+    // 3. Pillars
+    for (let i = 0; i < map.pillars.length; i++) {
+      const pillar = map.pillars[i];
+      const dx = entity.x - pillar.x;
+      const dy = entity.y - pillar.y;
+      const minDist = r + pillar.radius;
+      const distSq = dx * dx + dy * dy;
+
+      if (distSq < minDist * minDist) {
+        collidedThisPass = true;
+        const dist = Math.sqrt(distSq);
+        if (dist > 0.0001) {
+          const overlap = minDist - dist + 0.5;
+          entity.x += (dx / dist) * overlap;
+          entity.y += (dy / dist) * overlap;
+        } else {
+          entity.x = pillar.x + minDist + 0.5;
+        }
+      }
+    }
+
+    if (collidedThisPass) {
+      hadCollision = true;
+    } else {
+      break;
+    }
+  }
+
+  // Ultimate safeguard: if entity is still colliding after relaxation passes, trigger unstuck rescue
+  if (hadCollision && isCollidingWithMap(entity.x, entity.y, r, mapId)) {
+    unstuckEntityServer(entity, mapId);
+  }
+
+  return hadCollision;
+}
+
+// Emergency Server-Side Unstuck Handler
+function unstuckEntityServer(entity, mapId = currentMapId) {
+  const r = entity.radius || 20;
+  if (!isCollidingWithMap(entity.x, entity.y, r, mapId)) {
+    return false;
+  }
+  const testRadii = [16, 32, 48, 64, 85, 115, 160, 220];
+  for (let d = 0; d < testRadii.length; d++) {
+    const dist = testRadii[d];
+    for (let a = 0; a < 16; a++) {
+      const theta = (a / 16) * Math.PI * 2;
+      const tx = entity.x + Math.cos(theta) * dist;
+      const ty = entity.y + Math.sin(theta) * dist;
+      if (!isCollidingWithMap(tx, ty, r, mapId)) {
+        entity.x = tx;
+        entity.y = ty;
+        return true;
       }
     }
   }
-
-  // 3. Pillars
-  for (const pillar of map.pillars) {
-    const dx = entity.x - pillar.x;
-    const dy = entity.y - pillar.y;
-    const minDist = r + pillar.radius;
-    const distSq = dx * dx + dy * dy;
-
-    if (distSq < minDist * minDist) {
-      collided = true;
-      const dist = Math.sqrt(distSq) || 1;
-      const overlap = minDist - dist;
-      entity.x += (dx / dist) * overlap;
-      entity.y += (dy / dist) * overlap;
-    }
-  }
-
-  return collided;
+  const map = getActiveMap(mapId);
+  const spawn = (map.spawns && map.spawns[0]) || map.spawnPoint || { x: 1200, y: 1200 };
+  entity.x = spawn.x;
+  entity.y = spawn.y;
+  return true;
 }
 
-// Tactical Spawn Points for Operatives
-function getRandomSpawnPoint() {
-  const map = getActiveMap();
-  const spawn = map.spawnPoint || { x: 1200, y: 1200 };
-  return {
-    x: spawn.x + (Math.random() - 0.5) * 120,
-    y: spawn.y + (Math.random() - 0.5) * 120
-  };
+// Tactical Spawn Points (with collision-free guarantee)
+function getRandomSpawnPoint(mapId = currentMapId) {
+  const map = getActiveMap(mapId);
+  const spawns = (map.spawns && map.spawns.length > 0) ? map.spawns : [map.spawnPoint || { x: 1200, y: 1200 }];
+  const baseSpawn = spawns[Math.floor(Math.random() * spawns.length)];
+
+  for (let attempt = 0; attempt < 25; attempt++) {
+    const candidate = {
+      x: baseSpawn.x + (Math.random() - 0.5) * 100,
+      y: baseSpawn.y + (Math.random() - 0.5) * 100
+    };
+    if (!isCollidingWithMap(candidate.x, candidate.y, 22, mapId)) {
+      return candidate;
+    }
+  }
+  return { x: baseSpawn.x, y: baseSpawn.y };
 }
 
 // Preset Operative Colors
@@ -170,36 +266,6 @@ const OPERATIVE_COLORS = [
   '#ffe600'  // Hazard Yellow (Hazard)
 ];
 
-// --- SERVER GAME STATE ---
-const players = {};
-let nextEnemyId = 1;
-const enemies = {};
-
-// Multiplayer Lobby & Team Battle State
-const lobbyState = {
-  mode: 'teams', // 'teams' | 'ffa'
-  hostId: null,
-  mapId: 'sector_09',
-  gameStarted: false,
-  alphaColor: '#00f0ff',
-  betaColor: '#ff3366',
-  players: {}, // [socketId]: { id, name, team: 'alpha'|'beta'|'solo', color, isHost, modelType }
-  lockedColors: {} // [color]: socketId
-};
-
-function broadcastLobbySync() {
-  io.emit('lobby_sync', {
-    mode: lobbyState.mode,
-    hostId: lobbyState.hostId,
-    mapId: lobbyState.mapId || currentMapId,
-    gameStarted: lobbyState.gameStarted,
-    alphaColor: lobbyState.alphaColor,
-    betaColor: lobbyState.betaColor,
-    lockedColors: Object.keys(lobbyState.lockedColors),
-    players: Object.values(lobbyState.players)
-  });
-}
-
 // Barrel States Generator
 function getInitialBarrelsForMap(mapId) {
   const map = MAP_DEFINITIONS[mapId] || MAP_DEFINITIONS.sector_09;
@@ -213,28 +279,86 @@ function getInitialBarrelsForMap(mapId) {
   }));
 }
 
-let barrels = getInitialBarrelsForMap(currentMapId);
+// --- MULTI-ROOM / PARTY SYSTEM WITH MEMORABLE OPERATIVE IDs ---
+let nextRoomCodeNum = 1000 + Math.floor(Math.random() * 8999);
+function getNextUserCode() {
+  const code = (nextRoomCodeNum++).toString();
+  if (nextRoomCodeNum > 9999) nextRoomCodeNum = 1000;
+  return code;
+}
 
-// Shared Wave State
-const waveManager = {
-  wave: 1,
-  state: 'intermission', // 'intermission' | 'active' | 'cleared'
-  timer: 3.0,
-  enemiesToSpawn: 0,
-  totalEnemiesInWave: 0,
-  spawnInterval: 0.5,
-  spawnTimer: 0
-};
+const rooms = {};
 
-// Tactical Health Pack (Medkit) System - Spawns every 5 seconds
-let nextMedkitId = 1;
-const medkits = {}; // { [id]: { id, x, y, heal: 50 } }
-let medkitTimer = 0;
+function createRoom(hostId, hostCode, mapId = 'sector_09') {
+  return {
+    id: hostId,
+    code: hostCode,
+    hostId: hostId,
+    mode: 'teams', // 'teams' | 'ffa'
+    mapId: mapId,
+    gameStarted: false,
+    alphaColor: '#00f0ff',
+    betaColor: '#ff3366',
+    lockedColors: {},
+    teamStats: {
+      alpha: { kills: 0, score: 0 },
+      beta: { kills: 0, score: 0 },
+      targetKills: 20,
+      matchFinished: false,
+      winner: null
+    },
+    players: {},       // [socketId]: { id, userCode, name, team, color, isHost, isReady, modelType, skinId }
+    activePlayers: {}, // [socketId]: Player object in game
+    enemies: {},
+    barrels: getInitialBarrelsForMap(mapId),
+    medkits: {},
+    nextEnemyId: 1,
+    nextMedkitId: 1,
+    medkitTimer: 0,
+    waveManager: {
+      wave: 1,
+      state: 'intermission', // 'intermission' | 'active' | 'cleared'
+      timer: 3.0,
+      enemiesToSpawn: 0,
+      totalEnemiesInWave: 0,
+      spawnInterval: 0.5,
+      spawnTimer: 0
+    }
+  };
+}
+
+function getRoomForSocket(socket) {
+  if (socket.roomId && rooms[socket.roomId]) {
+    return rooms[socket.roomId];
+  }
+  if (rooms[socket.id]) {
+    return rooms[socket.id];
+  }
+  return null;
+}
+
+function broadcastLobbySync(roomId) {
+  const room = rooms[roomId];
+  if (!room) return;
+  io.to(room.id).emit('lobby_sync', {
+    roomId: room.id,
+    roomCode: room.code,
+    hostId: room.hostId,
+    mode: room.mode,
+    mapId: room.mapId,
+    gameStarted: room.gameStarted,
+    alphaColor: room.alphaColor,
+    betaColor: room.betaColor,
+    lockedColors: Object.keys(room.lockedColors),
+    players: Object.values(room.players)
+  });
+}
+
 const MEDKIT_SPAWN_INTERVAL = 5.0; // 5 seconds
 const MAX_SERVER_MEDKITS = 8;
 
-function spawnServerMedkit() {
-  const map = getActiveMap();
+function spawnServerMedkit(room) {
+  const map = getActiveMap(room.mapId);
   let spawnX, spawnY;
   let attempts = 0;
   const pad = 120;
@@ -242,92 +366,203 @@ function spawnServerMedkit() {
     spawnX = pad + Math.random() * (map.width - pad * 2);
     spawnY = pad + Math.random() * (map.height - pad * 2);
     attempts++;
-  } while (attempts < 30 && isCollidingWithMap(spawnX, spawnY, 35));
+  } while (attempts < 30 && isCollidingWithMap(spawnX, spawnY, 35, room.mapId));
 
-  const medkitId = `med_${nextMedkitId++}`;
+  const medkitId = `med_${room.nextMedkitId++}`;
   const medkit = {
     id: medkitId,
     x: Math.round(spawnX),
     y: Math.round(spawnY),
     heal: 50
   };
-  medkits[medkitId] = medkit;
-
-  io.emit('medkit_spawned', medkit);
+  room.medkits[medkitId] = medkit;
+  io.to(room.id).emit('medkit_spawned', medkit);
 }
 
-function startWave(waveNum) {
-  waveManager.wave = waveNum;
-  waveManager.state = 'intermission';
-  waveManager.timer = 3.0;
+function startWave(room, waveNum) {
+  room.waveManager.wave = waveNum;
+  room.waveManager.state = 'intermission';
+  room.waveManager.timer = 3.0;
 
-  // Total enemies: Wave 1 starts with exactly 20 hostiles, scaling exponentially per wave
   const count = 20 + (waveNum - 1) * 8 + Math.floor((waveNum - 1) * (waveNum - 1) * 1.5);
-  waveManager.enemiesToSpawn = count;
-  waveManager.totalEnemiesInWave = count;
-  waveManager.spawnTimer = 0.1; // initial spawn batch right when wave activates
+  room.waveManager.enemiesToSpawn = count;
+  room.waveManager.totalEnemiesInWave = count;
+  room.waveManager.spawnTimer = 0.1;
 
-  io.emit('wave_start', {
-    wave: waveManager.wave,
-    totalEnemies: waveManager.totalEnemiesInWave,
+  io.to(room.id).emit('wave_start', {
+    wave: room.waveManager.wave,
+    totalEnemies: room.waveManager.totalEnemiesInWave,
     message: `HOSTILE WAVE ${waveNum}`
   });
 }
 
-function spawnServerEnemy() {
+function triggerServerBomberExplosion(room, x, y, killerSocketId, killerPlayer) {
+  const blastRadius = 160;
+  io.to(room.id).emit('barrel_exploded', {
+    barrelId: 'drone_' + Math.floor(Math.random() * 10000),
+    x,
+    y,
+    radius: blastRadius
+  });
+
+  // 1. Damage alive players in blast
+  const alivePlayers = Object.values(room.activePlayers).filter(p => p.alive);
+  for (const p of alivePlayers) {
+    const dist = Math.hypot(p.x - x, p.y - y);
+    if (dist < blastRadius && p.invulnerableTimer <= 0) {
+      const dmg = Math.round(75 * (1 - dist / blastRadius));
+      p.hp -= dmg;
+      p.invulnerableTimer = 0.25;
+      if (p.hp <= 0) {
+        p.hp = 0;
+        p.alive = false;
+        p.deaths++;
+        schedulePlayerRespawn(room, p);
+        io.to(room.id).emit('player_eliminated', {
+          victimId: p.id,
+          victimName: p.name,
+          victimColor: p.color,
+          killerName: 'BOMBER BLAST',
+          killerColor: '#ff7700',
+          isPvP: false
+        });
+        io.to(room.id).emit('kill_feed_msg', {
+          killer: 'BOMBER BLAST',
+          killerColor: '#ff7700',
+          victim: p.name,
+          victimColor: p.color,
+          type: 'pve_death'
+        });
+      } else {
+        io.to(p.id).emit('player_damaged', {
+          damage: dmg,
+          hp: p.hp,
+          attackerName: 'BOMBER BLAST'
+        });
+        io.to(room.id).emit('player_hit_fx', {
+          targetId: p.id,
+          damage: dmg,
+          hp: p.hp,
+          x: p.x,
+          y: p.y,
+          isCritical: true
+        });
+      }
+    }
+  }
+
+  // 2. Damage surrounding hostiles in blast (chain reaction!)
+  for (const otherId in room.enemies) {
+    const other = room.enemies[otherId];
+    if (!other) continue;
+    const d = Math.hypot(other.x - x, other.y - y);
+    if (d < blastRadius && d > 0) {
+      const blastDmg = Math.round(95 * (1 - d / blastRadius));
+      other.hp -= blastDmg;
+      if (other.hp <= 0) {
+        delete room.enemies[otherId];
+        if (killerPlayer) {
+          killerPlayer.kills++;
+          killerPlayer.score += other.scoreValue;
+          if (room.mode === 'teams' && killerPlayer.team && room.teamStats) {
+            room.teamStats[killerPlayer.team].score += other.scoreValue;
+            io.to(room.id).emit('team_stats_update', { teamStats: room.teamStats });
+          }
+        }
+        io.to(room.id).emit('enemy_killed', {
+          enemyId: otherId,
+          killerId: killerSocketId || 'blast',
+          killerName: killerPlayer ? killerPlayer.name : 'BOMBER EXPLOSION',
+          killerColor: killerPlayer ? killerPlayer.color : '#ff7700',
+          score: other.scoreValue,
+          enemyType: other.type
+        });
+        // Chain react if this enemy was also a bomber
+        if (other.type === 'bomber') {
+          setTimeout(() => {
+            if (rooms[room.id]) {
+              triggerServerBomberExplosion(room, other.x, other.y, killerSocketId, killerPlayer);
+            }
+          }, 60);
+        }
+      } else {
+        io.to(room.id).emit('enemy_damaged', {
+          enemyId: otherId,
+          damage: blastDmg,
+          hp: other.hp,
+          isCritical: true,
+          x: other.x,
+          y: other.y
+        });
+      }
+    }
+  }
+}
+
+function spawnServerEnemy(room) {
   const roll = Math.random();
   let type = 'normal';
   let radius = 22, maxHp = 90, speed = 155, damage = 20, scoreValue = 100, color = '#00ff88', attackCooldown = 0.85, attackRange = 48;
 
-  // Blue enemies (fast, shielded) completely removed!
-  // Vast majority are standard green grunts and agile bombers, few snipers, and rare red tanks.
-  if (waveManager.wave === 1) {
-    if (roll < 0.85) {
-      type = 'normal';
-    } else {
-      type = 'bomber';
-      radius = 18; maxHp = 60; speed = 210; damage = 50; scoreValue = 200; color = '#ff7700'; attackCooldown = 0.5; attackRange = 36;
-    }
-  } else if (waveManager.wave === 2) {
-    if (roll < 0.70) {
-      type = 'normal';
-    } else if (roll < 0.90) {
-      type = 'bomber';
-      radius = 18; maxHp = 60; speed = 210; damage = 50; scoreValue = 200; color = '#ff7700'; attackCooldown = 0.5; attackRange = 36;
-    } else {
-      type = 'sniper';
-      radius = 20; maxHp = 75; speed = 115; damage = 28; scoreValue = 300; color = '#b026ff'; attackCooldown = 1.0; attackRange = 40;
-    }
-  } else if (waveManager.wave === 3) {
+  const wave = room.waveManager.wave;
+  if (wave === 1) {
     if (roll < 0.60) {
       type = 'normal';
-    } else if (roll < 0.80) {
+    } else if (roll < 0.85) {
+      type = 'fast';
+      radius = 16; maxHp = 45; speed = 255; damage = 14; scoreValue = 125; color = '#00f0ff'; attackCooldown = 0.45; attackRange = 32;
+    } else {
       type = 'bomber';
       radius = 18; maxHp = 60; speed = 210; damage = 50; scoreValue = 200; color = '#ff7700'; attackCooldown = 0.5; attackRange = 36;
-    } else if (roll < 0.94) {
+    }
+  } else if (wave === 2) {
+    if (roll < 0.45) {
+      type = 'normal';
+    } else if (roll < 0.70) {
+      type = 'fast';
+      radius = 16; maxHp = 45; speed = 255; damage = 14; scoreValue = 125; color = '#00f0ff'; attackCooldown = 0.45; attackRange = 32;
+    } else if (roll < 0.88) {
+      type = 'bomber';
+      radius = 18; maxHp = 60; speed = 210; damage = 50; scoreValue = 200; color = '#ff7700'; attackCooldown = 0.5; attackRange = 36;
+    } else {
       type = 'sniper';
       radius = 20; maxHp = 75; speed = 115; damage = 28; scoreValue = 300; color = '#b026ff'; attackCooldown = 1.0; attackRange = 40;
-    } else {
-      type = 'tank'; // rare
-      radius = 34; maxHp = 350; speed = 85; damage = 38; scoreValue = 400; color = '#ff3366'; attackCooldown = 1.2; attackRange = 60;
     }
-  } else { // Wave 4+
-    if (roll < 0.50) {
+  } else if (wave === 3) {
+    if (roll < 0.35) {
       type = 'normal';
-    } else if (roll < 0.75) {
+    } else if (roll < 0.60) {
+      type = 'fast';
+      radius = 16; maxHp = 45; speed = 255; damage = 14; scoreValue = 125; color = '#00f0ff'; attackCooldown = 0.45; attackRange = 32;
+    } else if (roll < 0.78) {
       type = 'bomber';
       radius = 18; maxHp = 60; speed = 210; damage = 50; scoreValue = 200; color = '#ff7700'; attackCooldown = 0.5; attackRange = 36;
     } else if (roll < 0.90) {
       type = 'sniper';
       radius = 20; maxHp = 75; speed = 115; damage = 28; scoreValue = 300; color = '#b026ff'; attackCooldown = 1.0; attackRange = 40;
     } else {
-      type = 'tank'; // rare big enemy
+      type = 'tank';
+      radius = 34; maxHp = 350; speed = 85; damage = 38; scoreValue = 400; color = '#ff3366'; attackCooldown = 1.2; attackRange = 60;
+    }
+  } else {
+    if (roll < 0.25) {
+      type = 'normal';
+    } else if (roll < 0.50) {
+      type = 'fast';
+      radius = 16; maxHp = 45; speed = 255; damage = 14; scoreValue = 125; color = '#00f0ff'; attackCooldown = 0.45; attackRange = 32;
+    } else if (roll < 0.70) {
+      type = 'bomber';
+      radius = 18; maxHp = 60; speed = 210; damage = 50; scoreValue = 200; color = '#ff7700'; attackCooldown = 0.5; attackRange = 36;
+    } else if (roll < 0.86) {
+      type = 'sniper';
+      radius = 20; maxHp = 75; speed = 115; damage = 28; scoreValue = 300; color = '#b026ff'; attackCooldown = 1.0; attackRange = 40;
+    } else {
+      type = 'tank';
       radius = 34; maxHp = 350; speed = 85; damage = 38; scoreValue = 400; color = '#ff3366'; attackCooldown = 1.2; attackRange = 60;
     }
   }
 
-  // Pick random alive player as anchor to spawn around
-  const alivePlayers = Object.values(players).filter(p => p.alive);
+  const alivePlayers = Object.values(room.activePlayers).filter(p => p.alive);
   const anchor = alivePlayers.length > 0
     ? alivePlayers[Math.floor(Math.random() * alivePlayers.length)]
     : { x: 1200, y: 1200 };
@@ -335,6 +570,7 @@ function spawnServerEnemy() {
   let spawnX, spawnY;
   let attempts = 0;
   const minD = 550, maxD = 1100;
+  const map = getActiveMap(room.mapId);
 
   do {
     const angle = Math.random() * Math.PI * 2;
@@ -344,11 +580,11 @@ function spawnServerEnemy() {
     attempts++;
   } while (
     attempts < 25 &&
-    (spawnX < 80 || spawnX > MAP_WIDTH - 80 || spawnY < 80 || spawnY > MAP_HEIGHT - 80 || isCollidingWithMap(spawnX, spawnY, radius + 10))
+    (spawnX < 80 || spawnX > map.width - 80 || spawnY < 80 || spawnY > map.height - 80 || isCollidingWithMap(spawnX, spawnY, radius + 10, room.mapId))
   );
 
-  const enemyId = `e_${nextEnemyId++}`;
-  enemies[enemyId] = {
+  const enemyId = `e_${room.nextEnemyId++}`;
+  room.enemies[enemyId] = {
     id: enemyId,
     type,
     x: Math.round(spawnX),
@@ -364,19 +600,19 @@ function spawnServerEnemy() {
     attackCooldown,
     attackRange,
     attackTimer: 0,
-    spitCooldown: 3.2,
-    spitTimer: 1.5 + Math.random() * 2.0,
+    spitCooldown: 5.0,
+    spitTimer: 1.0 + Math.random() * 4.0, // Every 5 seconds
     spitWindupTimer: 0
   };
 
-  waveManager.enemiesToSpawn--;
+  room.waveManager.enemiesToSpawn--;
 
-  io.emit('enemy_spawned', {
-    enemy: enemies[enemyId]
+  io.to(room.id).emit('enemy_spawned', {
+    enemy: room.enemies[enemyId]
   });
 }
 
-function triggerBarrelExplosion(barrel, triggererName = 'Explosion') {
+function triggerBarrelExplosion(room, barrel, triggererName = 'Explosion') {
   if (barrel.exploded) return;
   barrel.exploded = true;
   barrel.hp = 0;
@@ -384,23 +620,23 @@ function triggerBarrelExplosion(barrel, triggererName = 'Explosion') {
   const blastRadius = 170;
   const maxDamage = 140;
 
-  io.emit('barrel_exploded', {
+  io.to(room.id).emit('barrel_exploded', {
     id: barrel.id,
     x: barrel.x,
     y: barrel.y,
     blastRadius
   });
 
-  // Damage enemies in blast radius
-  for (const enemyId in enemies) {
-    const e = enemies[enemyId];
+  // Damage enemies in room
+  for (const enemyId in room.enemies) {
+    const e = room.enemies[enemyId];
     const dist = Math.hypot(e.x - barrel.x, e.y - barrel.y);
     if (dist < blastRadius) {
       const dmg = Math.round(maxDamage * (1 - dist / blastRadius));
       e.hp -= dmg;
       if (e.hp <= 0) {
-        delete enemies[enemyId];
-        io.emit('enemy_killed', {
+        delete room.enemies[enemyId];
+        io.to(room.id).emit('enemy_killed', {
           enemyId,
           killerId: null,
           killerName: 'Barrel Blast',
@@ -408,7 +644,7 @@ function triggerBarrelExplosion(barrel, triggererName = 'Explosion') {
           enemyType: e.type
         });
       } else {
-        io.emit('enemy_damaged', {
+        io.to(room.id).emit('enemy_damaged', {
           enemyId,
           damage: dmg,
           hp: e.hp,
@@ -418,9 +654,9 @@ function triggerBarrelExplosion(barrel, triggererName = 'Explosion') {
     }
   }
 
-  // Damage players in blast radius
-  for (const socketId in players) {
-    const p = players[socketId];
+  // Damage players in room
+  for (const socketId in room.activePlayers) {
+    const p = room.activePlayers[socketId];
     if (!p.alive || p.invulnerableTimer > 0) continue;
     const dist = Math.hypot(p.x - barrel.x, p.y - barrel.y);
     if (dist < blastRadius) {
@@ -430,9 +666,9 @@ function triggerBarrelExplosion(barrel, triggererName = 'Explosion') {
         p.hp = 0;
         p.alive = false;
         p.deaths++;
-        schedulePlayerRespawn(p);
+        schedulePlayerRespawn(room, p);
 
-        io.emit('player_eliminated', {
+        io.to(room.id).emit('player_eliminated', {
           victimId: p.id,
           victimName: p.name,
           victimColor: p.color,
@@ -451,246 +687,409 @@ function triggerBarrelExplosion(barrel, triggererName = 'Explosion') {
   }
 }
 
-function schedulePlayerRespawn(player) {
-  const RESPAWN_TIME = 4.0;
-  player.respawnTimer = RESPAWN_TIME;
-
-  io.to(player.id).emit('respawn_countdown', {
-    seconds: RESPAWN_TIME
-  });
+function schedulePlayerRespawn(room, player) {
+  const respawnTime = 4.0;
+  io.to(player.id).emit('respawn_countdown', { seconds: respawnTime });
 
   setTimeout(() => {
-    if (!players[player.id]) return; // Player disconnected in meantime
-    const spawn = getRandomSpawnPoint();
+    if (!room || !room.activePlayers[player.id]) return;
+    const spawn = getRandomSpawnPoint(room.mapId);
     player.x = spawn.x;
     player.y = spawn.y;
-    player.hp = player.maxHp;
+    player.hp = player.maxHp || 100;
     player.alive = true;
-    player.respawnTimer = 0;
-    player.invulnerableTimer = 2.5; // 2.5s shield grace
+    player.invulnerableTimer = 2.5;
 
-    io.emit('player_respawned', {
+    io.to(room.id).emit('player_respawned', {
       id: player.id,
-      name: player.name,
-      color: player.color,
       x: player.x,
       y: player.y,
       hp: player.hp,
       invulnerableTimer: 2.5
     });
-
-    io.emit('kill_feed_msg', {
-      text: `${player.name} REDEPLOYED // SHIELD ACTIVE`,
-      type: 'info'
-    });
-  }, RESPAWN_TIME * 1000);
+  }, respawnTime * 1000);
 }
 
-// --- SOCKET.IO CONNECTION HANDLING ---
+// --- SOCKET CONNECTION HANDLING ---
 io.on('connection', (socket) => {
-  console.log(`[CONNECT] Operative connected: ${socket.id}`);
+  // Generate unique 4-digit code for this player
+  socket.userCode = getNextUserCode();
+  socket.roomId = socket.id; // Initially, player is leader of their own room!
 
-  // Assign or retain Room Host
-  if (!lobbyState.hostId) {
-    lobbyState.hostId = socket.id;
-  }
+  const defaultName = `OPERATIVE-${socket.userCode}`;
+  const assignedColor = OPERATIVE_COLORS[Math.floor(Math.random() * OPERATIVE_COLORS.length)];
 
-  // Auto assign color and callsign
-  const defaultName = `OPERATIVE-${socket.id.substring(0, 4).toUpperCase()}`;
-  let assignedColor = OPERATIVE_COLORS.find(c => !lobbyState.lockedColors[c]) || OPERATIVE_COLORS[0];
-  lobbyState.lockedColors[assignedColor] = socket.id;
+  // Create player's private default room
+  const room = createRoom(socket.id, socket.userCode);
+  rooms[socket.roomId] = room;
+  socket.join(room.id);
 
-  // Auto-balance team
-  const alphaCount = Object.values(lobbyState.players).filter(p => p.team === 'alpha').length;
-  const betaCount = Object.values(lobbyState.players).filter(p => p.team === 'beta').length;
-  const assignedTeam = alphaCount <= betaCount ? 'alpha' : 'beta';
-
-  const playerColor = lobbyState.mode === 'teams'
-    ? (assignedTeam === 'alpha' ? lobbyState.alphaColor : lobbyState.betaColor)
-    : assignedColor;
-
-  lobbyState.players[socket.id] = {
+  room.players[socket.id] = {
     id: socket.id,
+    userCode: socket.userCode,
     name: defaultName,
-    team: assignedTeam,
-    color: playerColor,
-    isHost: socket.id === lobbyState.hostId
+    team: 'alpha',
+    color: room.alphaColor,
+    isHost: true,
+    isReady: false,
+    modelType: 'commando',
+    skinId: 'spectre'
   };
+
+  console.log(`[CONNECT] Operative ${defaultName} connected with ID [${socket.userCode}]`);
 
   // 1. Send initialization data to the new client
   socket.emit('init_data', {
     yourId: socket.id,
+    userCode: socket.userCode,
     serverIp: primaryLanIp,
     port: PORT,
     allIps: networkIps,
-    players: Object.values(players),
-    enemies: Object.values(enemies),
-    barrels,
-    medkits: Object.values(medkits),
+    players: Object.values(room.activePlayers),
+    enemies: Object.values(room.enemies),
+    barrels: room.barrels,
+    medkits: Object.values(room.medkits),
     lobby: {
-      mode: lobbyState.mode,
-      hostId: lobbyState.hostId,
-      alphaColor: lobbyState.alphaColor,
-      betaColor: lobbyState.betaColor,
-      lockedColors: Object.keys(lobbyState.lockedColors),
-      players: Object.values(lobbyState.players)
+      roomId: room.id,
+      roomCode: room.code,
+      mode: room.mode,
+      hostId: room.hostId,
+      mapId: room.mapId,
+      gameStarted: room.gameStarted,
+      alphaColor: room.alphaColor,
+      betaColor: room.betaColor,
+      lockedColors: Object.keys(room.lockedColors),
+      players: Object.values(room.players)
     },
     waveInfo: {
-      wave: waveManager.wave,
-      state: waveManager.state,
-      timer: waveManager.timer,
-      totalEnemies: waveManager.totalEnemiesInWave,
-      enemiesLeft: Object.keys(enemies).length + waveManager.enemiesToSpawn
+      wave: room.waveManager.wave,
+      state: room.waveManager.state,
+      timer: room.waveManager.timer,
+      totalEnemies: room.waveManager.totalEnemiesInWave,
+      enemiesLeft: Object.keys(room.enemies).length + room.waveManager.enemiesToSpawn
     }
   });
 
-  broadcastLobbySync();
+  broadcastLobbySync(room.id);
 
-  // Lobby: Update Operative Callsign
+  // Join Room by Leader's Operative ID or Code
+  socket.on('lobby_join_by_id', (data) => {
+    const targetCode = data && data.targetId ? String(data.targetId).trim().toUpperCase() : '';
+    if (!targetCode) return;
+
+    // Search all rooms and players for matching code or ID
+    let targetRoom = null;
+    let targetHostPlayer = null;
+
+    for (const rid in rooms) {
+      const r = rooms[rid];
+      if (r.code === targetCode || r.id === targetCode) {
+        targetRoom = r;
+        break;
+      }
+      for (const pid in r.players) {
+        const p = r.players[pid];
+        if (p.userCode === targetCode || p.id === targetCode) {
+          targetRoom = r;
+          targetHostPlayer = p;
+          break;
+        }
+      }
+      if (targetRoom) break;
+    }
+
+    if (!targetRoom) {
+      socket.emit('lobby_error', { message: `Operative ID "${targetCode}" not found!` });
+      return;
+    }
+
+    if (targetRoom.id === socket.roomId) {
+      return; // Already in this room
+    }
+
+    // Leave old room
+    const oldRoom = rooms[socket.roomId];
+    if (oldRoom) {
+      delete oldRoom.players[socket.id];
+      delete oldRoom.activePlayers[socket.id];
+      socket.leave(oldRoom.id);
+      if (Object.keys(oldRoom.players).length === 0) {
+        delete rooms[oldRoom.id];
+      } else if (oldRoom.hostId === socket.id) {
+        const remainingPids = Object.keys(oldRoom.players);
+        oldRoom.hostId = remainingPids[0];
+        oldRoom.players[oldRoom.hostId].isHost = true;
+        broadcastLobbySync(oldRoom.id);
+      } else {
+        broadcastLobbySync(oldRoom.id);
+      }
+    }
+
+    // Join target room
+    socket.join(targetRoom.id);
+    socket.roomId = targetRoom.id;
+
+    // Auto-balance team
+    const alphaCount = Object.values(targetRoom.players).filter(p => p.team === 'alpha').length;
+    const betaCount = Object.values(targetRoom.players).filter(p => p.team === 'beta').length;
+    const assignedTeam = alphaCount <= betaCount ? 'alpha' : 'beta';
+
+    const playerColor = targetRoom.mode === 'teams'
+      ? (assignedTeam === 'alpha' ? targetRoom.alphaColor : targetRoom.betaColor)
+      : OPERATIVE_COLORS.find(c => !targetRoom.lockedColors[c]) || OPERATIVE_COLORS[0];
+
+    const currentName = (data && data.name && data.name.trim().length > 0)
+      ? data.name.trim().substring(0, 16)
+      : `OPERATIVE-${socket.userCode}`;
+
+    targetRoom.players[socket.id] = {
+      id: socket.id,
+      userCode: socket.userCode,
+      name: currentName,
+      team: assignedTeam,
+      color: playerColor,
+      isHost: false,
+      isReady: false,
+      skinId: (data && data.skinId) ? data.skinId : 'spectre',
+      modelType: (data && data.modelType) ? data.modelType : 'commando'
+    };
+
+    socket.emit('lobby_joined_room', {
+      roomId: targetRoom.id,
+      roomCode: targetRoom.code,
+      hostId: targetRoom.hostId,
+      gameStarted: targetRoom.gameStarted,
+      mode: targetRoom.mode,
+      mapId: targetRoom.mapId
+    });
+
+    broadcastLobbySync(targetRoom.id);
+    console.log(`[PARTY] Operative ${socket.userCode} joined room of leader [${targetRoom.code}]`);
+  });
+
+  // Leave Squad / Return to Solo Room as Leader
+  socket.on('lobby_leave_room', () => {
+    const currentRoom = rooms[socket.roomId];
+    if (!currentRoom || currentRoom.hostId === socket.id) return; // already leader
+
+    delete currentRoom.players[socket.id];
+    delete currentRoom.activePlayers[socket.id];
+    socket.leave(currentRoom.id);
+    broadcastLobbySync(currentRoom.id);
+
+    // Create private room for this socket
+    socket.roomId = socket.id;
+    const newRoom = createRoom(socket.id, socket.userCode);
+    rooms[socket.roomId] = newRoom;
+    socket.join(newRoom.id);
+
+    newRoom.players[socket.id] = {
+      id: socket.id,
+      userCode: socket.userCode,
+      name: defaultName,
+      team: 'alpha',
+      color: newRoom.alphaColor,
+      isHost: true,
+      isReady: false,
+      modelType: 'commando',
+      skinId: 'spectre'
+    };
+
+    broadcastLobbySync(newRoom.id);
+  });
+
+  // Toggle Ready Status
+  socket.on('lobby_toggle_ready', (data) => {
+    const room = getRoomForSocket(socket);
+    if (!room) return;
+    const lp = room.players[socket.id];
+    if (!lp) return;
+
+    lp.isReady = data && data.isReady !== undefined ? !!data.isReady : !lp.isReady;
+    broadcastLobbySync(room.id);
+
+    // Check if ALL players in the squad are ready
+    const playerList = Object.values(room.players);
+    const allReady = playerList.length > 0 && playerList.every(p => p.isReady);
+    if (allReady && !room.gameStarted) {
+      room.gameStarted = true;
+      io.to(room.id).emit('game_start_signal', {
+        mapId: room.mapId,
+        mode: room.mode
+      });
+      broadcastLobbySync(room.id);
+      console.log(`[LAUNCH] All operatives in squad [${room.code}] are READY! Launching match.`);
+    }
+  });
+
+  // Update Callsign
   socket.on('lobby_update_name', (data) => {
-    const lp = lobbyState.players[socket.id];
+    const room = getRoomForSocket(socket);
+    if (!room) return;
+    const lp = room.players[socket.id];
     if (lp && data && data.name) {
       lp.name = data.name.trim().substring(0, 16);
-      broadcastLobbySync();
+      broadcastLobbySync(room.id);
     }
   });
 
-  // Lobby: Host updates Mode (Teams vs FFA)
+  // Update Model / Chassis
+  socket.on('lobby_update_model', (data) => {
+    const room = getRoomForSocket(socket);
+    if (!room) return;
+    const lp = room.players[socket.id];
+    if (lp && data && (data.modelType || data.skinId)) {
+      if (data.modelType) lp.modelType = data.modelType;
+      if (data.skinId) lp.skinId = data.skinId;
+      broadcastLobbySync(room.id);
+    }
+  });
+
+  // Host Only: Set Mode (Teams vs FFA)
   socket.on('lobby_set_mode', (data) => {
-    if (socket.id !== lobbyState.hostId) return;
+    const room = getRoomForSocket(socket);
+    if (!room || socket.id !== room.hostId) return;
     if (data && (data.mode === 'teams' || data.mode === 'ffa')) {
-      lobbyState.mode = data.mode;
-      for (const pid in lobbyState.players) {
-        const lp = lobbyState.players[pid];
-        if (lobbyState.mode === 'teams') {
-          lp.color = lp.team === 'alpha' ? lobbyState.alphaColor : lobbyState.betaColor;
+      room.mode = data.mode;
+      for (const pid in room.players) {
+        const lp = room.players[pid];
+        if (room.mode === 'teams') {
+          lp.color = lp.team === 'alpha' ? room.alphaColor : room.betaColor;
         } else {
-          for (const col in lobbyState.lockedColors) {
-            if (lobbyState.lockedColors[col] === pid) {
+          for (const col in room.lockedColors) {
+            if (room.lockedColors[col] === pid) {
               lp.color = col;
               break;
             }
           }
         }
-        if (players[pid]) {
-          players[pid].color = lp.color;
+        if (room.activePlayers[pid]) {
+          room.activePlayers[pid].color = lp.color;
         }
       }
-      broadcastLobbySync();
+      broadcastLobbySync(room.id);
     }
   });
 
-  // Lobby: Host sets Team Color (Alpha or Beta)
+  // Host Only: Set Team Colors
   socket.on('lobby_set_team_color', (data) => {
-    if (socket.id !== lobbyState.hostId) return;
+    const room = getRoomForSocket(socket);
+    if (!room || socket.id !== room.hostId) return;
     if (!data || !data.team || !data.color) return;
     if (data.team === 'alpha') {
-      lobbyState.alphaColor = data.color;
+      room.alphaColor = data.color;
     } else if (data.team === 'beta') {
-      lobbyState.betaColor = data.color;
+      room.betaColor = data.color;
     }
-    for (const pid in lobbyState.players) {
-      const lp = lobbyState.players[pid];
+    for (const pid in room.players) {
+      const lp = room.players[pid];
       if (lp.team === data.team) {
         lp.color = data.color;
-        if (players[pid]) players[pid].color = data.color;
+        if (room.activePlayers[pid]) room.activePlayers[pid].color = data.color;
       }
     }
-    broadcastLobbySync();
+    broadcastLobbySync(room.id);
   });
 
-  // Lobby: Leader sets Battlefield Map
+  // Host Only: Set Map
   socket.on('lobby_set_map', (data) => {
-    if (socket.id !== lobbyState.hostId) return;
+    const room = getRoomForSocket(socket);
+    if (!room || socket.id !== room.hostId) return;
     if (data && data.mapId && MAP_DEFINITIONS[data.mapId]) {
-      currentMapId = data.mapId;
-      lobbyState.mapId = data.mapId;
-      barrels = getInitialBarrelsForMap(currentMapId);
-      io.emit('map_sync', { mapId: currentMapId });
-      broadcastLobbySync();
+      room.mapId = data.mapId;
+      room.barrels = getInitialBarrelsForMap(room.mapId);
+      io.to(room.id).emit('map_sync', { mapId: room.mapId });
+      broadcastLobbySync(room.id);
     }
   });
 
-  // Lobby: Leader starts the match for all operatives in the squad
-  socket.on('leader_start_game', (data) => {
-    if (socket.id !== lobbyState.hostId) return;
-    lobbyState.gameStarted = true;
-    io.emit('game_start_signal', {
-      mapId: currentMapId,
-      mode: lobbyState.mode
+  // Leader Starts Match Directly
+  socket.on('leader_start_game', () => {
+    const room = getRoomForSocket(socket);
+    if (!room || socket.id !== room.hostId) return;
+    room.gameStarted = true;
+    room.teamStats = {
+      alpha: { kills: 0, score: 0 },
+      beta: { kills: 0, score: 0 },
+      targetKills: 20,
+      matchFinished: false,
+      winner: null
+    };
+    io.to(room.id).emit('team_stats_update', { teamStats: room.teamStats });
+    io.to(room.id).emit('game_start_signal', {
+      mapId: room.mapId,
+      mode: room.mode
     });
-    broadcastLobbySync();
+    broadcastLobbySync(room.id);
   });
 
-  // Lobby: Player Joins a Team
+  // Member & Leader: Join Team (Alpha or Beta)
   socket.on('lobby_join_team', (data) => {
-    const lp = lobbyState.players[socket.id];
+    const room = getRoomForSocket(socket);
+    if (!room) return;
+    const lp = room.players[socket.id];
     if (lp && data && (data.team === 'alpha' || data.team === 'beta')) {
       lp.team = data.team;
-      lp.color = data.team === 'alpha' ? lobbyState.alphaColor : lobbyState.betaColor;
-      if (players[socket.id]) {
-        players[socket.id].team = lp.team;
-        players[socket.id].color = lp.color;
+      lp.color = data.team === 'alpha' ? room.alphaColor : room.betaColor;
+      if (room.activePlayers[socket.id]) {
+        room.activePlayers[socket.id].team = lp.team;
+        room.activePlayers[socket.id].color = lp.color;
       }
-      broadcastLobbySync();
-
-      // If game is already active, immediately notify client to drop into the battle
-      if (lobbyState.gameStarted && !players[socket.id]) {
-        socket.emit('game_start_signal', {
-          mapId: currentMapId,
-          mode: lobbyState.mode,
-          autoDeploy: true
-        });
-      }
+      broadcastLobbySync(room.id);
     }
   });
 
-  // Lobby: Player selects individual color in FFA mode
+  // Member & Leader: Select Individual FFA Color
   socket.on('lobby_select_color', (data) => {
-    const lp = lobbyState.players[socket.id];
+    const room = getRoomForSocket(socket);
+    if (!room) return;
+    const lp = room.players[socket.id];
     if (lp && data && data.color) {
-      if (lobbyState.lockedColors[data.color] && lobbyState.lockedColors[data.color] !== socket.id) {
+      if (room.lockedColors[data.color] && room.lockedColors[data.color] !== socket.id) {
         socket.emit('color_lock_rejected', { color: data.color });
         return;
       }
-      for (const col in lobbyState.lockedColors) {
-        if (lobbyState.lockedColors[col] === socket.id) {
-          delete lobbyState.lockedColors[col];
+      for (const col in room.lockedColors) {
+        if (room.lockedColors[col] === socket.id) {
+          delete room.lockedColors[col];
         }
       }
-      lobbyState.lockedColors[data.color] = socket.id;
+      room.lockedColors[data.color] = socket.id;
       lp.color = data.color;
-      if (players[socket.id]) {
-        players[socket.id].color = data.color;
+      if (room.activePlayers[socket.id]) {
+        room.activePlayers[socket.id].color = data.color;
       }
-      broadcastLobbySync();
+      broadcastLobbySync(room.id);
     }
   });
 
-  // 2. Client joins active game
+  // Deploy / Join Active Game (Pre-game launch or Mid-game drop-in)
   socket.on('join_game', (data) => {
-    const spawn = getRandomSpawnPoint();
-    const lp = lobbyState.players[socket.id];
+    const room = getRoomForSocket(socket);
+    if (!room) return;
+
+    const spawn = getRandomSpawnPoint(room.mapId);
+    const lp = room.players[socket.id];
     const name = (data && data.name && data.name.trim().length > 0)
       ? data.name.trim().substring(0, 16)
       : (lp ? lp.name : defaultName);
 
     if (lp) lp.name = name;
 
-    const team = (lobbyState.mode === 'teams' && lp) ? lp.team : 'solo';
-    const color = (lobbyState.mode === 'teams' && lp)
-      ? (lp.team === 'alpha' ? lobbyState.alphaColor : lobbyState.betaColor)
+    const team = (room.mode === 'teams' && lp) ? lp.team : 'solo';
+    const color = (room.mode === 'teams' && lp)
+      ? (lp.team === 'alpha' ? room.alphaColor : room.betaColor)
       : (lp ? lp.color : assignedColor);
 
     // Push pre-existing enemies away from spawn point so joining player is safe
-    for (const eid in enemies) {
-      const e = enemies[eid];
+    for (const eid in room.enemies) {
+      const e = room.enemies[eid];
       const d = Math.hypot(e.x - spawn.x, e.y - spawn.y);
       if (d < 500) {
         const angle = Math.atan2(e.y - spawn.y, e.x - spawn.x) || Math.random() * Math.PI * 2;
         e.x = spawn.x + Math.cos(angle) * 650;
         e.y = spawn.y + Math.sin(angle) * 650;
-        resolveCircleCollision(e);
+        resolveCircleCollision(e, room.mapId);
       }
     }
 
@@ -699,8 +1098,8 @@ io.on('connection', (socket) => {
       name,
       team,
       color,
-      skinId: (data && data.skinId) ? data.skinId : 'spectre',
-      modelType: (data && (data.modelType || data.skinModel)) ? (data.modelType || data.skinModel) : 'commando',
+      skinId: (data && data.skinId) ? data.skinId : (lp && lp.skinId ? lp.skinId : 'spectre'),
+      modelType: (data && (data.modelType || data.skinModel)) ? (data.modelType || data.skinModel) : (lp && lp.modelType ? lp.modelType : 'commando'),
       weapon: (data && data.weapon) ? data.weapon : 'rifle',
       x: spawn.x,
       y: spawn.y,
@@ -723,46 +1122,38 @@ io.on('connection', (socket) => {
       lastUpdate: Date.now()
     };
 
-    // If a specific map is requested and no other players are active, set map
-    if (data && data.mapId && MAP_DEFINITIONS[data.mapId]) {
-      if (Object.keys(players).length === 0) {
-        currentMapId = data.mapId;
-        barrels = getInitialBarrelsForMap(currentMapId);
-        io.emit('map_sync', { mapId: currentMapId });
-      }
+    room.activePlayers[socket.id] = newPlayer;
+
+    // Start wave 1 if no active wave running in this room
+    if (room.waveManager.enemiesToSpawn === 0 && Object.keys(room.enemies).length === 0) {
+      startWave(room, 1);
     }
 
-    players[socket.id] = newPlayer;
-
-    // Start wave 1 if no active wave running on server
-    if (waveManager.enemiesToSpawn === 0 && Object.keys(enemies).length === 0) {
-      startWave(1);
-    }
-
-    // Acknowledge to joined player with current map
+    // Acknowledge to joined player
     socket.emit('joined_successfully', {
       player: newPlayer,
-      mapId: currentMapId
+      mapId: room.mapId
     });
 
-    // Broadcast to other players
-    socket.broadcast.emit('player_joined', {
+    // Broadcast to other squad members in room
+    socket.to(room.id).emit('player_joined', {
       player: newPlayer
     });
 
-    // Killfeed notification
-    io.emit('kill_feed_msg', {
+    io.to(room.id).emit('kill_feed_msg', {
       text: `${name} DEPLOYED TO SECTOR [${team.toUpperCase()}]`,
       type: 'join',
       color: newPlayer.color
     });
 
-    console.log(`[JOIN] ${name} (${socket.id}) entered battle on map [${currentMapId}] Team: ${team}. Total: ${Object.keys(players).length}`);
+    console.log(`[JOIN] ${name} deployed into squad [${room.code}] on [${room.mapId}]`);
   });
 
-  // 3. High-frequency Player Input / Position Update
+  // High-frequency Player Input / Position Update
   socket.on('player_update', (data) => {
-    const p = players[socket.id];
+    const room = getRoomForSocket(socket);
+    if (!room) return;
+    const p = room.activePlayers[socket.id];
     if (!p || !p.alive) return;
 
     p.x = data.x;
@@ -779,16 +1170,20 @@ io.on('connection', (socket) => {
     p.lastUpdate = Date.now();
   });
 
-  // 4. Player Shoot Event (Broadcast to all clients for instant local rendering)
+  // Shoot Event
   socket.on('player_shoot', (data) => {
-    const p = players[socket.id];
+    const room = getRoomForSocket(socket);
+    if (!room) return;
+    const p = room.activePlayers[socket.id];
     if (!p || !p.alive) return;
 
     const bulletColor = data.color || p.color || '#00f0ff';
 
-    // Relay to other players with complete weapon & bullet physics
-    socket.broadcast.emit('remote_shoot', {
+    const playerTeam = p.team || data.team || (room.players[socket.id] ? room.players[socket.id].team : null);
+
+    socket.to(room.id).emit('remote_shoot', {
       shooterId: socket.id,
+      team: playerTeam,
       x: data.x,
       y: data.y,
       angle: data.angle,
@@ -806,22 +1201,34 @@ io.on('connection', (socket) => {
     });
   });
 
-  // 5. PvE Hit: Bullet hit an enemy
+  // PvE Hit Enemy
   socket.on('hit_enemy', (data) => {
-    const enemy = enemies[data.enemyId];
-    const shooter = players[socket.id];
+    const room = getRoomForSocket(socket);
+    if (!room) return;
+    const enemy = room.enemies[data.enemyId];
+    const shooter = room.activePlayers[socket.id];
     if (!enemy || !shooter) return;
 
     const damage = data.damage || 28;
     enemy.hp -= damage;
 
     if (enemy.hp <= 0) {
-      // Enemy eliminated!
-      delete enemies[data.enemyId];
+      delete room.enemies[data.enemyId];
       shooter.kills++;
       shooter.score += enemy.scoreValue;
 
-      io.emit('enemy_killed', {
+      // Add to team score in Team Mode
+      if (room.mode === 'teams' && shooter.team && room.teamStats && room.teamStats[shooter.team]) {
+        room.teamStats[shooter.team].score += enemy.scoreValue;
+        io.to(room.id).emit('team_stats_update', { teamStats: room.teamStats });
+      }
+
+      // If it was a bomber, trigger surrounding explosion!
+      if (enemy.type === 'bomber') {
+        triggerServerBomberExplosion(room, enemy.x, enemy.y, socket.id, shooter);
+      }
+
+      io.to(room.id).emit('enemy_killed', {
         enemyId: data.enemyId,
         killerId: socket.id,
         killerName: shooter.name,
@@ -830,7 +1237,7 @@ io.on('connection', (socket) => {
         enemyType: enemy.type
       });
 
-      io.emit('kill_feed_msg', {
+      io.to(room.id).emit('kill_feed_msg', {
         killer: shooter.name,
         killerColor: shooter.color,
         victim: `${enemy.type.toUpperCase()} CYBORG`,
@@ -838,7 +1245,7 @@ io.on('connection', (socket) => {
         score: enemy.scoreValue
       });
     } else {
-      io.emit('enemy_damaged', {
+      io.to(room.id).emit('enemy_damaged', {
         enemyId: data.enemyId,
         damage,
         hp: enemy.hp,
@@ -849,16 +1256,18 @@ io.on('connection', (socket) => {
     }
   });
 
-  // 6. PvP Hit: Bullet hit another player (Friendly Fire / PvP)
+  // PvP Hit Player
   socket.on('hit_player', (data) => {
-    const shooter = players[socket.id];
-    const target = players[data.targetId];
+    const room = getRoomForSocket(socket);
+    if (!room) return;
+    const shooter = room.activePlayers[socket.id];
+    const target = room.activePlayers[data.targetId];
 
     if (!shooter || !target || !target.alive || socket.id === data.targetId) return;
-    if (target.invulnerableTimer > 0) return; // Spawn / dash invulnerability
+    if (target.invulnerableTimer > 0) return;
 
-    // Teammate friendly fire protection in Team Battle mode
-    if (lobbyState.mode === 'teams' && shooter.team && target.team && shooter.team === target.team) {
+    // Friendly fire protection in Team Battle
+    if (room.mode === 'teams' && shooter.team && target.team && shooter.team === target.team) {
       return;
     }
 
@@ -870,12 +1279,44 @@ io.on('connection', (socket) => {
       target.alive = false;
       target.deaths++;
       shooter.kills++;
-      shooter.score += 500; // 500 points for PvP elimination
+      const rivalKillBonus = 750; // Much higher than standard enemies (~100-200)
+      shooter.score += rivalKillBonus;
 
-      // Schedule respawn
-      schedulePlayerRespawn(target);
+      // Team mode stats update (Rival Kills & Score)
+      if (room.mode === 'teams' && shooter.team && target.team && shooter.team !== target.team && room.teamStats) {
+        if (!room.teamStats[shooter.team]) room.teamStats[shooter.team] = { kills: 0, score: 0 };
+        room.teamStats[shooter.team].kills++;
+        room.teamStats[shooter.team].score += rivalKillBonus;
 
-      io.emit('player_eliminated', {
+        io.to(room.id).emit('team_stats_update', { teamStats: room.teamStats });
+
+        // Check 20-kill victory condition:
+        // When either team reaches 20 rival kills, match concludes, winner is highest total score!
+        const alpha = room.teamStats.alpha || { kills: 0, score: 0 };
+        const beta = room.teamStats.beta || { kills: 0, score: 0 };
+        if ((alpha.kills >= 20 || beta.kills >= 20) && !room.teamStats.matchFinished) {
+          room.teamStats.matchFinished = true;
+          let winner = 'draw';
+          if (alpha.score > beta.score) {
+            winner = 'alpha';
+          } else if (beta.score > alpha.score) {
+            winner = 'beta';
+          } else {
+            winner = alpha.kills >= beta.kills ? 'alpha' : 'beta';
+          }
+          room.teamStats.winner = winner;
+
+          io.to(room.id).emit('team_match_finished', {
+            teamStats: room.teamStats,
+            winner: winner,
+            message: `MATCH TERMINATED // ${winner === 'draw' ? 'DRAW MATCH' : (winner === 'alpha' ? 'TEAM ALPHA' : 'TEAM BETA') + ' VICTORIOUS (HIGHEST SCORE)'}`
+          });
+        }
+      }
+
+      schedulePlayerRespawn(room, target);
+
+      io.to(room.id).emit('player_eliminated', {
         killerId: shooter.id,
         killerName: shooter.name,
         killerColor: shooter.color,
@@ -885,7 +1326,7 @@ io.on('connection', (socket) => {
         isPvP: true
       });
 
-      io.emit('kill_feed_msg', {
+      io.to(room.id).emit('kill_feed_msg', {
         killer: shooter.name,
         killerColor: shooter.color,
         victim: target.name,
@@ -893,7 +1334,6 @@ io.on('connection', (socket) => {
         type: 'pvp'
       });
     } else {
-      // Notify target and all players
       io.to(target.id).emit('player_damaged', {
         damage,
         hp: target.hp,
@@ -901,7 +1341,7 @@ io.on('connection', (socket) => {
         attackerName: shooter.name
       });
 
-      io.emit('player_hit_fx', {
+      io.to(room.id).emit('player_hit_fx', {
         targetId: target.id,
         damage,
         hp: target.hp,
@@ -912,18 +1352,20 @@ io.on('connection', (socket) => {
     }
   });
 
-  // 6.5. Player Self-Elimination / Environmental Death
+  // Player Self-Death / Suicide
   socket.on('player_died', (data) => {
-    const p = players[socket.id];
+    const room = getRoomForSocket(socket);
+    if (!room) return;
+    const p = room.activePlayers[socket.id];
     if (!p || !p.alive) return;
 
     p.hp = 0;
     p.alive = false;
     p.deaths++;
 
-    schedulePlayerRespawn(p);
+    schedulePlayerRespawn(room, p);
 
-    io.emit('player_eliminated', {
+    io.to(room.id).emit('player_eliminated', {
       killerId: p.id,
       killerName: p.name,
       killerColor: p.color,
@@ -933,7 +1375,7 @@ io.on('connection', (socket) => {
       isSelf: true
     });
 
-    io.emit('kill_feed_msg', {
+    io.to(room.id).emit('kill_feed_msg', {
       killer: p.name,
       killerColor: p.color,
       victim: (data && data.reason) ? data.reason : 'SELF (CRITICAL CASUALTY)',
@@ -942,20 +1384,22 @@ io.on('connection', (socket) => {
     });
   });
 
-  // 6.8. Pickup Medkit (+50 HP)
+  // Pickup Medkit (+50 HP)
   socket.on('pickup_medkit', (data) => {
-    const p = players[socket.id];
+    const room = getRoomForSocket(socket);
+    if (!room) return;
+    const p = room.activePlayers[socket.id];
     if (!p || !p.alive) return;
-    const medkit = medkits[data.id];
+    const medkit = room.medkits[data.id];
     if (!medkit) return;
 
     const dx = p.x - medkit.x;
     const dy = p.y - medkit.y;
     if (dx * dx + dy * dy <= 60 * 60) {
-      delete medkits[data.id];
+      delete room.medkits[data.id];
       const healAmount = Math.max(1, Math.round(p.maxHp * 0.25));
       p.hp = Math.min(p.maxHp, p.hp + healAmount);
-      io.emit('medkit_collected', {
+      io.to(room.id).emit('medkit_collected', {
         id: data.id,
         collectorId: socket.id,
         collectorName: p.name,
@@ -966,27 +1410,31 @@ io.on('connection', (socket) => {
     }
   });
 
-  // 7. Hit Barrel
+  // Hit Barrel
   socket.on('hit_barrel', (data) => {
-    const barrel = barrels.find(b => b.id === data.barrelId);
+    const room = getRoomForSocket(socket);
+    if (!room) return;
+    const barrel = room.barrels.find(b => b.id === data.barrelId);
     if (!barrel || barrel.exploded) return;
 
     barrel.hp -= (data.damage || 28);
     if (barrel.hp <= 0) {
-      const shooter = players[socket.id];
-      triggerBarrelExplosion(barrel, shooter ? shooter.name : 'Unknown');
+      const shooter = room.activePlayers[socket.id];
+      triggerBarrelExplosion(room, barrel, shooter ? shooter.name : 'Unknown');
     }
   });
 
-  // 8. In-Game Tactical Text Chat
+  // Tactical Chat Message
   socket.on('send_chat', (data) => {
-    const p = players[socket.id];
+    const room = getRoomForSocket(socket);
+    if (!room) return;
+    const p = room.activePlayers[socket.id] || room.players[socket.id];
     if (!p || !data || !data.message) return;
 
     const cleanMsg = data.message.trim().substring(0, 100);
     if (cleanMsg.length === 0) return;
 
-    io.emit('chat_message', {
+    io.to(room.id).emit('chat_message', {
       senderId: socket.id,
       senderName: p.name,
       senderColor: p.color,
@@ -995,54 +1443,36 @@ io.on('connection', (socket) => {
     });
   });
 
-  // 9. Latency / Ping Check
+  // Ping Latency Check
   socket.on('ping_check', (timestamp) => {
     socket.emit('pong_reply', timestamp);
   });
 
-  // 10. Disconnect
+  // Disconnect
   socket.on('disconnect', () => {
-    // Clean up from lobby
-    delete lobbyState.players[socket.id];
-    for (const col in lobbyState.lockedColors) {
-      if (lobbyState.lockedColors[col] === socket.id) {
-        delete lobbyState.lockedColors[col];
+    const room = getRoomForSocket(socket);
+    if (room) {
+      delete room.players[socket.id];
+      delete room.activePlayers[socket.id];
+      for (const col in room.lockedColors) {
+        if (room.lockedColors[col] === socket.id) {
+          delete room.lockedColors[col];
+        }
       }
-    }
-    if (lobbyState.hostId === socket.id) {
-      const remaining = Object.keys(lobbyState.players);
-      lobbyState.hostId = remaining.length > 0 ? remaining[0] : null;
-      if (lobbyState.hostId && lobbyState.players[lobbyState.hostId]) {
-        lobbyState.players[lobbyState.hostId].isHost = true;
+
+      if (Object.keys(room.players).length === 0) {
+        delete rooms[room.id];
+        console.log(`[CLEANUP] Room [${room.code}] closed.`);
+      } else {
+        if (room.hostId === socket.id) {
+          const remaining = Object.keys(room.players);
+          room.hostId = remaining[0];
+          room.players[room.hostId].isHost = true;
+          console.log(`[MIGRATION] New host for room [${room.code}] is ${room.players[room.hostId].name}`);
+        }
+        broadcastLobbySync(room.id);
+        io.to(room.id).emit('player_left', { id: socket.id });
       }
-    }
-    broadcastLobbySync();
-
-    const p = players[socket.id];
-    if (p) {
-      console.log(`[DISCONNECT] ${p.name} left`);
-      io.emit('player_left', {
-        id: socket.id,
-        name: p.name
-      });
-      io.emit('kill_feed_msg', {
-        text: `${p.name} WITHDREW FROM COMBAT`,
-        type: 'leave'
-      });
-      delete players[socket.id];
-    }
-
-    // Clean reset if room is completely empty
-    if (Object.keys(players).length === 0) {
-      for (const eid in enemies) delete enemies[eid];
-      for (const mid in medkits) delete medkits[mid];
-      waveManager.wave = 1;
-      waveManager.state = 'intermission';
-      waveManager.timer = 3.0;
-      waveManager.enemiesToSpawn = 0;
-      waveManager.totalEnemiesInWave = 0;
-      barrels = getInitialBarrelsForMap(currentMapId);
-      console.log('[RESET] All operatives disconnected. Sector restored to initial Wave 1.');
     }
   });
 });
@@ -1052,361 +1482,374 @@ const TICK_RATE = 30;
 const DT = 1 / TICK_RATE;
 
 setInterval(() => {
-  const alivePlayers = Object.values(players).filter(p => p.alive);
+  for (const roomId in rooms) {
+    const room = rooms[roomId];
+    if (!room) continue;
 
-  // 1. Decrement Player invulnerability timers
-  for (const socketId in players) {
-    const p = players[socketId];
-    if (p.invulnerableTimer > 0) {
-      p.invulnerableTimer = Math.max(0, p.invulnerableTimer - DT);
-    }
-  }
+    const alivePlayers = Object.values(room.activePlayers).filter(p => p.alive);
 
-  // 2. Wave Progression & Spawning
-  if (alivePlayers.length > 0) {
-    // 2.1 Medkit Spawn Timer (Every 5 seconds)
-    medkitTimer += DT;
-    if (medkitTimer >= MEDKIT_SPAWN_INTERVAL) {
-      medkitTimer = 0;
-      if (Object.keys(medkits).length < MAX_SERVER_MEDKITS) {
-        spawnServerMedkit();
+    // 1. Decrement Player invulnerability timers
+    for (const socketId in room.activePlayers) {
+      const p = room.activePlayers[socketId];
+      if (p.invulnerableTimer > 0) {
+        p.invulnerableTimer = Math.max(0, p.invulnerableTimer - DT);
       }
     }
 
-    if (waveManager.state === 'intermission') {
-      waveManager.timer -= DT;
-      if (waveManager.timer <= 0) {
-        waveManager.state = 'active';
-        io.emit('wave_state_changed', { state: 'active', wave: waveManager.wave });
-      }
-    } else if (waveManager.state === 'active') {
-      // Spawn pending wave enemies in staggered batches
-      if (waveManager.enemiesToSpawn > 0) {
-        waveManager.spawnTimer -= DT;
-        // If all enemies on the field are eliminated, immediately flush next batch!
-        if (Object.keys(enemies).length === 0) {
-          waveManager.spawnTimer = 0;
+    // 2. Wave Progression & Spawning (Active Game Only)
+    if (alivePlayers.length > 0 && room.gameStarted) {
+      // Medkit Spawn Timer (Every 5 seconds)
+      room.medkitTimer += DT;
+      if (room.medkitTimer >= MEDKIT_SPAWN_INTERVAL) {
+        room.medkitTimer = 0;
+        if (Object.keys(room.medkits).length < MAX_SERVER_MEDKITS) {
+          spawnServerMedkit(room);
         }
-        if (waveManager.spawnTimer <= 0) {
-          const batchSize = Math.min(waveManager.enemiesToSpawn, Math.max(3, Math.floor(3 + waveManager.wave * 0.7)));
-          for (let b = 0; b < batchSize; b++) {
-            spawnServerEnemy();
+      }
+
+      if (room.waveManager.state === 'intermission') {
+        room.waveManager.timer -= DT;
+        if (room.waveManager.timer <= 0) {
+          room.waveManager.state = 'active';
+          io.to(room.id).emit('wave_state_changed', { state: 'active', wave: room.waveManager.wave });
+        }
+      } else if (room.waveManager.state === 'active') {
+        if (room.waveManager.enemiesToSpawn > 0) {
+          room.waveManager.spawnTimer -= DT;
+          if (Object.keys(room.enemies).length === 0) {
+            room.waveManager.spawnTimer = 0;
           }
-          const interval = Math.max(2.0, 4.2 - waveManager.wave * 0.35);
-          waveManager.spawnTimer = interval;
-        }
-      } else if (Object.keys(enemies).length === 0) {
-        // Wave Cleared!
-        waveManager.state = 'cleared';
-        io.emit('wave_cleared', {
-          wave: waveManager.wave,
-          bonus: 1000
-        });
+          if (room.waveManager.spawnTimer <= 0) {
+            const batchSize = Math.min(room.waveManager.enemiesToSpawn, Math.max(3, Math.floor(3 + room.waveManager.wave * 0.7)));
+            for (let b = 0; b < batchSize; b++) {
+              spawnServerEnemy(room);
+            }
+            const interval = Math.max(2.0, 4.2 - room.waveManager.wave * 0.35);
+            room.waveManager.spawnTimer = interval;
+          }
+        } else if (Object.keys(room.enemies).length === 0) {
+          // Wave Cleared!
+          room.waveManager.state = 'cleared';
+          const maxHpBonus = Math.round(15 * Math.pow(1.6, room.waveManager.wave - 1));
+          io.to(room.id).emit('wave_cleared', {
+            wave: room.waveManager.wave,
+            bonus: 1000,
+            maxHpBonus: maxHpBonus
+          });
 
-        // Reward all alive players with bonus points and health
+          // Upgrade maxHp exponentially and heal all alive players
+          for (const p of alivePlayers) {
+            p.score += 1000;
+            p.maxHp = (p.maxHp || 100) + maxHpBonus;
+            p.hp = Math.min(p.maxHp, p.hp + maxHpBonus + 25);
+          }
+
+          io.to(room.id).emit('kill_feed_msg', {
+            text: `SECTOR CLEARED // WAVE ${room.waveManager.wave} COMPLETE (+${maxHpBonus} MAX VITALITY)`,
+            type: 'wave'
+          });
+
+          setTimeout(() => {
+            if (rooms[room.id]) {
+              startWave(room, room.waveManager.wave + 1);
+            }
+          }, 4000);
+        }
+      }
+    }
+
+    // 3. Enemy AI & Movement
+    for (const enemyId in room.enemies) {
+      const enemy = room.enemies[enemyId];
+      if (enemy.attackTimer > 0) enemy.attackTimer -= DT;
+
+      // UNCONDITIONAL GREEN ENEMY ACID SPIT (Every 5 seconds, anywhere, blind fire!)
+      if (enemy.type === 'normal') {
+        if (enemy.spitTimer === undefined) enemy.spitTimer = 1.0 + Math.random() * 4.0;
+        if (enemy.spitWindupTimer > 0) {
+          enemy.spitWindupTimer -= DT;
+          if (enemy.spitWindupTimer <= 0) {
+            const mouthX = enemy.x + Math.cos(enemy.angle) * (enemy.radius + 6);
+            const mouthY = enemy.y + Math.sin(enemy.angle) * (enemy.radius + 6);
+            io.to(room.id).emit('enemy_spit', {
+              enemyId: enemy.id,
+              x: mouthX,
+              y: mouthY,
+              angle: enemy.angle,
+              speed: 460,
+              damage: 16,
+              color: '#39ff14',
+              ignoreWalls: false
+            });
+          }
+        } else {
+          enemy.spitTimer -= DT;
+          if (enemy.spitTimer <= 0) {
+            enemy.spitTimer = 5.0; // Shoot every 5 seconds unconditionally!
+            enemy.spitWindupTimer = 0.35;
+            io.to(room.id).emit('enemy_windup', { enemyId: enemy.id, duration: 0.35 });
+          }
+        }
+      }
+
+      if (alivePlayers.length > 0) {
+        // Find closest alive player
+        let closestP = null;
+        let minDistance = Infinity;
+
         for (const p of alivePlayers) {
-          p.score += 1000;
-          p.hp = Math.min(p.maxHp, p.hp + 35);
-        }
-
-        io.emit('kill_feed_msg', {
-          text: `SECTOR CLEARED // WAVE ${waveManager.wave} COMPLETE (+1,000 BONUS)`,
-          type: 'wave'
-        });
-
-        // Next Wave in 4 seconds
-        setTimeout(() => {
-          startWave(waveManager.wave + 1);
-        }, 4000);
-      }
-    }
-  }
-
-  // 3. Enemy AI & Movement (Target closest alive player)
-  for (const enemyId in enemies) {
-    const enemy = enemies[enemyId];
-    if (enemy.attackTimer > 0) enemy.attackTimer -= DT;
-
-    if (alivePlayers.length > 0) {
-      // Find closest alive player
-      let closestP = null;
-      let minDistance = Infinity;
-
-      for (const p of alivePlayers) {
-        const d = Math.hypot(p.x - enemy.x, p.y - enemy.y);
-        if (d < minDistance) {
-          minDistance = d;
-          closestP = p;
-        }
-      }
-
-      if (closestP) {
-        const dx = closestP.x - enemy.x;
-        const dy = closestP.y - enemy.y;
-        let targetAngle = Math.atan2(dy, dx);
-        const curDist = Math.hypot(dx, dy);
-        const minDistanceToPlayer = enemy.radius + 20; // 20 is player radius
-
-        // 1. 5-Second Stuck Detection: If stalled in one spot for 5s against a wall, force a detour
-        enemy.stuckCheckTimer = (enemy.stuckCheckTimer || 0) + DT;
-        if (enemy.detourTimer > 0) enemy.detourTimer -= DT;
-
-        // Reset detour when arriving near player so enemy directly engages without circling
-        if (curDist <= minDistanceToPlayer + 25) {
-          enemy.detourTimer = 0;
-          enemy.stuckAccumTime = 0;
-        }
-
-        if (enemy.stuckCheckTimer >= 0.5) {
-          const distMoved = Math.hypot(enemy.x - (enemy.lastCheckX || enemy.x), enemy.y - (enemy.lastCheckY || enemy.y));
-          enemy.lastCheckX = enemy.x;
-          enemy.lastCheckY = enemy.y;
-          enemy.stuckCheckTimer = 0;
-
-          // Only accumulate stuck time if barely moved (< 12px in 0.5s) and far from player
-          if (distMoved < 12 && curDist > minDistanceToPlayer + 35) {
-            enemy.stuckAccumTime = (enemy.stuckAccumTime || 0) + 0.5;
-            if (enemy.stuckAccumTime >= 5.0) { // Exactly 5 seconds threshold
-              enemy.detourTimer = 1.8;
-              enemy.detourSign = Math.random() < 0.5 ? 1 : -1;
-              enemy.stuckAccumTime = 0;
-            }
-          } else {
-            enemy.stuckAccumTime = Math.max(0, (enemy.stuckAccumTime || 0) - 0.5);
+          const d = Math.hypot(p.x - enemy.x, p.y - enemy.y);
+          if (d < minDistance) {
+            minDistance = d;
+            closestP = p;
           }
         }
 
-        // 2. Obstacle Avoidance & Steering Feelers (Only when blocked by a wall)
-        const probeDist = Math.min(curDist, enemy.radius * 2.2);
-        const probeX = enemy.x + Math.cos(targetAngle) * probeDist;
-        const probeY = enemy.y + Math.sin(targetAngle) * probeDist;
-        const pathBlocked = isCollidingWithMap(probeX, probeY, enemy.radius);
+        if (closestP) {
+          const dx = closestP.x - enemy.x;
+          const dy = closestP.y - enemy.y;
+          let targetAngle = Math.atan2(dy, dx);
+          const curDist = Math.hypot(dx, dy);
+          const minDistanceToPlayer = enemy.radius + 20;
 
-        if ((pathBlocked || enemy.detourTimer > 0) && curDist > minDistanceToPlayer + 20) {
-          const detourSign = enemy.detourSign || 1;
-          const offsets = [
-            detourSign * (Math.PI / 4),
-            detourSign * (Math.PI / 2),
-            -detourSign * (Math.PI / 4),
-            -detourSign * (Math.PI / 2),
-            detourSign * (Math.PI * 0.75),
-            -detourSign * (Math.PI * 0.75)
-          ];
+          // 1. Stuck Check
+          enemy.stuckCheckTimer = (enemy.stuckCheckTimer || 0) + DT;
+          if (enemy.detourTimer > 0) enemy.detourTimer -= DT;
 
-          for (const off of offsets) {
-            const testA = targetAngle + off;
-            const tx = enemy.x + Math.cos(testA) * probeDist;
-            const ty = enemy.y + Math.sin(testA) * probeDist;
-
-            if (!isCollidingWithMap(tx, ty, enemy.radius)) {
-              targetAngle = testA;
-              break;
-            }
+          if (curDist <= minDistanceToPlayer + 25) {
+            enemy.detourTimer = 0;
+            enemy.stuckAccumTime = 0;
           }
-        }
 
-        // Smooth rotation towards target (eliminates jittery direction changes)
-        let angleDiff = targetAngle - enemy.angle;
-        while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-        while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
-        enemy.angle += Math.sign(angleDiff) * Math.min(Math.abs(angleDiff), 9.0 * DT);
+          if (enemy.stuckCheckTimer >= 0.5) {
+            const distMoved = Math.hypot(enemy.x - (enemy.lastCheckX || enemy.x), enemy.y - (enemy.lastCheckY || enemy.y));
+            enemy.lastCheckX = enemy.x;
+            enemy.lastCheckY = enemy.y;
+            enemy.stuckCheckTimer = 0;
 
-        // Move towards target
-        let stepX = Math.cos(enemy.angle) * enemy.speed * DT;
-        let stepY = Math.sin(enemy.angle) * enemy.speed * DT;
-
-        // Stop forward velocity into player when already touching player's body
-        if (curDist <= minDistanceToPlayer + 4 && curDist > 0.001) {
-          const toPx = (closestP.x - enemy.x) / curDist;
-          const toPy = (closestP.y - enemy.y) / curDist;
-          const dot = stepX * toPx + stepY * toPy;
-          if (dot > 0) {
-            stepX -= toPx * dot;
-            stepY -= toPy * dot;
-          }
-        }
-
-        // Apply movement with wall sliding
-        enemy.x += stepX;
-        resolveCircleCollision(enemy);
-        enemy.y += stepY;
-        resolveCircleCollision(enemy);
-
-        // Solid Player Collision Resolution (Enemy cannot enter inside player's body)
-        const afterDist = Math.hypot(closestP.x - enemy.x, closestP.y - enemy.y);
-        if (afterDist < minDistanceToPlayer && afterDist > 0.0001) {
-          const pushOut = minDistanceToPlayer - afterDist;
-          const nx = (enemy.x - closestP.x) / afterDist;
-          const ny = (enemy.y - closestP.y) / afterDist;
-          enemy.x += nx * pushOut;
-          enemy.y += ny * pushOut;
-          resolveCircleCollision(enemy);
-        }
-
-        // Ranged Acid Spit Attack for Normal Enemies
-        if (enemy.type === 'normal') {
-          if (enemy.spitTimer === undefined) enemy.spitTimer = 1.5 + Math.random() * 2.0;
-          if (enemy.spitWindupTimer > 0) {
-            enemy.spitWindupTimer -= DT;
-            if (enemy.spitWindupTimer <= 0) {
-              const mouthX = enemy.x + Math.cos(enemy.angle) * (enemy.radius + 6);
-              const mouthY = enemy.y + Math.sin(enemy.angle) * (enemy.radius + 6);
-              io.emit('enemy_spit', {
-                enemyId: enemy.id,
-                x: mouthX,
-                y: mouthY,
-                angle: enemy.angle,
-                speed: 460,
-                damage: 16,
-                color: '#39ff14',
-                ignoreWalls: false
-              });
-            }
-          } else {
-            enemy.spitTimer -= DT;
-            if (enemy.spitTimer <= 0 && curDist >= 85 && curDist <= 650) {
-              enemy.spitTimer = 5.0; // Spit every 5.0 seconds
-              enemy.spitWindupTimer = 0.35;
-              io.emit('enemy_windup', { enemyId: enemy.id, duration: 0.35 });
-            }
-          }
-        }
-
-        // Ranged Sniper Shot for Phantom Sniper Enemies (1.0s aim, wall-penetrating)
-        if (enemy.type === 'sniper') {
-          if (enemy.sniperTimer === undefined) enemy.sniperTimer = 2.0 + Math.random() * 2.0;
-          if (enemy.sniperAimTimer > 0) {
-            enemy.sniperAimTimer -= DT;
-            if (enemy.sniperAimTimer <= 0) {
-              const muzzleX = enemy.x + Math.cos(enemy.angle) * (enemy.radius + 14);
-              const muzzleY = enemy.y + Math.sin(enemy.angle) * (enemy.radius + 14);
-              io.emit('enemy_spit', {
-                enemyId: enemy.id,
-                x: muzzleX,
-                y: muzzleY,
-                angle: enemy.angle,
-                speed: 820,
-                damage: 28,
-                color: '#b026ff',
-                ignoreWalls: true // Wall piercing sniper bolt!
-              });
-            }
-          } else {
-            enemy.sniperTimer -= DT;
-            if (enemy.sniperTimer <= 0 && curDist <= 900) {
-              enemy.sniperTimer = 5.0;
-              enemy.sniperAimTimer = 1.0; // telegraph laser line for 1.0s
-              io.emit('enemy_windup', { enemyId: enemy.id, duration: 1.0 });
-            }
-          }
-        }
-
-        // Melee Attack Check (Reliable reach when reaching/touching player)
-        const distAfterMove = Math.hypot(closestP.x - enemy.x, closestP.y - enemy.y);
-        const attackReach = enemy.radius + 20 + 12;
-        if (distAfterMove <= attackReach && enemy.attackTimer <= 0) {
-          enemy.attackTimer = enemy.attackCooldown;
-
-          if (closestP.invulnerableTimer <= 0) {
-            closestP.hp = Math.max(0, closestP.hp - enemy.damage);
-            closestP.invulnerableTimer = 0.25;
-
-            if (closestP.hp <= 0) {
-              closestP.hp = 0;
-              closestP.alive = false;
-              closestP.deaths++;
-              schedulePlayerRespawn(closestP);
-
-              io.emit('player_eliminated', {
-                victimId: closestP.id,
-                victimName: closestP.name,
-                victimColor: closestP.color,
-                killerName: `${enemy.type.toUpperCase()} CYBORG`,
-                killerColor: enemy.color,
-                isPvP: false
-              });
-
-              io.emit('kill_feed_msg', {
-                killer: `${enemy.type.toUpperCase()} CYBORG`,
-                killerColor: enemy.color,
-                victim: closestP.name,
-                victimColor: closestP.color,
-                type: 'pve_death'
-              });
+            if (distMoved < 12 && curDist > minDistanceToPlayer + 35) {
+              enemy.stuckAccumTime = (enemy.stuckAccumTime || 0) + 0.5;
+              if (enemy.stuckAccumTime >= 5.0) {
+                enemy.detourTimer = 1.8;
+                enemy.detourSign = Math.random() < 0.5 ? 1 : -1;
+                enemy.stuckAccumTime = 0;
+              }
             } else {
-              io.to(closestP.id).emit('player_damaged', {
-                damage: enemy.damage,
-                hp: closestP.hp,
-                attackerName: `${enemy.type.toUpperCase()} CYBORG`
-              });
+              enemy.stuckAccumTime = Math.max(0, (enemy.stuckAccumTime || 0) - 0.5);
+            }
+          }
 
-              io.emit('player_hit_fx', {
-                targetId: closestP.id,
-                damage: enemy.damage,
-                hp: closestP.hp,
-                x: closestP.x,
-                y: closestP.y,
-                isCritical: false
-              });
+          // 2. Wall steering feelers
+          const probeDist = Math.min(curDist, enemy.radius * 2.2);
+          const probeX = enemy.x + Math.cos(targetAngle) * probeDist;
+          const probeY = enemy.y + Math.sin(targetAngle) * probeDist;
+          const pathBlocked = isCollidingWithMap(probeX, probeY, enemy.radius, room.mapId);
+
+          if ((pathBlocked || enemy.detourTimer > 0) && curDist > minDistanceToPlayer + 20) {
+            const detourSign = enemy.detourSign || 1;
+            const offsets = [
+              detourSign * (Math.PI / 4),
+              detourSign * (Math.PI / 2),
+              -detourSign * (Math.PI / 4),
+              -detourSign * (Math.PI / 2)
+            ];
+
+            for (const off of offsets) {
+              const testA = targetAngle + off;
+              const tx = enemy.x + Math.cos(testA) * probeDist;
+              const ty = enemy.y + Math.sin(testA) * probeDist;
+              if (!isCollidingWithMap(tx, ty, enemy.radius, room.mapId)) {
+                targetAngle = testA;
+                break;
+              }
+            }
+          }
+
+          // Smooth rotation
+          let angleDiff = targetAngle - enemy.angle;
+          while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+          while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+          enemy.angle += Math.sign(angleDiff) * Math.min(Math.abs(angleDiff), 9.0 * DT);
+
+          // Movement
+          let stepX = Math.cos(enemy.angle) * enemy.speed * DT;
+          let stepY = Math.sin(enemy.angle) * enemy.speed * DT;
+
+          if (curDist <= minDistanceToPlayer + 4 && curDist > 0.001) {
+            const toPx = (closestP.x - enemy.x) / curDist;
+            const toPy = (closestP.y - enemy.y) / curDist;
+            const dot = stepX * toPx + stepY * toPy;
+            if (dot > 0) {
+              stepX -= toPx * dot;
+              stepY -= toPy * dot;
+            }
+          }
+
+          enemy.x += stepX;
+          resolveCircleCollision(enemy, room.mapId);
+          enemy.y += stepY;
+          resolveCircleCollision(enemy, room.mapId);
+
+          // Solid Player Collision
+          const afterDist = Math.hypot(closestP.x - enemy.x, closestP.y - enemy.y);
+          if (afterDist < minDistanceToPlayer && afterDist > 0.0001) {
+            const pushOut = minDistanceToPlayer - afterDist;
+            const nx = (enemy.x - closestP.x) / afterDist;
+            const ny = (enemy.y - closestP.y) / afterDist;
+            enemy.x += nx * pushOut;
+            enemy.y += ny * pushOut;
+            resolveCircleCollision(enemy, room.mapId);
+          }
+
+          if (isCollidingWithMap(enemy.x, enemy.y, enemy.radius, room.mapId)) {
+            unstuckEntityServer(enemy, room.mapId);
+          }
+
+          // Sniper attack logic
+          if (enemy.type === 'sniper') {
+            if (enemy.sniperTimer === undefined) enemy.sniperTimer = 2.0 + Math.random() * 2.0;
+            if (enemy.sniperAimTimer > 0) {
+              enemy.sniperAimTimer -= DT;
+              if (enemy.sniperAimTimer <= 0) {
+                const muzzleX = enemy.x + Math.cos(enemy.angle) * (enemy.radius + 14);
+                const muzzleY = enemy.y + Math.sin(enemy.angle) * (enemy.radius + 14);
+                io.to(room.id).emit('enemy_spit', {
+                  enemyId: enemy.id,
+                  x: muzzleX,
+                  y: muzzleY,
+                  angle: enemy.angle,
+                  speed: 820,
+                  damage: 28,
+                  color: '#b026ff',
+                  ignoreWalls: true
+                });
+              }
+            } else {
+              enemy.sniperTimer -= DT;
+              if (enemy.sniperTimer <= 0 && curDist <= 900) {
+                enemy.sniperTimer = 5.0;
+                enemy.sniperAimTimer = 1.0;
+                io.to(room.id).emit('enemy_windup', { enemyId: enemy.id, duration: 1.0 });
+              }
+            }
+          }
+
+          // Melee Attack Check
+          const distAfterMove = Math.hypot(closestP.x - enemy.x, closestP.y - enemy.y);
+          const attackReach = enemy.radius + 20 + 12;
+          if (distAfterMove <= attackReach && enemy.attackTimer <= 0) {
+            enemy.attackTimer = enemy.attackCooldown;
+
+            // Bomber explodes on contact!
+            if (enemy.type === 'bomber') {
+              triggerServerBomberExplosion(room, enemy.x, enemy.y, null, null);
+              delete room.enemies[enemyId];
+              continue;
+            }
+
+            if (closestP.invulnerableTimer <= 0) {
+              closestP.hp = Math.max(0, closestP.hp - enemy.damage);
+              closestP.invulnerableTimer = 0.25;
+
+              if (closestP.hp <= 0) {
+                closestP.hp = 0;
+                closestP.alive = false;
+                closestP.deaths++;
+                schedulePlayerRespawn(room, closestP);
+
+                io.to(room.id).emit('player_eliminated', {
+                  victimId: closestP.id,
+                  victimName: closestP.name,
+                  victimColor: closestP.color,
+                  killerName: `${enemy.type.toUpperCase()} CYBORG`,
+                  killerColor: enemy.color,
+                  isPvP: false
+                });
+
+                io.to(room.id).emit('kill_feed_msg', {
+                  killer: `${enemy.type.toUpperCase()} CYBORG`,
+                  killerColor: enemy.color,
+                  victim: closestP.name,
+                  victimColor: closestP.color,
+                  type: 'pve_death'
+                });
+              } else {
+                io.to(closestP.id).emit('player_damaged', {
+                  damage: enemy.damage,
+                  hp: closestP.hp,
+                  attackerName: `${enemy.type.toUpperCase()} CYBORG`
+                });
+
+                io.to(room.id).emit('player_hit_fx', {
+                  targetId: closestP.id,
+                  damage: enemy.damage,
+                  hp: closestP.hp,
+                  x: closestP.x,
+                  y: closestP.y,
+                  isCritical: false
+                });
+              }
             }
           }
         }
       }
     }
-  }
 
-  // 4. Broadcast Master Game State Snapshot
-  io.emit('game_snapshot', {
-    timestamp: Date.now(),
-    players: Object.values(players).map(p => ({
-      id: p.id,
-      name: p.name,
-      team: p.team || 'solo',
-      color: p.color,
-      x: Math.round(p.x),
-      y: Math.round(p.y),
-      vx: Math.round(p.vx),
-      vy: Math.round(p.vy),
-      angle: Number(p.angle.toFixed(3)),
-      hp: Math.round(p.hp),
-      maxHp: p.maxHp,
-      alive: p.alive,
-      invulnerableTimer: Number((p.invulnerableTimer || 0).toFixed(2)),
-      score: p.score,
-      kills: p.kills,
-      deaths: p.deaths,
-      isDashing: p.isDashing,
-      isReloading: p.isReloading,
-      isMoving: p.isMoving,
-      walkCycle: Number(p.walkCycle.toFixed(2)),
-      recoilOffset: Number(p.recoilOffset.toFixed(1)),
-      weapon: p.weapon || 'rifle',
-      modelType: p.modelType || 'commando'
-    })),
-    enemies: Object.values(enemies).map(e => ({
-      id: e.id,
-      type: e.type,
-      x: Math.round(e.x),
-      y: Math.round(e.y),
-      angle: Number(e.angle.toFixed(3)),
-      hp: Math.round(e.hp),
-      maxHp: e.maxHp,
-      radius: e.radius,
-      color: e.color
-    })),
-    medkits: Object.values(medkits),
-    wave: {
-      wave: waveManager.wave,
-      state: waveManager.state,
-      enemiesLeft: Object.keys(enemies).length + waveManager.enemiesToSpawn
+    // 4. Broadcast Master Game State Snapshot per Room
+    if (room.gameStarted && Object.keys(room.activePlayers).length > 0) {
+      io.to(room.id).emit('game_snapshot', {
+        timestamp: Date.now(),
+        players: Object.values(room.activePlayers).map(p => ({
+          id: p.id,
+          name: p.name,
+          team: p.team || 'solo',
+          color: p.color,
+          x: Math.round(p.x),
+          y: Math.round(p.y),
+          vx: Math.round(p.vx),
+          vy: Math.round(p.vy),
+          angle: Number(p.angle.toFixed(3)),
+          hp: Math.round(p.hp),
+          maxHp: p.maxHp,
+          alive: p.alive,
+          invulnerableTimer: Number((p.invulnerableTimer || 0).toFixed(2)),
+          score: p.score,
+          kills: p.kills,
+          deaths: p.deaths,
+          isDashing: p.isDashing,
+          isReloading: p.isReloading,
+          isMoving: p.isMoving,
+          walkCycle: Number(p.walkCycle.toFixed(2)),
+          recoilOffset: Number(p.recoilOffset.toFixed(1)),
+          weapon: p.weapon || 'rifle',
+          modelType: p.modelType || 'commando'
+        })),
+        enemies: Object.values(room.enemies).map(e => ({
+          id: e.id,
+          type: e.type,
+          x: Math.round(e.x),
+          y: Math.round(e.y),
+          angle: Number(e.angle.toFixed(3)),
+          hp: Math.round(e.hp),
+          maxHp: e.maxHp,
+          radius: e.radius,
+          color: e.color
+        })),
+        medkits: Object.values(room.medkits),
+        wave: {
+          wave: room.waveManager.wave,
+          state: room.waveManager.state,
+          enemiesLeft: Object.keys(room.enemies).length + room.waveManager.enemiesToSpawn
+        }
+      });
     }
-  });
+  }
 }, 1000 / TICK_RATE);
 
 // Start Server
 server.listen(PORT, '0.0.0.0', () => {
   console.log('\n' + '='.repeat(58));
-  console.log('🎯 CYBER STRIKE // LAN & ONLINE MULTIPLAYER SERVER');
+  console.log('🎯 CYBER STRIKE // MULTI-ROOM LAN & ONLINE MULTIPLAYER SERVER');
   console.log('='.repeat(58));
   console.log(`Local Access:        http://localhost:${PORT}`);
   console.log(`LAN Network Address: http://${primaryLanIp}:${PORT}`);
@@ -1415,6 +1858,6 @@ server.listen(PORT, '0.0.0.0', () => {
       console.log(`Alt LAN Interface:   http://${net.ip}:${PORT} (${net.interface})`);
     });
   }
-  console.log('\n🚀 ALL PLAYERS ON THE SAME CABLE OR WI-FI CAN CONNECT!');
+  console.log('\n🚀 ALL PLAYERS ON LAN / WI-FI CAN CONNECT WITH OPERATIVE IDs!');
   console.log('='.repeat(58) + '\n');
 });

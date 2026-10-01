@@ -125,9 +125,51 @@
         </div>
       </div>
 
-      <!-- Top Center: Wave & Objective Banner -->
+      <!-- Top Center: Wave & Objective Banner & Team Scoreboard -->
       <div class="hud-center">
-        <div class="wave-badge">
+        <!-- Team Battle Top Scoreboard HUD (Teams Mode) -->
+        <div id="team-scoreboard-hud" class="team-scoreboard-hud hidden">
+          <div class="team-hud-team team-alpha-hud" id="hud-team-alpha">
+            <div class="team-hud-name-row">
+              <span class="team-color-dot" id="hud-alpha-dot" style="background: #00f0ff; color: #00f0ff;"></span>
+              <span class="team-hud-name" id="hud-alpha-name">TEAM ALPHA</span>
+            </div>
+            <div class="team-hud-metrics">
+              <div class="team-metric-box kills-box">
+                <span class="metric-label">RIVAL KILLS</span>
+                <span class="metric-val" id="hud-alpha-kills">0 / 20</span>
+              </div>
+              <div class="team-metric-box score-box">
+                <span class="metric-label">SCORE</span>
+                <span class="metric-val" id="hud-alpha-score">0</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="team-hud-divider">
+            <div class="team-hud-target-pill">TARGET: 20 KILLS</div>
+            <div class="team-hud-win-rule">HIGHEST SCORE WINS</div>
+          </div>
+
+          <div class="team-hud-team team-beta-hud" id="hud-team-beta">
+            <div class="team-hud-name-row">
+              <span class="team-hud-name" id="hud-beta-name">TEAM BETA</span>
+              <span class="team-color-dot" id="hud-beta-dot" style="background: #ff3366; color: #ff3366;"></span>
+            </div>
+            <div class="team-hud-metrics">
+              <div class="team-metric-box score-box">
+                <span class="metric-label">SCORE</span>
+                <span class="metric-val" id="hud-beta-score">0</span>
+              </div>
+              <div class="team-metric-box kills-box">
+                <span class="metric-label">RIVAL KILLS</span>
+                <span class="metric-val" id="hud-beta-kills">0 / 20</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="wave-badge" id="wave-badge-container">
           <span class="wave-title">MISSION PHASE</span>
           <span id="wave-display" class="wave-number">WAVE 1</span>
         </div>
@@ -265,6 +307,25 @@
 
         <!-- Multiplayer Team Deployment Hub -->
         <div id="multiplayer-team-hub" class="multiplayer-team-hub hidden">
+          <!-- Squad Link & Room ID Network Bar -->
+          <div class="squad-id-bar">
+            <div class="squad-id-box my-id-box">
+              <span class="squad-id-tag">YOUR OPERATIVE ID</span>
+              <div class="squad-id-val-row">
+                <span class="squad-id-val" id="my-operative-id">----</span>
+                <button type="button" class="btn-squad-action" id="btn-copy-my-id">COPY ID</button>
+              </div>
+            </div>
+            <div class="squad-id-box join-id-box">
+              <span class="squad-id-tag">JOIN SQUAD LEADER</span>
+              <div class="squad-id-val-row">
+                <input type="text" id="join-leader-id-input" placeholder="ENTER LEADER ID..." maxlength="12" spellcheck="false" autocomplete="off" />
+                <button type="button" class="btn-squad-action btn-join-action" id="btn-join-by-id">JOIN</button>
+                <button type="button" class="btn-squad-action btn-leave-action hidden" id="btn-leave-room">LEAVE</button>
+              </div>
+            </div>
+          </div>
+
           <div class="mp-submode-bar">
             <button type="button" class="mp-submode-btn active" id="btn-submode-teams" data-submode="teams">
               TEAMS (ALPHA vs BETA)
@@ -393,10 +454,9 @@
                 </div>
               </div>
 
-              <!-- Deploy Button -->
+              <!-- Start / Ready Button (Arrow removed) -->
               <button id="start-btn" class="btn-primary btn-deploy">
-                <span class="btn-text">DEPLOY</span>
-                <span class="btn-icon">➔</span>
+                <span class="btn-text">START</span>
               </button>
 
               <div class="keybind-guide compact">
@@ -516,8 +576,64 @@
 
         <button id="restart-btn" class="btn-primary">
           <span class="btn-text">REDEPLOY SQUAD</span>
-          <span class="btn-icon">↺</span>
         </button>
+      </div>
+    </div>
+
+    <!-- Team Match Over Screen (Winner Determined by Highest Score at 20 Kills) -->
+    <div id="team-match-over-screen" class="screen-overlay hidden">
+      <div class="modal-box team-match-over-box">
+        <div class="status-chip" id="team-match-chip">MATCH TERMINATED // 20 KILLS REACHED</div>
+        <h1 class="team-match-title" id="team-match-title">TEAM ALPHA VICTORIOUS</h1>
+        <p class="team-match-sub" id="team-match-sub">
+          Final victory awarded by HIGHEST COMBINED SCORE (Rival Eliminations + AI Neutralizations).
+        </p>
+
+        <div class="team-match-comparison-grid">
+          <!-- Alpha Results Card -->
+          <div class="team-result-card" id="res-card-alpha">
+            <div class="team-result-header">
+              <span class="team-color-dot" id="res-alpha-dot" style="background:#00f0ff;"></span>
+              <span class="team-result-name" id="res-alpha-name">TEAM ALPHA</span>
+              <span class="team-result-badge" id="res-alpha-badge">WINNER</span>
+            </div>
+            <div class="team-result-stats">
+              <div class="team-stat-item">
+                <span class="team-stat-num" id="res-alpha-kills">0</span>
+                <span class="team-stat-lbl">RIVAL KILLS (TARGET 20)</span>
+              </div>
+              <div class="team-stat-item primary">
+                <span class="team-stat-num score-num" id="res-alpha-score">0</span>
+                <span class="team-stat-lbl">TOTAL SCORE (DECIDING FACTOR)</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Beta Results Card -->
+          <div class="team-result-card" id="res-card-beta">
+            <div class="team-result-header">
+              <span class="team-color-dot" id="res-beta-dot" style="background:#ff3366;"></span>
+              <span class="team-result-name" id="res-beta-name">TEAM BETA</span>
+              <span class="team-result-badge" id="res-beta-badge">DEFEATED</span>
+            </div>
+            <div class="team-result-stats">
+              <div class="team-stat-item">
+                <span class="team-stat-num" id="res-beta-kills">0</span>
+                <span class="team-stat-lbl">RIVAL KILLS (TARGET 20)</span>
+              </div>
+              <div class="team-stat-item primary">
+                <span class="team-stat-num score-num" id="res-beta-score">0</span>
+                <span class="team-stat-lbl">TOTAL SCORE (DECIDING FACTOR)</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="team-match-action-row">
+          <button id="team-match-return-btn" class="btn-primary">
+            <span class="btn-text">RETURN TO LOBBY</span>
+          </button>
+        </div>
       </div>
     </div>
 
