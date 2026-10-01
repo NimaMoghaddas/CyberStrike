@@ -38,8 +38,8 @@ class Medkit {
     if (this.collected) return;
     this.collected = true;
 
-    // Restore 25% of total health (e.g., +25 HP for 100 max HP)
-    const healAmount = Math.max(1, Math.round(player.maxHp * 0.25));
+    // Restore 20% of total health (e.g., 20% of max HP)
+    const healAmount = Math.max(1, Math.round(player.maxHp * 0.20));
     const oldHp = player.hp;
     player.hp = Math.min(player.maxHp, player.hp + healAmount);
     const healedAmount = Math.round(player.hp - oldHp);

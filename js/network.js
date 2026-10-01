@@ -116,6 +116,20 @@ class NetworkSystem {
           });
           this.updateLobbyCount();
         }
+
+        // Synchronize locally saved persistent operative profile to server
+        const nameInput = document.getElementById('operative-callsign-input');
+        const savedName = (this.game && this.game.savedCallsign) || (nameInput && nameInput.value.trim().length > 0 ? nameInput.value.trim() : null);
+        if (savedName) {
+          this.callsign = savedName.toUpperCase();
+          this.socket.emit('lobby_update_name', { name: this.callsign });
+        }
+        if (this.game && this.game.selectedModelType) {
+          this.socket.emit('lobby_update_model', { modelType: this.game.selectedModelType });
+        }
+        if (this.game && this.game.selectedSkinColor && this.lobbyMode !== 'teams') {
+          this.socket.emit('lobby_select_color', { color: this.game.selectedSkinColor });
+        }
       });
 
       // 1.1. Lobby Errors & Notifications
@@ -164,6 +178,9 @@ class NetworkSystem {
           this.game.selectedMapId = data.mapId;
           this.game.map.setMap(data.mapId);
         }
+        if (data && data.lightingMode && this.game && this.game.setLightingMode) {
+          this.game.setLightingMode(data.lightingMode, false);
+        }
         const teamHud = document.getElementById('team-scoreboard-hud');
         if (teamHud) {
           if (data && data.mode === 'teams') {
@@ -180,6 +197,13 @@ class NetworkSystem {
         }
       });
 
+      // 1.35. Squad Visibility / Lighting Sync
+      this.socket.on('lighting_sync', (data) => {
+        if (data && data.lightingMode && this.game && this.game.setLightingMode) {
+          this.game.setLightingMode(data.lightingMode, false);
+        }
+      });
+
       // 1.4. Team Battle Scoreboard & Target Kills Sync
       this.socket.on('team_stats_update', (data) => {
         if (data && data.teamStats) {
@@ -190,7 +214,7 @@ class NetworkSystem {
       // 1.45. Team Battle Conclusion (Target 20 kills reached, Highest Score Wins)
       this.socket.on('team_match_finished', (data) => {
         if (data && data.teamStats) {
-          this.showTeamMatchOverScreen(data.teamStats, data.winner);
+          this.showTeamMatchOverScreen(data.teamStats, data.winner, data.competitors);
         }
       });
 
@@ -296,8 +320,7 @@ class NetworkSystem {
         const clearBanner = document.getElementById('wave-clear-banner');
         const maxHpBonus = data.maxHpBonus || Math.round(15 * Math.pow(1.6, ((data.wave || 1) - 1)));
         this.game.player.maxHp = (this.game.player.maxHp || 100) + maxHpBonus;
-        const healAmount = maxHpBonus + 25;
-        this.game.player.hp = Math.min(this.game.player.maxHp, this.game.player.hp + healAmount);
+        this.game.player.hp = this.game.player.maxHp; // Full heal to 100% of new upgraded max vitality baseline!
         this.game.player.ammo = this.game.player.magSize;
         this.game.score += data.bonus || 1000;
         this.game.updateAmmoUI();
@@ -502,13 +525,33 @@ class NetworkSystem {
       if (rp.invulnerableTimer > 0) {
         rp.invulnerableTimer -= dt;
       }
+      if (rp.muzzleFlashTimer > 0) {
+        rp.muzzleFlashTimer -= dt;
+        if (rp.muzzleFlashTimer < 0) rp.muzzleFlashTimer = 0;
+      }
+      if (rp.recoilOffset > 0) {
+        rp.recoilOffset = Math.max(0, rp.recoilOffset - dt * 60);
+      }
     }
+  }
+
+  // Helper: check if operative is active in a multiplayer squad / party
+  isInMultiplayerSquad() {
+    return (this.game && this.game.gameMode === 'multiplayer') ||
+           (!this.isHost) ||
+           (this.lobbyPlayers && this.lobbyPlayers.length > 1) ||
+           (this.roomId && Object.keys(this.remotePlayers).length > 0);
   }
 
   // --- Broadcast Shoot Event ---
   emitShoot(x, y, angle, isCritical, damage, color, weaponType, speed, range, radius, penetrating, explosive, splashDamage, blastRadius) {
     if (!this.connected || !this.socket) return;
-    if (this.game && this.game.gameMode !== 'multiplayer') return;
+    const inMulti = (this.game && this.game.gameMode === 'multiplayer') ||
+                    (this.lobbyPlayers && this.lobbyPlayers.length > 1) ||
+                    (Object.keys(this.remotePlayers).length > 0) ||
+                    (!this.isHost) ||
+                    (this.roomId);
+    if (!inMulti) return;
     // In multiplayer, bullets are colored with the player's operative color
     const bulletColor = (this.game && this.game.player) ? (this.game.player.color || '#00f0ff') : (color || '#00f0ff');
     const bulletTeam = (this.game && this.game.player && this.game.player.team) ? this.game.player.team : this.myTeam;
@@ -534,7 +577,10 @@ class NetworkSystem {
   // --- Report Hit on Enemy (PvE) ---
   reportEnemyHit(enemyId, damage, isCritical, x, y) {
     if (!this.connected || !this.socket) return;
-    if (this.game && this.game.gameMode !== 'multiplayer') return;
+    const inMulti = (this.game && this.game.gameMode === 'multiplayer') ||
+                    (this.lobbyPlayers && this.lobbyPlayers.length > 1) ||
+                    (!this.isHost);
+    if (!inMulti) return;
     this.socket.emit('hit_enemy', {
       enemyId,
       damage,
@@ -547,7 +593,10 @@ class NetworkSystem {
   // --- Report Hit on Player (PvP / Friendly Fire) ---
   reportPlayerHit(targetId, damage, isCritical, x, y) {
     if (!this.connected || !this.socket) return;
-    if (this.game && this.game.gameMode !== 'multiplayer') return;
+    const inMulti = (this.game && this.game.gameMode === 'multiplayer') ||
+                    (this.lobbyPlayers && this.lobbyPlayers.length > 1) ||
+                    (!this.isHost);
+    if (!inMulti) return;
     this.socket.emit('hit_player', {
       targetId,
       damage,
@@ -658,10 +707,11 @@ class NetworkSystem {
 
         if (!enemy) {
           // Spawn new synced enemy locally
-          enemy = new Enemy(eData.x, eData.y, eData.type);
+          enemy = new Enemy(eData.x, eData.y, eData.type, eData.id, eData.generation || 0);
           enemy.id = eData.id;
           enemy.color = eData.color;
           enemy.radius = eData.radius;
+          enemy.generation = eData.generation || 0;
           this.game.enemies.push(enemy);
 
           window.particleSystem.emit(eData.x, eData.y, 14, {
@@ -739,6 +789,8 @@ class NetworkSystem {
     rp.isRemote = true;
     rp.targetX = pData.x;
     rp.targetY = pData.y;
+    rp.muzzleFlashTimer = 0;
+    rp.recoilOffset = 0;
     this.remotePlayers[pData.id] = rp;
     return rp;
   }
@@ -810,16 +862,28 @@ class NetworkSystem {
     ctx.stroke();
     ctx.restore();
 
-    // Muzzle flash if firing
+    // Muzzle flash flare if firing (only active during instantaneous shot)
     if (p.muzzleFlashTimer > 0) {
       ctx.save();
-      ctx.translate(40, 8);
+      const flashX = p.weapon === 'railgun' ? 52 : (p.weapon === 'smg' ? 34 : 40);
+      ctx.translate(flashX, 8);
       ctx.fillStyle = '#ffffff';
       ctx.shadowColor = p.color;
       ctx.shadowBlur = 20;
       ctx.beginPath();
-      ctx.arc(0, 0, 9, 0, Math.PI * 2);
+      ctx.arc(0, 0, p.weapon === 'shotgun' ? 12 : 8, 0, Math.PI * 2);
       ctx.fill();
+
+      // Starburst rays matching weapon color
+      ctx.strokeStyle = p.color;
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 4; i++) {
+        const a = (i * Math.PI) / 2;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(Math.cos(a) * 16, Math.sin(a) * 16);
+        ctx.stroke();
+      }
       ctx.restore();
     }
 
@@ -1441,14 +1505,26 @@ class NetworkSystem {
       randomBtn.addEventListener('click', () => {
         const rand = callsigns[Math.floor(Math.random() * callsigns.length)];
         input.value = `${rand}-${Math.floor(10 + Math.random() * 90)}`;
+        if (this.game) {
+          this.game.savedCallsign = input.value;
+          if (this.game.player) this.game.player.name = input.value;
+          this.game.saveProfile({ callsign: input.value });
+        }
         if (this.socket && this.connected) {
           this.socket.emit('lobby_update_name', { name: input.value });
         }
       });
       input.addEventListener('input', () => {
         const val = input.value.trim().toUpperCase();
-        if (val.length > 0 && this.socket && this.connected) {
-          this.socket.emit('lobby_update_name', { name: val });
+        if (val.length > 0) {
+          if (this.game) {
+            this.game.savedCallsign = val;
+            if (this.game.player) this.game.player.name = val;
+            this.game.saveProfile({ callsign: val });
+          }
+          if (this.socket && this.connected) {
+            this.socket.emit('lobby_update_name', { name: val });
+          }
         }
       });
     }
@@ -1489,6 +1565,10 @@ class NetworkSystem {
       });
     }
 
+    if (data.lightingMode && this.game && this.game.setLightingMode) {
+      this.game.setLightingMode(data.lightingMode, false);
+    }
+
     const me = this.lobbyPlayers.find(p => p.id === this.myId);
     if (me) {
       this.myTeam = me.team;
@@ -1515,6 +1595,10 @@ class NetworkSystem {
   }
 
   renderLobbyUI() {
+    if (this.game && this.game.updateLightingUIState) {
+      this.game.updateLightingUIState();
+    }
+
     // 0. Update Operative ID
     const myIdEl = document.getElementById('my-operative-id');
     if (myIdEl) myIdEl.textContent = this.myUserCode;
@@ -1817,7 +1901,7 @@ class NetworkSystem {
     if (betaDot) betaDot.style.background = this.betaColor || '#ff3366';
   }
 
-  showTeamMatchOverScreen(teamStats, winner) {
+  showTeamMatchOverScreen(teamStats, winner, competitors) {
     const screen = document.getElementById('team-match-over-screen');
     if (!screen) return;
 
@@ -1876,6 +1960,9 @@ class NetworkSystem {
       sub.textContent = `A squad reached the 20 rival kills target! Final victory is determined by HIGHEST COMBINED SCORE (Rival Eliminations + AI Neutralizations).`;
     }
 
+    // Populate and render full competitors standings leaderboard
+    this.renderMatchLeaderboard(competitors);
+
     screen.classList.remove('hidden');
 
     if (window.soundSystem) {
@@ -1885,6 +1972,90 @@ class NetworkSystem {
         window.soundSystem.playGameOver();
       }
     }
+  }
+
+  escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  renderMatchLeaderboard(competitors) {
+    const tbody = document.getElementById('team-match-leaderboard-body');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    // If competitors list was not provided by server, aggregate from local + remote players
+    let list = Array.isArray(competitors) ? [...competitors] : [];
+    if (list.length === 0) {
+      const myName = (this.game && this.game.player && this.game.player.name) || this.callsign || 'YOU';
+      list.push({
+        id: this.myId,
+        name: myName,
+        team: this.myTeam || 'alpha',
+        color: this.color || '#00f0ff',
+        score: (this.game && this.game.score) || 0,
+        kills: (this.game && this.game.kills) || 0,
+        deaths: (this.game && this.game.deaths) || 0
+      });
+      for (const id in this.remotePlayers) {
+        const rp = this.remotePlayers[id];
+        list.push({
+          id: rp.id,
+          name: rp.name || 'OPERATIVE',
+          team: rp.team || 'beta',
+          color: rp.color || '#ff3366',
+          score: rp.score || 0,
+          kills: rp.kills || 0,
+          deaths: rp.deaths || 0
+        });
+      }
+    }
+
+    // Sort competitors descending by score, tiebreaker by kills
+    list.sort((a, b) => (b.score || 0) - (a.score || 0) || (b.kills || 0) - (a.kills || 0));
+
+    const rankLabels = ['1ST', '2ND', '3RD'];
+    const rankBadges = ['🥇', '🥈', '🥉'];
+
+    list.forEach((p, idx) => {
+      const isMe = (p.id === this.myId) || (this.game && this.game.player && p.name === this.game.player.name);
+      const tr = document.createElement('tr');
+      const rankNum = idx + 1;
+      tr.className = `mlb-row rank-${rankNum} ${isMe ? 'is-local-player' : ''}`;
+
+      const rankBadgeHtml = rankNum <= 3
+        ? `<span class="mlb-rank-badge rank-top-${rankNum}"><span class="mlb-rank-icon">${rankBadges[idx]}</span> ${rankLabels[idx]}</span>`
+        : `<span class="mlb-rank-badge rank-other">#${rankNum}</span>`;
+
+      const teamName = p.team === 'alpha' ? 'ALPHA' : (p.team === 'beta' ? 'BETA' : 'FFA');
+      const teamColor = p.team === 'alpha' ? (this.alphaColor || '#00f0ff') : (p.team === 'beta' ? (this.betaColor || '#ff3366') : '#ffd166');
+
+      tr.innerHTML = `
+        <td class="col-rank">${rankBadgeHtml}</td>
+        <td class="col-player">
+          <div class="mlb-player-cell">
+            <span class="mlb-color-dot" style="background: ${p.color || teamColor}; color: ${p.color || teamColor};"></span>
+            <span class="mlb-player-name">${this.escapeHtml(p.name || 'OPERATIVE')}</span>
+            ${isMe ? '<span class="mlb-you-tag">YOU</span>' : ''}
+          </div>
+        </td>
+        <td class="col-team">
+          <span class="mlb-team-pill team-${p.team || 'alpha'}" style="--team-color: ${teamColor};">
+            ${teamName}
+          </span>
+        </td>
+        <td class="col-score">
+          <span class="mlb-score-val">${Number(p.score || 0).toLocaleString()}</span> <span class="mlb-pts">PTS</span>
+        </td>
+        <td class="col-kills">${p.kills || 0}</td>
+        <td class="col-deaths">${p.deaths || 0}</td>
+      `;
+      tbody.appendChild(tr);
+    });
   }
 }
 

@@ -303,6 +303,7 @@
               <span>☀️</span> FULL BRIGHTNESS (NO FOG)
             </button>
           </div>
+          <span id="lighting-host-tag" class="host-only-tag hidden" style="margin-left: 12px; font-size: 0.68rem; font-weight: 800; letter-spacing: 0.08em;">SQUAD LEADER (YOU)</span>
         </div>
 
         <!-- Multiplayer Team Deployment Hub -->
@@ -463,6 +464,20 @@
                 WASD Move • Mouse Aim • 1-5 Weapons • Space Dash • R Reload
               </div>
             </div>
+
+            <!-- Singleplayer Top 3 High Scores Record Panel -->
+            <div class="solo-records-panel" id="solo-records-panel">
+              <div class="solo-records-header">
+                <div class="records-title-group">
+                  <span class="records-trophy">🏆</span>
+                  <span class="records-title">SOLO HIGH SCORES</span>
+                </div>
+                <span class="records-tag">TOP 3</span>
+              </div>
+              <div class="solo-records-list" id="solo-records-list">
+                <!-- Dynamically populated by game.renderLobbyHighScores() -->
+              </div>
+            </div>
           </div>
 
           <!-- Right Column: Modular Customization Hub with Tabs -->
@@ -574,9 +589,18 @@
           </div>
         </div>
 
-        <button id="restart-btn" class="btn-primary">
-          <span class="btn-text">REDEPLOY SQUAD</span>
-        </button>
+        <div id="game-over-highscore-badge" class="game-over-record-banner hidden">
+          🏆 NEW TOP 3 SOLO RECORD ACHIEVED!
+        </div>
+
+        <div class="game-over-btn-row">
+          <button id="restart-btn" class="btn-primary">
+            <span class="btn-text">REDEPLOY SQUAD</span>
+          </button>
+          <button id="game-over-lobby-btn" class="btn-secondary btn-return-lobby" type="button">
+            <span class="btn-text">RETURN TO LOBBY</span>
+          </button>
+        </div>
       </div>
     </div>
 
@@ -626,6 +650,35 @@
                 <span class="team-stat-lbl">TOTAL SCORE (DECIDING FACTOR)</span>
               </div>
             </div>
+          </div>
+        </div>
+
+        <!-- All Competitors Match Leaderboard Table -->
+        <div class="match-leaderboard-panel">
+          <div class="match-leaderboard-header">
+            <div class="mlb-title-row">
+              <span class="mlb-icon">📊</span>
+              <span class="mlb-title">MATCH SCOREBOARD // رده‌بندی نهایی تمام رقبا</span>
+              <span class="mlb-tag">SORTED BY SCORE</span>
+            </div>
+            <div class="mlb-sub">FINAL RANKINGS &amp; COMBAT STATS OF ALL OPERATIVES</div>
+          </div>
+          <div class="match-leaderboard-table-wrap">
+            <table class="match-leaderboard-table">
+              <thead>
+                <tr>
+                  <th class="th-rank">RANK</th>
+                  <th class="th-operative">OPERATIVE</th>
+                  <th class="th-team">SQUAD</th>
+                  <th class="th-score">SCORE</th>
+                  <th class="th-kills">KILLS</th>
+                  <th class="th-deaths">DEATHS</th>
+                </tr>
+              </thead>
+              <tbody id="team-match-leaderboard-body">
+                <!-- Dynamically populated by network.renderMatchLeaderboard() -->
+              </tbody>
+            </table>
           </div>
         </div>
 

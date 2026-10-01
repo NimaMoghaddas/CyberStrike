@@ -110,6 +110,16 @@ function isCollidingWithMap(x, y, radius = 20, mapId = currentMapId) {
   return false;
 }
 
+function hasLineOfSight(x1, y1, x2, y2, mapId) {
+  const steps = 16;
+  for (let s = 1; s < steps; s++) {
+    const tx = x1 + (x2 - x1) * (s / steps);
+    const ty = y1 + (y2 - y1) * (s / steps);
+    if (isCollidingWithMap(tx, ty, 8, mapId)) return false;
+  }
+  return true;
+}
+
 function resolveCircleCollision(entity, mapId = currentMapId) {
   const map = getActiveMap(mapId);
   let hadCollision = false;
@@ -296,6 +306,7 @@ function createRoom(hostId, hostCode, mapId = 'sector_09') {
     hostId: hostId,
     mode: 'teams', // 'teams' | 'ffa'
     mapId: mapId,
+    lightingMode: 'tactical', // 'tactical' (dark + flashlight) | 'full' (fully illuminated)
     gameStarted: false,
     alphaColor: '#00f0ff',
     betaColor: '#ff3366',
@@ -346,6 +357,7 @@ function broadcastLobbySync(roomId) {
     hostId: room.hostId,
     mode: room.mode,
     mapId: room.mapId,
+    lightingMode: room.lightingMode || 'tactical',
     gameStarted: room.gameStarted,
     alphaColor: room.alphaColor,
     betaColor: room.betaColor,
@@ -484,6 +496,8 @@ function triggerServerBomberExplosion(room, x, y, killerSocketId, killerPlayer) 
               triggerServerBomberExplosion(room, other.x, other.y, killerSocketId, killerPlayer);
             }
           }, 60);
+        } else if (other.type === 'splitter' && (other.generation || 0) < 2) {
+          triggerServerSplitterSpawn(room, other);
         }
       } else {
         io.to(room.id).emit('enemy_damaged', {
@@ -499,28 +513,92 @@ function triggerServerBomberExplosion(room, x, y, killerSocketId, killerPlayer) 
   }
 }
 
+function triggerServerSplitterSpawn(room, enemy) {
+  if (enemy.type !== 'splitter' || (enemy.generation || 0) >= 2) return;
+  const nextGen = (enemy.generation || 0) + 1;
+  const map = getActiveMap(room.mapId);
+
+  let childRadius = 17, childMaxHp = 55, childSpeed = 155, childDamage = 10, childScore = 100, childColor = '#39ff14';
+  if (nextGen >= 2) {
+    childRadius = 11; childMaxHp = 22; childSpeed = 190; childDamage = 6; childScore = 50; childColor = '#88ff99';
+  }
+
+  const baseAngle = enemy.angle || 0;
+  const spreadOffset = Math.PI * 0.42;
+  const angles = [baseAngle + spreadOffset, baseAngle - spreadOffset];
+  const spawnDist = enemy.radius * 0.65 + childRadius + 4;
+
+  for (let i = 0; i < 2; i++) {
+    const ang = angles[i];
+    let cx = enemy.x + Math.cos(ang) * spawnDist;
+    let cy = enemy.y + Math.sin(ang) * spawnDist;
+
+    cx = Math.max(30, Math.min(map.width - 30, cx));
+    cy = Math.max(30, Math.min(map.height - 30, cy));
+
+    const childId = `e_${room.nextEnemyId++}`;
+    const child = {
+      id: childId,
+      type: 'splitter',
+      generation: nextGen,
+      x: Math.round(cx),
+      y: Math.round(cy),
+      angle: ang,
+      radius: childRadius,
+      maxHp: childMaxHp,
+      hp: childMaxHp,
+      speed: childSpeed,
+      damage: childDamage,
+      scoreValue: childScore,
+      color: childColor,
+      attackCooldown: 0.75,
+      attackRange: childRadius + 14,
+      attackTimer: 0,
+      spitCooldown: 5.0,
+      spitTimer: 9999,
+      spitWindupTimer: 0
+    };
+
+    if (isCollidingWithMap(child.x, child.y, child.radius, room.mapId)) {
+      unstuckEntityServer(child, room.mapId);
+    }
+
+    room.enemies[childId] = child;
+    io.to(room.id).emit('enemy_spawned', { enemy: child });
+  }
+}
+
 function spawnServerEnemy(room) {
   const roll = Math.random();
   let type = 'normal';
+  let generation = 0;
   let radius = 22, maxHp = 90, speed = 155, damage = 20, scoreValue = 100, color = '#00ff88', attackCooldown = 0.85, attackRange = 48;
 
   const wave = room.waveManager.wave;
   if (wave === 1) {
-    if (roll < 0.60) {
-      type = 'normal';
-    } else if (roll < 0.85) {
-      type = 'fast';
-      radius = 16; maxHp = 45; speed = 255; damage = 14; scoreValue = 125; color = '#00f0ff'; attackCooldown = 0.45; attackRange = 32;
-    } else {
-      type = 'bomber';
-      radius = 18; maxHp = 60; speed = 210; damage = 50; scoreValue = 200; color = '#ff7700'; attackCooldown = 0.5; attackRange = 36;
-    }
-  } else if (wave === 2) {
     if (roll < 0.45) {
       type = 'normal';
     } else if (roll < 0.70) {
       type = 'fast';
       radius = 16; maxHp = 45; speed = 255; damage = 14; scoreValue = 125; color = '#00f0ff'; attackCooldown = 0.45; attackRange = 32;
+    } else if (roll < 0.88) {
+      type = 'splitter';
+      generation = 0;
+      radius = 26; maxHp = 120; speed = 120; damage = 14; scoreValue = 200; color = '#00ff88'; attackCooldown = 0.75; attackRange = 40;
+    } else {
+      type = 'bomber';
+      radius = 18; maxHp = 60; speed = 210; damage = 50; scoreValue = 200; color = '#ff7700'; attackCooldown = 0.5; attackRange = 36;
+    }
+  } else if (wave === 2) {
+    if (roll < 0.30) {
+      type = 'normal';
+    } else if (roll < 0.55) {
+      type = 'fast';
+      radius = 16; maxHp = 45; speed = 255; damage = 14; scoreValue = 125; color = '#00f0ff'; attackCooldown = 0.45; attackRange = 32;
+    } else if (roll < 0.75) {
+      type = 'splitter';
+      generation = 0;
+      radius = 26; maxHp = 120; speed = 120; damage = 14; scoreValue = 200; color = '#00ff88'; attackCooldown = 0.75; attackRange = 40;
     } else if (roll < 0.88) {
       type = 'bomber';
       radius = 18; maxHp = 60; speed = 210; damage = 50; scoreValue = 200; color = '#ff7700'; attackCooldown = 0.5; attackRange = 36;
@@ -529,12 +607,16 @@ function spawnServerEnemy(room) {
       radius = 20; maxHp = 75; speed = 115; damage = 28; scoreValue = 300; color = '#b026ff'; attackCooldown = 1.0; attackRange = 40;
     }
   } else if (wave === 3) {
-    if (roll < 0.35) {
+    if (roll < 0.25) {
       type = 'normal';
-    } else if (roll < 0.60) {
+    } else if (roll < 0.45) {
       type = 'fast';
       radius = 16; maxHp = 45; speed = 255; damage = 14; scoreValue = 125; color = '#00f0ff'; attackCooldown = 0.45; attackRange = 32;
-    } else if (roll < 0.78) {
+    } else if (roll < 0.65) {
+      type = 'splitter';
+      generation = 0;
+      radius = 26; maxHp = 120; speed = 120; damage = 14; scoreValue = 200; color = '#00ff88'; attackCooldown = 0.75; attackRange = 40;
+    } else if (roll < 0.80) {
       type = 'bomber';
       radius = 18; maxHp = 60; speed = 210; damage = 50; scoreValue = 200; color = '#ff7700'; attackCooldown = 0.5; attackRange = 36;
     } else if (roll < 0.90) {
@@ -542,23 +624,27 @@ function spawnServerEnemy(room) {
       radius = 20; maxHp = 75; speed = 115; damage = 28; scoreValue = 300; color = '#b026ff'; attackCooldown = 1.0; attackRange = 40;
     } else {
       type = 'tank';
-      radius = 34; maxHp = 350; speed = 85; damage = 38; scoreValue = 400; color = '#ff3366'; attackCooldown = 1.2; attackRange = 60;
+      radius = 24; maxHp = 180; speed = 95; damage = 30; scoreValue = 350; color = '#ff3366'; attackCooldown = 1.1; attackRange = 36;
     }
   } else {
-    if (roll < 0.25) {
+    if (roll < 0.20) {
       type = 'normal';
-    } else if (roll < 0.50) {
+    } else if (roll < 0.40) {
       type = 'fast';
       radius = 16; maxHp = 45; speed = 255; damage = 14; scoreValue = 125; color = '#00f0ff'; attackCooldown = 0.45; attackRange = 32;
-    } else if (roll < 0.70) {
+    } else if (roll < 0.60) {
+      type = 'splitter';
+      generation = 0;
+      radius = 26; maxHp = 120; speed = 120; damage = 14; scoreValue = 200; color = '#00ff88'; attackCooldown = 0.75; attackRange = 40;
+    } else if (roll < 0.74) {
       type = 'bomber';
       radius = 18; maxHp = 60; speed = 210; damage = 50; scoreValue = 200; color = '#ff7700'; attackCooldown = 0.5; attackRange = 36;
-    } else if (roll < 0.86) {
+    } else if (roll < 0.88) {
       type = 'sniper';
       radius = 20; maxHp = 75; speed = 115; damage = 28; scoreValue = 300; color = '#b026ff'; attackCooldown = 1.0; attackRange = 40;
     } else {
       type = 'tank';
-      radius = 34; maxHp = 350; speed = 85; damage = 38; scoreValue = 400; color = '#ff3366'; attackCooldown = 1.2; attackRange = 60;
+      radius = 24; maxHp = 180; speed = 95; damage = 30; scoreValue = 350; color = '#ff3366'; attackCooldown = 1.1; attackRange = 36;
     }
   }
 
@@ -587,6 +673,7 @@ function spawnServerEnemy(room) {
   room.enemies[enemyId] = {
     id: enemyId,
     type,
+    generation,
     x: Math.round(spawnX),
     y: Math.round(spawnY),
     angle: 0,
@@ -755,6 +842,7 @@ io.on('connection', (socket) => {
       mode: room.mode,
       hostId: room.hostId,
       mapId: room.mapId,
+      lightingMode: room.lightingMode || 'tactical',
       gameStarted: room.gameStarted,
       alphaColor: room.alphaColor,
       betaColor: room.betaColor,
@@ -860,7 +948,8 @@ io.on('connection', (socket) => {
       hostId: targetRoom.hostId,
       gameStarted: targetRoom.gameStarted,
       mode: targetRoom.mode,
-      mapId: targetRoom.mapId
+      mapId: targetRoom.mapId,
+      lightingMode: targetRoom.lightingMode || 'tactical'
     });
 
     broadcastLobbySync(targetRoom.id);
@@ -929,6 +1018,9 @@ io.on('connection', (socket) => {
     const lp = room.players[socket.id];
     if (lp && data && data.name) {
       lp.name = data.name.trim().substring(0, 16);
+      if (room.activePlayers[socket.id]) {
+        room.activePlayers[socket.id].name = lp.name;
+      }
       broadcastLobbySync(room.id);
     }
   });
@@ -1003,11 +1095,27 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Host Only: Set Visibility Protocol (Lighting Mode)
+  socket.on('lobby_set_lighting', (data) => {
+    const room = getRoomForSocket(socket);
+    if (!room || socket.id !== room.hostId) return;
+    if (data && (data.lightingMode === 'tactical' || data.lightingMode === 'full')) {
+      room.lightingMode = data.lightingMode;
+      io.to(room.id).emit('lighting_sync', { lightingMode: room.lightingMode });
+      broadcastLobbySync(room.id);
+    }
+  });
+
   // Leader Starts Match Directly
   socket.on('leader_start_game', () => {
     const room = getRoomForSocket(socket);
     if (!room || socket.id !== room.hostId) return;
     room.gameStarted = true;
+    for (const pid in room.activePlayers) {
+      room.activePlayers[pid].score = 0;
+      room.activePlayers[pid].kills = 0;
+      room.activePlayers[pid].deaths = 0;
+    }
     room.teamStats = {
       alpha: { kills: 0, score: 0 },
       beta: { kills: 0, score: 0 },
@@ -1018,7 +1126,8 @@ io.on('connection', (socket) => {
     io.to(room.id).emit('team_stats_update', { teamStats: room.teamStats });
     io.to(room.id).emit('game_start_signal', {
       mapId: room.mapId,
-      mode: room.mode
+      mode: room.mode,
+      lightingMode: room.lightingMode || 'tactical'
     });
     broadcastLobbySync(room.id);
   });
@@ -1174,12 +1283,10 @@ io.on('connection', (socket) => {
   socket.on('player_shoot', (data) => {
     const room = getRoomForSocket(socket);
     if (!room) return;
-    const p = room.activePlayers[socket.id];
-    if (!p || !p.alive) return;
+    const p = room.activePlayers[socket.id] || room.players[socket.id];
 
-    const bulletColor = data.color || p.color || '#00f0ff';
-
-    const playerTeam = p.team || data.team || (room.players[socket.id] ? room.players[socket.id].team : null);
+    const bulletColor = data.color || (p ? p.color : '#00f0ff');
+    const playerTeam = (p && p.team) || data.team || (room.players[socket.id] ? room.players[socket.id].team : null);
 
     socket.to(room.id).emit('remote_shoot', {
       shooterId: socket.id,
@@ -1226,6 +1333,8 @@ io.on('connection', (socket) => {
       // If it was a bomber, trigger surrounding explosion!
       if (enemy.type === 'bomber') {
         triggerServerBomberExplosion(room, enemy.x, enemy.y, socket.id, shooter);
+      } else if (enemy.type === 'splitter' && (enemy.generation || 0) < 2) {
+        triggerServerSplitterSpawn(room, enemy);
       }
 
       io.to(room.id).emit('enemy_killed', {
@@ -1266,8 +1375,11 @@ io.on('connection', (socket) => {
     if (!shooter || !target || !target.alive || socket.id === data.targetId) return;
     if (target.invulnerableTimer > 0) return;
 
+    const shooterTeam = shooter.team || (room.players[socket.id] && room.players[socket.id].team);
+    const targetTeam = target.team || (room.players[data.targetId] && room.players[data.targetId].team);
+
     // Friendly fire protection in Team Battle
-    if (room.mode === 'teams' && shooter.team && target.team && shooter.team === target.team) {
+    if (room.mode === 'teams' && shooterTeam && targetTeam && shooterTeam.toLowerCase() === targetTeam.toLowerCase()) {
       return;
     }
 
@@ -1306,9 +1418,40 @@ io.on('connection', (socket) => {
           }
           room.teamStats.winner = winner;
 
+          // Assemble all competitors ranked by score descending
+          const playerMap = new Map();
+          for (const pid in room.players) {
+            const p = room.players[pid];
+            playerMap.set(pid, {
+              id: p.id,
+              name: p.name,
+              team: p.team || 'alpha',
+              color: p.color,
+              score: 0,
+              kills: 0,
+              deaths: 0,
+              modelType: p.modelType || 'commando'
+            });
+          }
+          for (const pid in room.activePlayers) {
+            const ap = room.activePlayers[pid];
+            playerMap.set(pid, {
+              id: ap.id,
+              name: ap.name,
+              team: ap.team || (room.players[pid] ? room.players[pid].team : 'alpha'),
+              color: ap.color,
+              score: ap.score || 0,
+              kills: ap.kills || 0,
+              deaths: ap.deaths || 0,
+              modelType: ap.modelType || 'commando'
+            });
+          }
+          const competitors = Array.from(playerMap.values()).sort((a, b) => (b.score || 0) - (a.score || 0) || (b.kills || 0) - (a.kills || 0));
+
           io.to(room.id).emit('team_match_finished', {
             teamStats: room.teamStats,
             winner: winner,
+            competitors: competitors,
             message: `MATCH TERMINATED // ${winner === 'draw' ? 'DRAW MATCH' : (winner === 'alpha' ? 'TEAM ALPHA' : 'TEAM BETA') + ' VICTORIOUS (HIGHEST SCORE)'}`
           });
         }
@@ -1397,7 +1540,7 @@ io.on('connection', (socket) => {
     const dy = p.y - medkit.y;
     if (dx * dx + dy * dy <= 60 * 60) {
       delete room.medkits[data.id];
-      const healAmount = Math.max(1, Math.round(p.maxHp * 0.25));
+      const healAmount = Math.max(1, Math.round(p.maxHp * 0.20));
       p.hp = Math.min(p.maxHp, p.hp + healAmount);
       io.to(room.id).emit('medkit_collected', {
         id: data.id,
@@ -1537,11 +1680,11 @@ setInterval(() => {
             maxHpBonus: maxHpBonus
           });
 
-          // Upgrade maxHp exponentially and heal all alive players
+          // Upgrade maxHp exponentially and heal all alive players to 100% full HP
           for (const p of alivePlayers) {
             p.score += 1000;
             p.maxHp = (p.maxHp || 100) + maxHpBonus;
-            p.hp = Math.min(p.maxHp, p.hp + maxHpBonus + 25);
+            p.hp = p.maxHp; // Full heal to 100% of new upgraded baseline vitality!
           }
 
           io.to(room.id).emit('kill_feed_msg', {
@@ -1721,12 +1864,12 @@ setInterval(() => {
                   speed: 820,
                   damage: 28,
                   color: '#b026ff',
-                  ignoreWalls: true
+                  ignoreWalls: false
                 });
               }
             } else {
               enemy.sniperTimer -= DT;
-              if (enemy.sniperTimer <= 0 && curDist <= 900) {
+              if (enemy.sniperTimer <= 0 && curDist <= 900 && hasLineOfSight(enemy.x, enemy.y, closestP.x, closestP.y, room.mapId)) {
                 enemy.sniperTimer = 5.0;
                 enemy.sniperAimTimer = 1.0;
                 io.to(room.id).emit('enemy_windup', { enemyId: enemy.id, duration: 1.0 });
@@ -1734,18 +1877,19 @@ setInterval(() => {
             }
           }
 
-          // Melee Attack Check
+          // Melee Attack Check (Reliable contact check on player)
           const distAfterMove = Math.hypot(closestP.x - enemy.x, closestP.y - enemy.y);
-          const attackReach = enemy.radius + 20 + 12;
+          const attackReach = Math.max(enemy.attackRange || 36, minDistanceToPlayer + 8);
+
+          // Bomber explodes on contact or close proximity!
+          if (enemy.type === 'bomber' && (distAfterMove <= attackReach || curDist <= minDistanceToPlayer + 8)) {
+            triggerServerBomberExplosion(room, enemy.x, enemy.y, null, null);
+            delete room.enemies[enemyId];
+            continue;
+          }
+
           if (distAfterMove <= attackReach && enemy.attackTimer <= 0) {
             enemy.attackTimer = enemy.attackCooldown;
-
-            // Bomber explodes on contact!
-            if (enemy.type === 'bomber') {
-              triggerServerBomberExplosion(room, enemy.x, enemy.y, null, null);
-              delete room.enemies[enemyId];
-              continue;
-            }
 
             if (closestP.invulnerableTimer <= 0) {
               closestP.hp = Math.max(0, closestP.hp - enemy.damage);
@@ -1827,6 +1971,7 @@ setInterval(() => {
         enemies: Object.values(room.enemies).map(e => ({
           id: e.id,
           type: e.type,
+          generation: e.generation || 0,
           x: Math.round(e.x),
           y: Math.round(e.y),
           angle: Number(e.angle.toFixed(3)),

@@ -511,17 +511,8 @@ class Player {
     }
   }
 
-  applyAcidDoT(duration = 3.0, dps = 3) {
-    this.acidTimer = Math.max(this.acidTimer || 0, duration);
-    this.acidDPS = dps;
-    this.acidTickTimer = 0;
-    if (window.particleSystem) {
-      window.particleSystem.emit(this.x, this.y, 8, {
-        speed: 70,
-        color: '#39ff14',
-        life: 0.35
-      });
-    }
+  applyAcidDoT(duration = 0, dps = 0) {
+    this.acidTimer = 0;
   }
 
   respawn(x = 1200, y = 1200) {

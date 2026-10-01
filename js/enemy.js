@@ -52,12 +52,10 @@ class AcidSpit {
       return;
     }
 
-    // Purple sniper beams pierce through walls!
-    if (!this.ignoreWalls && this.color !== '#b026ff') {
-      if (this.distanceTraveled > 24 && map && map.isColliding(this.x, this.y, this.radius)) {
-        this.explode(game);
-        return;
-      }
+    // All enemy projectiles collide with and are stopped by obstacles/walls
+    if (this.distanceTraveled > 20 && map && map.isColliding(this.x, this.y, this.radius)) {
+      this.explode(game);
+      return;
     }
 
     // Check collision with local player and remote players
@@ -75,12 +73,6 @@ class AcidSpit {
       const dist = Math.hypot(this.x - targetP.x, this.y - targetP.y);
       if (dist <= this.radius + targetP.radius) {
         if (targetP.takeDamage) targetP.takeDamage(this.damage);
-        // Green enemy acid ball DoT: 3 seconds duration, 3 HP per second
-        if (this.color === '#39ff14' || this.color === '#00ff88' || !this.color.includes('b026ff')) {
-          if (targetP.applyAcidDoT) {
-            targetP.applyAcidDoT(3.0, 3);
-          }
-        }
         if (game) game.addScreenShake(5);
         this.explode(game);
         return;
@@ -157,13 +149,18 @@ class AcidSpit {
 window.AcidSpit = AcidSpit;
 
 class Enemy {
-  constructor(x, y, type = 'normal', id = null) {
+  constructor(x, y, type = 'normal', id = null, generation = 0) {
+    if (typeof id === 'number') {
+      generation = id;
+      id = null;
+    }
     this.id = id || 'e_' + Math.random().toString(36).substring(2, 9);
     this.x = x;
     this.y = y;
     this.type = type;
     this.angle = 0;
     this.alive = true;
+    this.generation = typeof generation === 'number' ? generation : 0;
 
     // Type Configurations
     if (type === 'fast') {
@@ -177,15 +174,15 @@ class Enemy {
       this.attackRange = 26;
       this.attackCooldown = 0.6;
     } else if (type === 'tank') {
-      this.radius = 34;
-      this.maxHp = 350;
+      this.radius = 24;
+      this.maxHp = 180;
       this.hp = this.maxHp;
-      this.speed = 85;
-      this.damage = 38;
-      this.scoreValue = 400;
+      this.speed = 95;
+      this.damage = 30;
+      this.scoreValue = 350;
       this.color = '#ff3366';
-      this.attackRange = 46;
-      this.attackCooldown = 1.2;
+      this.attackRange = 36;
+      this.attackCooldown = 1.1;
     } else if (type === 'shielded') {
       this.radius = 24;
       this.maxHp = 160;
@@ -219,6 +216,54 @@ class Enemy {
       this.attackRange = 36;
       this.attackCooldown = 0.5;
       this.fuseTimer = 0;
+    } else if (type === 'splitter') {
+      const gen = this.generation || 0;
+      if (gen === 0) {
+        this.radius = 26;
+        this.maxHp = 120;
+        this.speed = 120;
+        this.damage = 14;
+        this.splits = 2;
+        this.scoreValue = 200;
+        this.colors = {
+          dark: '#031a0e',
+          mid: '#0a2c17',
+          light: '#144e2b',
+          glow: '#00ff88'
+        };
+        this.color = '#00ff88';
+      } else if (gen === 1) {
+        this.radius = 17;
+        this.maxHp = 55;
+        this.speed = 155;
+        this.damage = 10;
+        this.splits = 2;
+        this.scoreValue = 100;
+        this.colors = {
+          dark: '#041d10',
+          mid: '#0f3d1e',
+          light: '#1a5c2c',
+          glow: '#39ff14'
+        };
+        this.color = '#39ff14';
+      } else { // gen >= 2
+        this.radius = 11;
+        this.maxHp = 22;
+        this.speed = 190;
+        this.damage = 6;
+        this.splits = 0;
+        this.scoreValue = 50;
+        this.colors = {
+          dark: '#062015',
+          mid: '#134a25',
+          light: '#1f6632',
+          glow: '#88ff99'
+        };
+        this.color = '#88ff99';
+      }
+      this.hp = this.maxHp;
+      this.attackRange = this.radius + 14;
+      this.attackCooldown = 0.75;
     } else { // normal
       this.radius = 22;
       this.maxHp = 90;
@@ -434,7 +479,7 @@ class Enemy {
           this.sniperTimer = 5.0;
           this.sniperAimTimer = 0;
           if (game && game.spawnAcidSpit) {
-            game.spawnAcidSpit(this.x, this.y, this.angle, 820, 28, '#b026ff', true);
+            game.spawnAcidSpit(this.x, this.y, this.angle, 820, 28, '#b026ff', false);
           }
           if (window.soundSystem) {
             window.soundSystem.playWeaponShoot('railgun');
@@ -513,13 +558,69 @@ class Enemy {
     }
   }
 
-  die() {
+  die(game = window.gameInstance || window.gameEngine) {
+    if (!this.alive) return;
     this.alive = false;
     const isTank = this.type === 'tank';
     const isBomber = this.type === 'bomber';
 
     window.soundSystem.playEnemyDeath(isTank || isBomber);
     window.particleSystem.emitBlood(this.x, this.y, 0, isTank ? 30 : 16, true);
+
+    if (this.type === 'splitter') {
+      if (window.particleSystem) {
+        window.particleSystem.emit(this.x, this.y, 16, {
+          speed: 150,
+          color: this.color || '#00ff88',
+          life: 0.35,
+          size: 2.8
+        });
+      }
+
+      if (this.generation < 2) {
+        const nextGen = this.generation + 1;
+        const gameRef = game || window.gameInstance || window.gameEngine;
+        if (gameRef && gameRef.enemies) {
+          const childRadius = nextGen === 1 ? 17 : 11;
+          const spawnDist = this.radius * 0.65 + childRadius + 4;
+          const baseAngle = this.angle || 0;
+          const spreadOffset = Math.PI * 0.42;
+          const spreadAngles = [
+            baseAngle + spreadOffset + (Math.random() - 0.5) * 0.15,
+            baseAngle - spreadOffset + (Math.random() - 0.5) * 0.15
+          ];
+
+          for (let i = 0; i < 2; i++) {
+            const ang = spreadAngles[i];
+            let cx = this.x + Math.cos(ang) * spawnDist;
+            let cy = this.y + Math.sin(ang) * spawnDist;
+
+            if (gameRef.map) {
+              cx = Math.max(30, Math.min(gameRef.map.width - 30, cx));
+              cy = Math.max(30, Math.min(gameRef.map.height - 30, cy));
+            }
+
+            const child = new Enemy(cx, cy, 'splitter', null, nextGen);
+            child.angle = ang;
+
+            if (gameRef.map && gameRef.map.isColliding(child.x, child.y, child.radius)) {
+              gameRef.map.unstuckEntity(child);
+            }
+
+            gameRef.enemies.push(child);
+
+            if (window.particleSystem) {
+              window.particleSystem.emit(child.x, child.y, 12, {
+                speed: 100,
+                color: child.color,
+                life: 0.28,
+                size: 2.2
+              });
+            }
+          }
+        }
+      }
+    }
 
     if (isTank || isBomber) {
       const radius = isBomber ? 140 : 70;
@@ -605,6 +706,8 @@ class Enemy {
       this.drawPhantomSniper(ctx, isHit);
     } else if (this.type === 'bomber') {
       this.drawKamikazeBomber(ctx, isHit);
+    } else if (this.type === 'splitter') {
+      this.drawSplitter(ctx, isHit);
     } else {
       this.drawNormalCyborg(ctx, isHit);
     }
@@ -630,6 +733,216 @@ class Enemy {
       ctx.restore();
       return;
     }
+
+    ctx.restore();
+  }
+
+  // --- Bio-Spitter Organism: Splitter (Multi-Generational Swarm Bio-Hostile) ---
+  drawSplitter(ctx, isHit) {
+    const t = this.animTimer || 0;
+    const R = this.radius;
+
+    // Generation-tailored bio-palette
+    const colors = this.colors || (
+      this.generation === 0
+        ? { dark: '#031a0e', mid: '#0a2c17', light: '#144e2b', glow: '#00ff88' }
+        : this.generation === 1
+        ? { dark: '#041d10', mid: '#0f3d1e', light: '#1a5c2c', glow: '#39ff14' }
+        : { dark: '#062015', mid: '#134a25', light: '#1f6632', glow: '#88ff99' }
+    );
+
+    const cDark = isHit ? '#d0d0d0' : colors.dark;
+    const cMid = isHit ? '#e2e2e2' : colors.mid;
+    const cLight = isHit ? '#ffffff' : colors.light;
+    const cGlow = isHit ? '#ffffff' : colors.glow;
+
+    // Animation variables
+    const walkFreq = (this.speed || 120) * 0.07;
+    const walkPhase = t * walkFreq;
+    const breath = Math.sin(t * 2.8) * 0.055; // Gentle bio-sinusoidal breathing expansion
+    const pulse = 0.5 + 0.5 * Math.sin(t * 5.2); // Core pulsation (0 to 1)
+
+    ctx.save();
+
+    // 1. Soft Ground Shadow
+    ctx.save();
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.38)';
+    ctx.beginPath();
+    ctx.ellipse(0, 2, R * 1.15, R * 0.85, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // 2. 4 Short Organic Legs Under Body (with Scuttling Step Animation)
+    const drawShortLeg = (hipX, hipY, reachX, reachY, phase, isUpper) => {
+      const stepProg = Math.sin(phase);
+      const lift = Math.max(0, -Math.cos(phase)) * (R * 0.22);
+      const footX = hipX + reachX + stepProg * (R * 0.28);
+      const footY = hipY + reachY + (isUpper ? -lift : lift) * 0.6;
+      const kneeX = (hipX + footX) * 0.5 + (isUpper ? -1 : 1) * (R * 0.15);
+      const kneeY = (hipY + footY) * 0.5 + (isUpper ? -lift : lift) * 0.3;
+
+      // Femur & Tibia
+      ctx.beginPath();
+      ctx.moveTo(hipX, hipY);
+      ctx.quadraticCurveTo(kneeX, kneeY, footX, footY);
+      ctx.strokeStyle = cMid;
+      ctx.lineWidth = Math.max(1.8, R * 0.14);
+      ctx.lineCap = 'round';
+      ctx.stroke();
+
+      // Sharp Claw/Foot Tip
+      ctx.beginPath();
+      ctx.arc(footX, footY, Math.max(1.2, R * 0.08), 0, Math.PI * 2);
+      ctx.fillStyle = isHit ? '#ffffff' : cGlow;
+      ctx.fill();
+    };
+
+    // Front Legs (Phase A & B)
+    drawShortLeg(R * 0.22, -R * 0.48, R * 0.32, -R * 0.48, walkPhase, true);
+    drawShortLeg(R * 0.22, R * 0.48, R * 0.32, R * 0.48, walkPhase + Math.PI, false);
+
+    // Rear Legs (Phase B & A)
+    drawShortLeg(-R * 0.35, -R * 0.45, -R * 0.32, -R * 0.45, walkPhase + Math.PI, true);
+    drawShortLeg(-R * 0.35, R * 0.45, -R * 0.32, R * 0.45, walkPhase, false);
+
+    // 3. 2 Front Antennae with Gentle Wiggle
+    const antWiggle1 = Math.sin(t * 3.6) * (R * 0.18);
+    const antWiggle2 = Math.sin(t * 3.6 + 1.4) * (R * 0.18);
+
+    const drawAntenna = (baseY, wiggle, isUpper) => {
+      const startX = R * 0.72;
+      const startY = baseY;
+      const tipX = R * 1.38;
+      const tipY = baseY + (isUpper ? -R * 0.38 : R * 0.38) + wiggle;
+      const ctrlX = R * 1.05;
+      const ctrlY = baseY + (isUpper ? -R * 0.12 : R * 0.12) - wiggle * 0.4;
+
+      ctx.beginPath();
+      ctx.moveTo(startX, startY);
+      ctx.quadraticCurveTo(ctrlX, ctrlY, tipX, tipY);
+      ctx.strokeStyle = cMid;
+      ctx.lineWidth = Math.max(1.3, R * 0.075);
+      ctx.lineCap = 'round';
+      ctx.stroke();
+
+      // Glowing Antenna Tip
+      ctx.beginPath();
+      ctx.arc(tipX, tipY, Math.max(1.6, R * 0.1), 0, Math.PI * 2);
+      ctx.fillStyle = isHit ? '#ffffff' : cGlow;
+      ctx.shadowColor = cGlow;
+      ctx.shadowBlur = isHit ? 10 : 6;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    };
+
+    drawAntenna(-R * 0.22, antWiggle1, true);
+    drawAntenna(R * 0.22, antWiggle2, false);
+
+    // 4. Organic Bubble/Oval Body with Breathing Animation & Internal Gradient
+    ctx.save();
+    const scaleX = (1.0 + breath) * R;
+    const scaleY = (0.88 - breath * 0.45) * R;
+
+    // Posterior secondary bubble (organic depth)
+    const rearR = R * 0.62 * (1.0 + breath * 0.6);
+    ctx.beginPath();
+    ctx.ellipse(-R * 0.34, 0, rearR, rearR * 0.85, 0, 0, Math.PI * 2);
+    const rearGrad = ctx.createRadialGradient(-R * 0.25, 0, 1, -R * 0.34, 0, rearR);
+    rearGrad.addColorStop(0, cLight);
+    rearGrad.addColorStop(0.5, cMid);
+    rearGrad.addColorStop(1, cDark);
+    ctx.fillStyle = rearGrad;
+    ctx.fill();
+    ctx.strokeStyle = cGlow;
+    ctx.lineWidth = Math.max(1, R * 0.05);
+    ctx.globalAlpha = isHit ? 1.0 : 0.4;
+    ctx.stroke();
+    ctx.globalAlpha = 1.0;
+
+    // Main Oval Cephalothorax Bubble
+    ctx.beginPath();
+    ctx.ellipse(R * 0.08, 0, scaleX * 0.88, scaleY, 0, 0, Math.PI * 2);
+    const bodyGrad = ctx.createRadialGradient(R * 0.2, -R * 0.1, R * 0.1, R * 0.08, 0, R * 0.98);
+    bodyGrad.addColorStop(0, cLight);
+    bodyGrad.addColorStop(0.55, cMid);
+    bodyGrad.addColorStop(1, cDark);
+    ctx.fillStyle = bodyGrad;
+    ctx.fill();
+
+    // Bio-rim edge glow
+    ctx.strokeStyle = cGlow;
+    ctx.lineWidth = Math.max(1.3, R * 0.08);
+    ctx.shadowColor = cGlow;
+    ctx.shadowBlur = isHit ? 16 : 8;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.restore();
+
+    // 5. Pulsating Glowing Bio-Core in Body Center
+    ctx.save();
+    const coreRadius = R * (0.28 + pulse * 0.08);
+
+    // Soft outer core radial aura
+    ctx.beginPath();
+    ctx.arc(0, 0, coreRadius * 1.6, 0, Math.PI * 2);
+    const auraGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, coreRadius * 1.6);
+    auraGrad.addColorStop(0, cGlow);
+    auraGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = auraGrad;
+    ctx.globalAlpha = isHit ? 1.0 : (0.55 + pulse * 0.35);
+    ctx.fill();
+    ctx.globalAlpha = 1.0;
+
+    // Inner vibrant core
+    ctx.beginPath();
+    ctx.arc(0, 0, coreRadius, 0, Math.PI * 2);
+    const coreGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, coreRadius);
+    coreGrad.addColorStop(0, '#ffffff');
+    coreGrad.addColorStop(0.45, cGlow);
+    coreGrad.addColorStop(1, cMid);
+    ctx.fillStyle = coreGrad;
+    ctx.shadowColor = cGlow;
+    ctx.shadowBlur = isHit ? 16 : (10 + pulse * 8);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Core bright nucleus highlight
+    ctx.beginPath();
+    ctx.arc(-coreRadius * 0.22, -coreRadius * 0.22, Math.max(1, coreRadius * 0.32), 0, Math.PI * 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.globalAlpha = isHit ? 1.0 : 0.85;
+    ctx.fill();
+    ctx.globalAlpha = 1.0;
+    ctx.restore();
+
+    // 6. Front Sensor Eye
+    ctx.save();
+    const eyeX = R * 0.72;
+    const eyeY = 0;
+    const eyeR = Math.max(2.2, R * 0.16);
+
+    // Sensor casing
+    ctx.beginPath();
+    ctx.arc(eyeX, eyeY, eyeR + 1.2, 0, Math.PI * 2);
+    ctx.fillStyle = cDark;
+    ctx.fill();
+    ctx.strokeStyle = cMid;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Glowing Sensor Lens
+    ctx.beginPath();
+    ctx.arc(eyeX, eyeY, eyeR, 0, Math.PI * 2);
+    const eyeGrad = ctx.createRadialGradient(eyeX, eyeY, 0, eyeX, eyeY, eyeR);
+    eyeGrad.addColorStop(0, '#ffffff');
+    eyeGrad.addColorStop(0.5, cGlow);
+    eyeGrad.addColorStop(1, cMid);
+    ctx.fillStyle = eyeGrad;
+    ctx.shadowColor = cGlow;
+    ctx.shadowBlur = isHit ? 14 : 9;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.restore();
 
     ctx.restore();
   }
@@ -1140,9 +1453,10 @@ class Enemy {
     const cGlint = isHit ? '#ffffff' : 'rgba(255, 210, 220, 0.95)';
 
     ctx.save();
+    const tankScale = (this.radius || 24) / 34;
     ctx.rotate(bodyRock);
     ctx.translate(0, bodyBob);
-    ctx.scale(breathScale, 1.0 / breathScale);
+    ctx.scale(tankScale * breathScale, (tankScale / breathScale));
 
     // ============================================================
     // 1. FOUR MASSIVE ARMORED STOMPER PILLARS (Goliath Cleats)

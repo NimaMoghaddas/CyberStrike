@@ -66,13 +66,14 @@ class GameEngine {
     // Timing
     this.lastTime = performance.now();
 
-    // Customization & Modular Pre-Game State
-    this.gameMode = 'singleplayer'; // 'singleplayer' | 'multiplayer'
-    this.selectedSkinId = 'spectre';
-    this.selectedModelType = 'commando';
-    this.selectedSkinColor = '#00f0ff';
-    this.selectedMapId = 'sector_09';
-    this.selectedWeaponId = 'rifle';
+    // Customization & Modular Pre-Game State (Loaded from persistent localStorage)
+    this.loadProfile();
+    this.player.setModel(this.selectedModelType || 'commando');
+    this.player.setColor(this.selectedSkinColor || '#00f0ff');
+    this.player.name = this.savedCallsign || 'GHOST-01';
+    this.player.equipWeapon(this.selectedWeaponId || 'rifle');
+    this.map.setMap(this.selectedMapId || 'sector_09');
+
     this.isRespawning = false;
     this.previewAngle = 0;
     this.deaths = 0;
@@ -103,12 +104,19 @@ class GameEngine {
   }
 
   initUI() {
+    const callsignInput = document.getElementById('operative-callsign-input');
+    if (callsignInput && this.savedCallsign) {
+      callsignInput.value = this.savedCallsign;
+      this.player.name = this.savedCallsign;
+    }
+
     this.initModeSelector();
     this.initTerminalTabs();
     this.initSkinsUI();
     this.initMapsUI();
     this.initLoadoutUI();
     this.updateTerminalSummary();
+    this.renderLobbyHighScores();
     this.startOperativePreviewLoop();
     this.initArsenalUI();
     this.updateAmmoUI();
@@ -123,6 +131,7 @@ class GameEngine {
 
     const selectMode = (mode) => {
       this.gameMode = mode;
+      this.saveProfile({ gameMode: mode });
       if (spBtn) spBtn.classList.toggle('active', mode === 'singleplayer');
       if (mpBtn) mpBtn.classList.toggle('active', mode === 'multiplayer');
 
@@ -170,6 +179,9 @@ class GameEngine {
 
     if (spBtn) spBtn.addEventListener('click', () => selectMode('singleplayer'));
     if (mpBtn) mpBtn.addEventListener('click', () => selectMode('multiplayer'));
+
+    // Apply saved mode on startup
+    selectMode(this.gameMode || 'singleplayer');
   }
 
   initTerminalTabs() {
@@ -218,6 +230,7 @@ class GameEngine {
 
       card.addEventListener('click', () => {
         this.selectedModelType = id;
+        this.saveProfile({ modelType: id });
         document.querySelectorAll('.model-card').forEach(c => c.classList.remove('selected'));
         card.classList.add('selected');
 
@@ -253,6 +266,7 @@ class GameEngine {
 
       btn.addEventListener('click', () => {
         this.selectedSkinColor = item.hex;
+        this.saveProfile({ color: item.hex });
         document.querySelectorAll('.palette-swatch-btn').forEach(b => b.classList.remove('selected'));
         btn.classList.add('selected');
 
@@ -316,6 +330,7 @@ class GameEngine {
         }
 
         this.selectedMapId = id;
+        this.saveProfile({ mapId: id });
         document.querySelectorAll('.map-card').forEach(c => c.classList.remove('selected'));
         card.classList.add('selected');
         this.map.setMap(id);
@@ -354,6 +369,7 @@ class GameEngine {
 
       card.addEventListener('click', () => {
         this.selectedWeaponId = id;
+        this.saveProfile({ weaponId: id });
         document.querySelectorAll('.loadout-card').forEach(c => c.classList.remove('selected'));
         card.classList.add('selected');
         this.player.equipWeapon(id);
@@ -442,30 +458,253 @@ class GameEngine {
     }
   }
 
+  setLightingMode(mode, userInitiated = true) {
+    if (mode !== 'tactical' && mode !== 'full') return;
+    this.lightingMode = mode;
+    localStorage.setItem('syberstrike_lighting', mode);
+
+    const btnTactical = document.getElementById('btn-lighting-tactical');
+    const btnFull = document.getElementById('btn-lighting-full');
+    if (btnTactical) btnTactical.classList.toggle('active', this.lightingMode === 'tactical');
+    if (btnFull) btnFull.classList.toggle('active', this.lightingMode === 'full');
+
+    if (userInitiated && this.network && this.network.socket && this.network.connected) {
+      if (this.network.isHost || !this.network.isInMultiplayerSquad()) {
+        this.network.socket.emit('lobby_set_lighting', { lightingMode: mode });
+      }
+    }
+  }
+
+  updateLightingUIState() {
+    const btnTactical = document.getElementById('btn-lighting-tactical');
+    const btnFull = document.getElementById('btn-lighting-full');
+    const hostTag = document.getElementById('lighting-host-tag');
+
+    const inSquad = this.network && this.network.connected && this.network.isInMultiplayerSquad();
+    const isHost = this.network && this.network.isHost;
+
+    if (btnTactical) btnTactical.classList.toggle('active', this.lightingMode === 'tactical');
+    if (btnFull) btnFull.classList.toggle('active', this.lightingMode === 'full');
+
+    if (inSquad) {
+      if (hostTag) {
+        hostTag.classList.remove('hidden');
+        hostTag.textContent = isHost ? 'SQUAD LEADER (YOU)' : 'SQUAD LEADER ONLY';
+        hostTag.style.color = isHost ? '#00ff88' : 'rgba(255, 255, 255, 0.4)';
+      }
+      if (btnTactical) {
+        btnTactical.style.opacity = isHost ? '1' : '0.6';
+        btnTactical.style.cursor = isHost ? 'pointer' : 'not-allowed';
+        btnTactical.title = isHost ? 'Set squad visibility protocol' : 'Controlled by squad leader';
+      }
+      if (btnFull) {
+        btnFull.style.opacity = isHost ? '1' : '0.6';
+        btnFull.style.cursor = isHost ? 'pointer' : 'not-allowed';
+        btnFull.title = isHost ? 'Set squad visibility protocol' : 'Controlled by squad leader';
+      }
+    } else {
+      if (hostTag) hostTag.classList.add('hidden');
+      if (btnTactical) {
+        btnTactical.style.opacity = '1';
+        btnTactical.style.cursor = 'pointer';
+        btnTactical.title = '';
+      }
+      if (btnFull) {
+        btnFull.style.opacity = '1';
+        btnFull.style.cursor = 'pointer';
+        btnFull.title = '';
+      }
+    }
+  }
+
   initLightingUI() {
     const btnTactical = document.getElementById('btn-lighting-tactical');
     const btnFull = document.getElementById('btn-lighting-full');
     this.lightingMode = localStorage.getItem('syberstrike_lighting') || 'tactical';
 
-    const updateBtns = () => {
-      if (btnTactical) btnTactical.classList.toggle('active', this.lightingMode === 'tactical');
-      if (btnFull) btnFull.classList.toggle('active', this.lightingMode === 'full');
-    };
-    updateBtns();
+    this.updateLightingUIState();
 
     if (btnTactical) {
       btnTactical.addEventListener('click', () => {
-        this.lightingMode = 'tactical';
-        localStorage.setItem('syberstrike_lighting', 'tactical');
-        updateBtns();
+        if (this.network && this.network.connected && this.network.isInMultiplayerSquad() && !this.network.isHost) {
+          return; // Non-host member cannot change lighting
+        }
+        this.setLightingMode('tactical', true);
       });
     }
     if (btnFull) {
       btnFull.addEventListener('click', () => {
-        this.lightingMode = 'full';
-        localStorage.setItem('syberstrike_lighting', 'full');
-        updateBtns();
+        if (this.network && this.network.connected && this.network.isInMultiplayerSquad() && !this.network.isHost) {
+          return; // Non-host member cannot change lighting
+        }
+        this.setLightingMode('full', true);
       });
+    }
+  }
+
+  // --- Persistent Operative Profile Management ---
+  loadProfile() {
+    try {
+      this.savedCallsign = localStorage.getItem('syberstrike_callsign') || 'GHOST-01';
+      this.selectedModelType = localStorage.getItem('syberstrike_model') || 'commando';
+      this.selectedSkinColor = localStorage.getItem('syberstrike_color') || '#00f0ff';
+      this.selectedWeaponId = localStorage.getItem('syberstrike_weapon') || 'rifle';
+      this.selectedMapId = localStorage.getItem('syberstrike_map') || 'sector_09';
+      this.gameMode = localStorage.getItem('syberstrike_mode') || 'singleplayer';
+      this.lightingMode = localStorage.getItem('syberstrike_lighting') || 'tactical';
+      this.selectedSkinId = 'spectre';
+    } catch (e) {
+      console.warn('[STORAGE] Error loading profile from localStorage:', e);
+      this.savedCallsign = 'GHOST-01';
+      this.selectedModelType = 'commando';
+      this.selectedSkinColor = '#00f0ff';
+      this.selectedWeaponId = 'rifle';
+      this.selectedMapId = 'sector_09';
+      this.gameMode = 'singleplayer';
+      this.lightingMode = 'tactical';
+      this.selectedSkinId = 'spectre';
+    }
+  }
+
+  saveProfile(updates) {
+    if (!updates || typeof updates !== 'object') return;
+    try {
+      if (updates.callsign) {
+        this.savedCallsign = updates.callsign;
+        localStorage.setItem('syberstrike_callsign', updates.callsign);
+      }
+      if (updates.modelType) {
+        this.selectedModelType = updates.modelType;
+        localStorage.setItem('syberstrike_model', updates.modelType);
+      }
+      if (updates.color) {
+        this.selectedSkinColor = updates.color;
+        localStorage.setItem('syberstrike_color', updates.color);
+      }
+      if (updates.weaponId) {
+        this.selectedWeaponId = updates.weaponId;
+        localStorage.setItem('syberstrike_weapon', updates.weaponId);
+      }
+      if (updates.mapId) {
+        this.selectedMapId = updates.mapId;
+        localStorage.setItem('syberstrike_map', updates.mapId);
+      }
+      if (updates.gameMode) {
+        this.gameMode = updates.gameMode;
+        localStorage.setItem('syberstrike_mode', updates.gameMode);
+      }
+      if (updates.lightingMode) {
+        this.lightingMode = updates.lightingMode;
+        localStorage.setItem('syberstrike_lighting', updates.lightingMode);
+      }
+    } catch (e) {
+      console.warn('[STORAGE] Error saving profile to localStorage:', e);
+    }
+  }
+
+  // --- Singleplayer Top 3 High Scores System ---
+  getSoloHighScores() {
+    try {
+      const raw = localStorage.getItem('syberstrike_solo_highscores');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          return parsed.sort((a, b) => b.score - a.score).slice(0, 3);
+        }
+      }
+    } catch (e) {
+      console.warn('[STORAGE] Error loading solo high scores:', e);
+    }
+    return [];
+  }
+
+  saveSinglePlayerScore(score, wave, kills) {
+    if (!score || score <= 0) return false;
+    try {
+      const list = this.getSoloHighScores();
+      const currentEntry = {
+        score: Math.round(score),
+        wave: wave || 1,
+        kills: kills || 0,
+        date: new Date().toLocaleDateString()
+      };
+
+      const isTop3 = list.length < 3 || currentEntry.score > list[list.length - 1].score;
+
+      list.push(currentEntry);
+      list.sort((a, b) => b.score - a.score);
+      const top3 = list.slice(0, 3);
+
+      localStorage.setItem('syberstrike_solo_highscores', JSON.stringify(top3));
+      this.renderLobbyHighScores();
+      return isTop3;
+    } catch (e) {
+      console.warn('[STORAGE] Error saving solo score:', e);
+      return false;
+    }
+  }
+
+  renderLobbyHighScores() {
+    const listEl = document.getElementById('solo-records-list');
+    if (!listEl) return;
+    const scores = this.getSoloHighScores();
+    listEl.innerHTML = '';
+
+    const medals = ['🥇', '🥈', '🥉'];
+    const rankLabels = ['1ST', '2ND', '3RD'];
+
+    for (let i = 0; i < 3; i++) {
+      const item = scores[i];
+      const row = document.createElement('div');
+      row.className = `solo-record-row rank-${i + 1} ${item ? 'has-record' : 'empty-record'}`;
+
+      if (item) {
+        row.innerHTML = `
+          <div class="record-rank-col">
+            <span class="record-medal">${medals[i]}</span>
+            <span class="record-rank-label">${rankLabels[i]}</span>
+          </div>
+          <div class="record-main-col">
+            <div class="record-score">${item.score.toLocaleString()} <span class="record-pts">PTS</span></div>
+            <div class="record-details">PHASE ${item.wave} &bull; ${item.kills} KILLS</div>
+          </div>
+        `;
+      } else {
+        row.innerHTML = `
+          <div class="record-rank-col">
+            <span class="record-medal empty-medal">${medals[i]}</span>
+            <span class="record-rank-label">${rankLabels[i]}</span>
+          </div>
+          <div class="record-main-col empty-main">
+            <div class="record-score empty-score">------</div>
+            <div class="record-details empty-sub">NO RECORD</div>
+          </div>
+        `;
+      }
+      listEl.appendChild(row);
+    }
+  }
+
+  showScreen(screenId) {
+    const screens = ['start-screen', 'game-over-screen', 'team-match-over-screen'];
+    screens.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) {
+        if (id === screenId) {
+          el.classList.remove('hidden');
+        } else {
+          el.classList.add('hidden');
+        }
+      }
+    });
+
+    if (screenId === 'start-screen') {
+      this.gameState = 'start';
+      this.renderLobbyHighScores();
+      this.updateTerminalSummary();
+      if (this.network && this.network.renderLobbyUI) {
+        this.network.renderLobbyUI();
+      }
     }
   }
 
@@ -728,10 +967,41 @@ class GameEngine {
       this.restartGame();
     });
 
+    const gameOverLobbyBtn = document.getElementById('game-over-lobby-btn');
+    if (gameOverLobbyBtn) {
+      gameOverLobbyBtn.addEventListener('click', () => {
+        this.showScreen('start-screen');
+      });
+    }
+
+    const savedMuted = localStorage.getItem('syberstrike_muted') === 'true';
+    if (savedMuted && window.soundSystem) {
+      window.soundSystem.muted = true;
+      const icon = document.getElementById('sound-icon');
+      if (icon) icon.textContent = '🔇';
+    }
+
     document.getElementById('sound-toggle-btn').addEventListener('click', () => {
       const isMuted = window.soundSystem.toggleMute();
       document.getElementById('sound-icon').textContent = isMuted ? '🔇' : '🔊';
+      localStorage.setItem('syberstrike_muted', isMuted);
     });
+
+    const callsignInput = document.getElementById('operative-callsign-input');
+    if (callsignInput) {
+      callsignInput.addEventListener('input', () => {
+        const val = callsignInput.value.trim().toUpperCase();
+        if (val.length > 0) {
+          this.savedCallsign = val;
+          this.player.name = val;
+          this.saveProfile({ callsign: val });
+          if (this.network && this.network.socket && this.network.connected) {
+            this.network.callsign = val;
+            this.network.socket.emit('lobby_update_name', { name: val });
+          }
+        }
+      });
+    }
   }
 
   initArsenalUI() {
@@ -769,6 +1039,11 @@ class GameEngine {
   startGame() {
     document.getElementById('start-screen').classList.add('hidden');
     this.gameState = 'playing';
+
+    // Auto-detect and ensure multiplayer mode if in party or connected with other players
+    if (this.network && this.network.connected && ((this.network.lobbyPlayers && this.network.lobbyPlayers.length > 1) || !this.network.isHost || this.network.roomId || Object.keys(this.network.remotePlayers).length > 0)) {
+      this.gameMode = 'multiplayer';
+    }
 
     // Apply selected customizations to local player
     this.player.setSkin(this.selectedSkinId);
@@ -835,12 +1110,15 @@ class GameEngine {
     const startY = spawn.y;
 
     this.player = new Player(startX, startY);
+    this.player.name = this.savedCallsign || 'GHOST-01';
     this.player.maxHp = 100;
     this.player.hp = 100;
     this.player.lastSafeX = startX;
     this.player.lastSafeY = startY;
     this.map.resolveCircleCollision(this.player);
     this.player.setSkin(this.selectedSkinId);
+    this.player.setModel(this.selectedModelType || 'commando');
+    this.player.setColor(this.selectedSkinColor || '#00f0ff');
     this.player.equipWeapon(this.selectedWeaponId);
 
     this.bullets = [];
@@ -898,25 +1176,29 @@ class GameEngine {
     const roll = Math.random();
 
     if (this.wave === 1) {
-      if (roll < 0.55) type = 'normal';
-      else if (roll < 0.80) type = 'fast'; // Agile speed enemy
-      else type = 'bomber';
-    } else if (this.wave === 2) {
       if (roll < 0.40) type = 'normal';
       else if (roll < 0.65) type = 'fast'; // Agile speed enemy
-      else if (roll < 0.85) type = 'bomber';
+      else if (roll < 0.85) type = 'splitter'; // Organic Bio-Splitter Swarm
+      else type = 'bomber';
+    } else if (this.wave === 2) {
+      if (roll < 0.30) type = 'normal';
+      else if (roll < 0.50) type = 'fast'; // Agile speed enemy
+      else if (roll < 0.70) type = 'splitter';
+      else if (roll < 0.86) type = 'bomber';
       else type = 'sniper';
     } else if (this.wave === 3) {
-      if (roll < 0.30) type = 'normal';
-      else if (roll < 0.55) type = 'fast'; // Agile speed enemy
-      else if (roll < 0.75) type = 'bomber';
+      if (roll < 0.22) type = 'normal';
+      else if (roll < 0.42) type = 'fast'; // Agile speed enemy
+      else if (roll < 0.62) type = 'splitter';
+      else if (roll < 0.78) type = 'bomber';
       else if (roll < 0.90) type = 'sniper';
       else type = 'tank'; // Heavy armored behemoth
     } else { // Wave 4+
-      if (roll < 0.25) type = 'normal';
-      else if (roll < 0.50) type = 'fast'; // Agile speed enemy
-      else if (roll < 0.70) type = 'bomber';
-      else if (roll < 0.88) type = 'sniper';
+      if (roll < 0.18) type = 'normal';
+      else if (roll < 0.35) type = 'fast'; // Agile speed enemy
+      else if (roll < 0.55) type = 'splitter';
+      else if (roll < 0.72) type = 'bomber';
+      else if (roll < 0.86) type = 'sniper';
       else type = 'tank';
     }
 
@@ -1106,8 +1388,8 @@ class GameEngine {
     // Wave 5: +98 -> 336 Max HP
     const maxHpBonus = Math.round(15 * Math.pow(1.6, this.wave - 1));
     this.player.maxHp = (this.player.maxHp || 100) + maxHpBonus;
-    const healAmount = maxHpBonus + 25;
-    this.player.hp = Math.min(this.player.maxHp, this.player.hp + healAmount);
+    this.player.hp = this.player.maxHp; // Full heal to 100% of new upgraded baseline vitality!
+    const healAmount = maxHpBonus;
     this.player.refillAllAmmo();
     this.updateAmmoUI();
     this.updateWeaponUI();
@@ -1157,6 +1439,16 @@ class GameEngine {
     document.getElementById('final-kills').textContent = this.kills;
     document.getElementById('final-accuracy').textContent = `${accuracy}%`;
 
+    const recordBadge = document.getElementById('game-over-highscore-badge');
+    if (this.gameMode === 'singleplayer') {
+      const isTop3 = this.saveSinglePlayerScore(this.score, this.wave, this.kills);
+      if (recordBadge) {
+        recordBadge.classList.toggle('hidden', !isTop3);
+      }
+    } else {
+      if (recordBadge) recordBadge.classList.add('hidden');
+    }
+
     setTimeout(() => {
       document.getElementById('game-over-screen').classList.remove('hidden');
     }, 600);
@@ -1167,7 +1459,7 @@ class GameEngine {
     const hpPct = Math.max(0, this.player.hp / this.player.maxHp) * 100;
     document.getElementById('hp-bar').style.width = `${hpPct}%`;
     document.getElementById('hp-loss-bar').style.width = `${hpPct}%`;
-    document.getElementById('hp-text').textContent = `${Math.round(this.player.hp)} / 100`;
+    document.getElementById('hp-text').textContent = `${Math.round(this.player.hp)} / ${Math.round(this.player.maxHp)}`;
 
     // Dash Bar
     const dashCooldownRemaining = Math.max(0, this.player.dashCooldownTimer);
@@ -1418,11 +1710,12 @@ class GameEngine {
       }
     }
 
-    // Enemies (Red / Cyan / Green blips)
+    // Enemies (Tactical Blips)
     for (const e of this.enemies) {
-      ctx.fillStyle = e.type === 'tank' ? '#ff3366' : e.type === 'fast' ? '#00f0ff' : '#00ff88';
+      ctx.fillStyle = e.color || (e.type === 'tank' ? '#ff3366' : e.type === 'fast' ? '#00f0ff' : '#00ff88');
       ctx.beginPath();
-      ctx.arc(e.x * scale, e.y * scale, e.type === 'tank' ? 3.5 : 2.5, 0, Math.PI * 2);
+      const dotR = e.type === 'tank' ? 3.5 : (e.type === 'splitter' ? Math.max(1.8, e.radius * 0.12) : 2.5);
+      ctx.arc(e.x * scale, e.y * scale, dotR, 0, Math.PI * 2);
       ctx.fill();
     }
 
