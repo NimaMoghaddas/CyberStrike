@@ -246,18 +246,45 @@ function unstuckEntityServer(entity, mapId = currentMapId) {
   return true;
 }
 
-// Tactical Spawn Points (with collision-free guarantee)
-function getRandomSpawnPoint(mapId = currentMapId) {
+// Tactical Spawn Points (with Left/Right Team Division & collision-free guarantee)
+function getRandomSpawnPoint(mapId = currentMapId, team = null, mode = 'teams') {
   const map = getActiveMap(mapId);
+  const w = map.width || 2400;
+  const h = map.height || 2400;
+
+  // In Team mode, divide the battlefield into Left (Alpha) and Right (Beta) zones
+  if (mode === 'teams' && (team === 'alpha' || team === 'beta')) {
+    const isLeftTeam = (team === 'alpha'); // Alpha = Left side in lobby
+    const minX = isLeftTeam ? 140 : Math.round(w / 2 + 100);
+    const maxX = isLeftTeam ? Math.round(w / 2 - 100) : (w - 140);
+    const minY = 140;
+    const maxY = h - 140;
+
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const cx = minX + Math.random() * (maxX - minX);
+      const cy = minY + Math.random() * (maxY - minY);
+      if (!isCollidingWithMap(cx, cy, 26, mapId)) {
+        return { x: Math.round(cx), y: Math.round(cy) };
+      }
+    }
+    // Reliable fallback within zone
+    const fallbackX = isLeftTeam ? Math.round(w * 0.25) : Math.round(w * 0.75);
+    const fallbackY = Math.round(h * 0.5);
+    const candidate = { x: fallbackX, y: fallbackY, radius: 24 };
+    unstuckEntityServer(candidate, mapId);
+    return { x: candidate.x, y: candidate.y };
+  }
+
+  // FFA or Solo default spawn points
   const spawns = (map.spawns && map.spawns.length > 0) ? map.spawns : [map.spawnPoint || { x: 1200, y: 1200 }];
   const baseSpawn = spawns[Math.floor(Math.random() * spawns.length)];
 
-  for (let attempt = 0; attempt < 25; attempt++) {
+  for (let attempt = 0; attempt < 30; attempt++) {
     const candidate = {
-      x: baseSpawn.x + (Math.random() - 0.5) * 100,
-      y: baseSpawn.y + (Math.random() - 0.5) * 100
+      x: baseSpawn.x + (Math.random() - 0.5) * 140,
+      y: baseSpawn.y + (Math.random() - 0.5) * 140
     };
-    if (!isCollidingWithMap(candidate.x, candidate.y, 22, mapId)) {
+    if (!isCollidingWithMap(candidate.x, candidate.y, 24, mapId)) {
       return candidate;
     }
   }
@@ -305,6 +332,8 @@ function createRoom(hostId, hostCode, mapId = 'sector_09') {
     code: hostCode,
     hostId: hostId,
     mode: 'teams', // 'teams' | 'ffa'
+    weaponMode: 'standard', // 'standard' | 'ground'
+    pvpOnly: false, // true = no enemies, players fight each other, first to 10 kills
     mapId: mapId,
     lightingMode: 'tactical', // 'tactical' (dark + flashlight) | 'full' (fully illuminated)
     gameStarted: false,
@@ -314,7 +343,7 @@ function createRoom(hostId, hostCode, mapId = 'sector_09') {
     teamStats: {
       alpha: { kills: 0, score: 0 },
       beta: { kills: 0, score: 0 },
-      targetKills: 20,
+      targetKills: 10,
       matchFinished: false,
       winner: null
     },
@@ -323,9 +352,12 @@ function createRoom(hostId, hostCode, mapId = 'sector_09') {
     enemies: {},
     barrels: getInitialBarrelsForMap(mapId),
     medkits: {},
+    weaponDrops: {},
     nextEnemyId: 1,
     nextMedkitId: 1,
+    nextWeaponDropId: 1,
     medkitTimer: 0,
+    weaponDropTimer: 0,
     waveManager: {
       wave: 1,
       state: 'intermission', // 'intermission' | 'active' | 'cleared'
@@ -356,6 +388,8 @@ function broadcastLobbySync(roomId) {
     roomCode: room.code,
     hostId: room.hostId,
     mode: room.mode,
+    weaponMode: room.weaponMode || 'standard',
+    pvpOnly: !!room.pvpOnly,
     mapId: room.mapId,
     lightingMode: room.lightingMode || 'tactical',
     gameStarted: room.gameStarted,
@@ -368,6 +402,7 @@ function broadcastLobbySync(roomId) {
 
 const MEDKIT_SPAWN_INTERVAL = 5.0; // 5 seconds
 const MAX_SERVER_MEDKITS = 8;
+const WEAPON_TYPES = ['rifle', 'shotgun', 'smg', 'railgun', 'cannon'];
 
 function spawnServerMedkit(room) {
   const map = getActiveMap(room.mapId);
@@ -391,7 +426,38 @@ function spawnServerMedkit(room) {
   io.to(room.id).emit('medkit_spawned', medkit);
 }
 
+function spawnServerWeaponDrop(room, specificType = null) {
+  const map = getActiveMap(room.mapId);
+  const wType = specificType || WEAPON_TYPES[Math.floor(Math.random() * WEAPON_TYPES.length)];
+  let spawnX, spawnY;
+  let attempts = 0;
+  const pad = 140;
+  do {
+    spawnX = pad + Math.random() * (map.width - pad * 2);
+    spawnY = pad + Math.random() * (map.height - pad * 2);
+    attempts++;
+  } while (attempts < 35 && isCollidingWithMap(spawnX, spawnY, 32, room.mapId));
+
+  const dropId = `wdrop_${room.nextWeaponDropId++}`;
+  const drop = {
+    id: dropId,
+    weaponType: wType,
+    x: Math.round(spawnX),
+    y: Math.round(spawnY)
+  };
+  if (!room.weaponDrops) room.weaponDrops = {};
+  room.weaponDrops[dropId] = drop;
+  io.to(room.id).emit('weapon_drop_spawned', drop);
+  return drop;
+}
+
 function startWave(room, waveNum) {
+  if (room.pvpOnly) {
+    room.waveManager.enemiesToSpawn = 0;
+    room.waveManager.totalEnemiesInWave = 0;
+    room.enemies = {};
+    return;
+  }
   room.waveManager.wave = waveNum;
   room.waveManager.state = 'intermission';
   room.waveManager.timer = 3.0;
@@ -569,6 +635,7 @@ function triggerServerSplitterSpawn(room, enemy) {
 }
 
 function spawnServerEnemy(room) {
+  if (room.pvpOnly) return;
   const roll = Math.random();
   let type = 'normal';
   let generation = 0;
@@ -775,12 +842,17 @@ function triggerBarrelExplosion(room, barrel, triggererName = 'Explosion') {
 }
 
 function schedulePlayerRespawn(room, player) {
+  if (player.respawnTimeout) {
+    clearTimeout(player.respawnTimeout);
+    player.respawnTimeout = null;
+  }
   const respawnTime = 4.0;
   io.to(player.id).emit('respawn_countdown', { seconds: respawnTime });
 
-  setTimeout(() => {
+  player.respawnTimeout = setTimeout(() => {
+    player.respawnTimeout = null;
     if (!room || !room.activePlayers[player.id]) return;
-    const spawn = getRandomSpawnPoint(room.mapId);
+    const spawn = getRandomSpawnPoint(room.mapId, player.team, room.mode);
     player.x = spawn.x;
     player.y = spawn.y;
     player.hp = player.maxHp || 100;
@@ -1106,6 +1178,31 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Host Only: Set Weapon Procurement Mode (Standard vs Ground Drops)
+  socket.on('lobby_set_weapon_mode', (data) => {
+    const room = getRoomForSocket(socket);
+    if (!room || socket.id !== room.hostId) return;
+    if (data && (data.weaponMode === 'standard' || data.weaponMode === 'ground')) {
+      room.weaponMode = data.weaponMode;
+      io.to(room.id).emit('weapon_mode_sync', { weaponMode: room.weaponMode });
+      broadcastLobbySync(room.id);
+    }
+  });
+
+  // Host Only: Set Hostile Threat Protocol (With Enemies vs PvP Only)
+  socket.on('lobby_set_pvp_only', (data) => {
+    const room = getRoomForSocket(socket);
+    if (!room || socket.id !== room.hostId) return;
+    room.pvpOnly = !!data.pvpOnly;
+    if (room.pvpOnly) {
+      room.enemies = {};
+      room.waveManager.enemiesToSpawn = 0;
+      room.waveManager.totalEnemiesInWave = 0;
+    }
+    io.to(room.id).emit('pvp_only_sync', { pvpOnly: room.pvpOnly });
+    broadcastLobbySync(room.id);
+  });
+
   // Leader Starts Match Directly
   socket.on('leader_start_game', () => {
     const room = getRoomForSocket(socket);
@@ -1119,15 +1216,30 @@ io.on('connection', (socket) => {
     room.teamStats = {
       alpha: { kills: 0, score: 0 },
       beta: { kills: 0, score: 0 },
-      targetKills: 20,
+      targetKills: 10,
       matchFinished: false,
       winner: null
     };
+    if (room.pvpOnly) {
+      room.enemies = {};
+      room.waveManager.enemiesToSpawn = 0;
+      room.waveManager.totalEnemiesInWave = 0;
+    }
+    if (room.weaponMode === 'ground') {
+      room.weaponDrops = {};
+      room.nextWeaponDropId = 1;
+      WEAPON_TYPES.forEach(type => {
+        spawnServerWeaponDrop(room, type);
+      });
+    }
     io.to(room.id).emit('team_stats_update', { teamStats: room.teamStats });
     io.to(room.id).emit('game_start_signal', {
       mapId: room.mapId,
       mode: room.mode,
-      lightingMode: room.lightingMode || 'tactical'
+      lightingMode: room.lightingMode || 'tactical',
+      weaponMode: room.weaponMode || 'standard',
+      pvpOnly: !!room.pvpOnly,
+      targetKills: 10
     });
     broadcastLobbySync(room.id);
   });
@@ -1177,15 +1289,15 @@ io.on('connection', (socket) => {
     const room = getRoomForSocket(socket);
     if (!room) return;
 
-    const spawn = getRandomSpawnPoint(room.mapId);
     const lp = room.players[socket.id];
+    const team = (room.mode === 'teams' && lp) ? lp.team : 'solo';
+    const spawn = getRandomSpawnPoint(room.mapId, team, room.mode);
     const name = (data && data.name && data.name.trim().length > 0)
       ? data.name.trim().substring(0, 16)
       : (lp ? lp.name : defaultName);
 
     if (lp) lp.name = name;
 
-    const team = (room.mode === 'teams' && lp) ? lp.team : 'solo';
     const color = (room.mode === 'teams' && lp)
       ? (lp.team === 'alpha' ? room.alphaColor : room.betaColor)
       : (lp ? lp.color : assignedColor);
@@ -1402,30 +1514,43 @@ io.on('connection', (socket) => {
 
         io.to(room.id).emit('team_stats_update', { teamStats: room.teamStats });
 
-        // Check 20-kill victory condition:
-        // When either team reaches 20 rival kills, match concludes, winner is highest total score!
-        const alpha = room.teamStats.alpha || { kills: 0, score: 0 };
-        const beta = room.teamStats.beta || { kills: 0, score: 0 };
-        if ((alpha.kills >= 20 || beta.kills >= 20) && !room.teamStats.matchFinished) {
-          room.teamStats.matchFinished = true;
-          let winner = 'draw';
-          if (alpha.score > beta.score) {
-            winner = 'alpha';
-          } else if (beta.score > alpha.score) {
-            winner = 'beta';
-          } else {
-            winner = alpha.kills >= beta.kills ? 'alpha' : 'beta';
+        // Check 10-kill victory condition:
+        // When either team or any player reaches 10 kills, match terminates!
+        const TARGET_VICTORY_KILLS = 10;
+        let shouldFinish = false;
+        let winner = null;
+
+        if (room.mode === 'teams' && room.teamStats) {
+          const alpha = room.teamStats.alpha || { kills: 0, score: 0 };
+          const beta = room.teamStats.beta || { kills: 0, score: 0 };
+          if (alpha.kills >= TARGET_VICTORY_KILLS || beta.kills >= TARGET_VICTORY_KILLS || shooter.kills >= TARGET_VICTORY_KILLS) {
+            shouldFinish = true;
+            if (alpha.score > beta.score) {
+              winner = 'alpha';
+            } else if (beta.score > alpha.score) {
+              winner = 'beta';
+            } else {
+              winner = alpha.kills >= beta.kills ? 'alpha' : 'beta';
+            }
           }
+        } else {
+          if (shooter.kills >= TARGET_VICTORY_KILLS) {
+            shouldFinish = true;
+            winner = shooter.id;
+          }
+        }
+
+        if (shouldFinish && room.teamStats && !room.teamStats.matchFinished) {
+          room.teamStats.matchFinished = true;
           room.teamStats.winner = winner;
 
-          // Assemble all competitors ranked by score descending
           const playerMap = new Map();
           for (const pid in room.players) {
             const p = room.players[pid];
             playerMap.set(pid, {
               id: p.id,
               name: p.name,
-              team: p.team || 'alpha',
+              team: p.team || 'solo',
               color: p.color,
               score: 0,
               kills: 0,
@@ -1438,7 +1563,7 @@ io.on('connection', (socket) => {
             playerMap.set(pid, {
               id: ap.id,
               name: ap.name,
-              team: ap.team || (room.players[pid] ? room.players[pid].team : 'alpha'),
+              team: ap.team || (room.players[pid] ? room.players[pid].team : 'solo'),
               color: ap.color,
               score: ap.score || 0,
               kills: ap.kills || 0,
@@ -1446,13 +1571,18 @@ io.on('connection', (socket) => {
               modelType: ap.modelType || 'commando'
             });
           }
-          const competitors = Array.from(playerMap.values()).sort((a, b) => (b.score || 0) - (a.score || 0) || (b.kills || 0) - (a.kills || 0));
+          const competitors = Array.from(playerMap.values()).sort((a, b) => (b.kills || 0) - (a.kills || 0) || (b.score || 0) - (a.score || 0));
+
+          const winMsg = room.mode === 'teams'
+            ? `MATCH TERMINATED // ${winner === 'draw' ? 'DRAW MATCH' : (winner === 'alpha' ? 'TEAM ALPHA' : 'TEAM BETA') + ' VICTORIOUS'}`
+            : `MATCH TERMINATED // ${shooter.name.toUpperCase()} VICTORIOUS (${TARGET_VICTORY_KILLS} KILLS)`;
 
           io.to(room.id).emit('team_match_finished', {
             teamStats: room.teamStats,
             winner: winner,
+            winnerName: shooter.name,
             competitors: competitors,
-            message: `MATCH TERMINATED // ${winner === 'draw' ? 'DRAW MATCH' : (winner === 'alpha' ? 'TEAM ALPHA' : 'TEAM BETA') + ' VICTORIOUS (HIGHEST SCORE)'}`
+            message: winMsg
           });
         }
       }
@@ -1551,6 +1681,56 @@ io.on('connection', (socket) => {
         y: medkit.y
       });
     }
+  });
+
+  // Pickup Weapon Drop
+  socket.on('pickup_weapon_drop', (data) => {
+    const room = getRoomForSocket(socket);
+    if (!room) return;
+    const p = room.activePlayers[socket.id];
+    if (!p || !p.alive) return;
+    const drop = room.weaponDrops && room.weaponDrops[data.id];
+    if (!drop) return;
+
+    const dx = p.x - drop.x;
+    const dy = p.y - drop.y;
+    if (dx * dx + dy * dy <= 70 * 70) {
+      delete room.weaponDrops[data.id];
+      p.weapon = drop.weaponType;
+      io.to(room.id).emit('weapon_drop_collected', {
+        id: data.id,
+        weaponType: drop.weaponType,
+        collectorId: socket.id,
+        collectorName: p.name,
+        x: drop.x,
+        y: drop.y
+      });
+    }
+  });
+
+  // Weapon Mode Toggle (Host)
+  socket.on('set_weapon_mode', (data) => {
+    const room = getRoomForSocket(socket);
+    if (!room || room.hostId !== socket.id) return;
+    if (data && (data.weaponMode === 'standard' || data.weaponMode === 'ground')) {
+      room.weaponMode = data.weaponMode;
+      io.to(room.id).emit('weapon_mode_sync', { weaponMode: room.weaponMode });
+      broadcastLobbySync(room.id);
+    }
+  });
+
+  // Threat Level / PvP Only Toggle (Host)
+  socket.on('set_pvp_only', (data) => {
+    const room = getRoomForSocket(socket);
+    if (!room || room.hostId !== socket.id) return;
+    room.pvpOnly = !!data.pvpOnly;
+    if (room.pvpOnly) {
+      room.enemies = {};
+      room.waveManager.enemiesToSpawn = 0;
+      room.waveManager.totalEnemiesInWave = 0;
+    }
+    io.to(room.id).emit('pvp_only_sync', { pvpOnly: room.pvpOnly });
+    broadcastLobbySync(room.id);
   });
 
   // Hit Barrel
@@ -1673,7 +1853,8 @@ setInterval(() => {
         } else if (Object.keys(room.enemies).length === 0) {
           // Wave Cleared!
           room.waveManager.state = 'cleared';
-          const maxHpBonus = Math.round(15 * Math.pow(1.6, room.waveManager.wave - 1));
+          // Moderate, steady HP scaling instead of exponential 1.6 factor
+          const maxHpBonus = Math.round(10 + (room.waveManager.wave - 1) * 6);
           io.to(room.id).emit('wave_cleared', {
             wave: room.waveManager.wave,
             bonus: 1000,
@@ -1863,8 +2044,8 @@ setInterval(() => {
                   angle: enemy.angle,
                   speed: 820,
                   damage: 28,
-                  color: '#b026ff',
-                  ignoreWalls: false
+                  color: '#ff00aa',
+                  ignoreWalls: true
                 });
               }
             } else {
@@ -1939,6 +2120,17 @@ setInterval(() => {
       }
     }
 
+    // 3.5. Weapon Drop Spawn Timer (Every 5 seconds in ground drop mode)
+    if (room.weaponMode === 'ground' && room.gameStarted) {
+      room.weaponDropTimer = (room.weaponDropTimer || 0) + DT;
+      if (room.weaponDropTimer >= 5.0) {
+        room.weaponDropTimer = 0;
+        if (Object.keys(room.weaponDrops || {}).length < 12) {
+          spawnServerWeaponDrop(room);
+        }
+      }
+    }
+
     // 4. Broadcast Master Game State Snapshot per Room
     if (room.gameStarted && Object.keys(room.activePlayers).length > 0) {
       io.to(room.id).emit('game_snapshot', {
@@ -1980,7 +2172,10 @@ setInterval(() => {
           radius: e.radius,
           color: e.color
         })),
-        medkits: Object.values(room.medkits),
+        medkits: Object.values(room.medkits || {}),
+        weaponDrops: Object.values(room.weaponDrops || {}),
+        weaponMode: room.weaponMode || 'standard',
+        pvpOnly: !!room.pvpOnly,
         wave: {
           wave: room.waveManager.wave,
           state: room.waveManager.state,

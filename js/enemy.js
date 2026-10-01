@@ -14,11 +14,12 @@ class AcidSpit {
     this.speed = speed;
     this.damage = damage;
     this.color = color;
-    this.ignoreWalls = ignoreWalls || (color === '#b026ff');
+    this.isPinkSniper = (color === '#b026ff' || color === '#ff00aa' || color === '#ff3366');
+    this.ignoreWalls = ignoreWalls || this.isPinkSniper;
     this.vx = Math.cos(angle) * speed;
     this.vy = Math.sin(angle) * speed;
-    this.radius = color === '#b026ff' ? 4.5 : 5.5;
-    this.maxDistance = color === '#b026ff' ? 1400 : 560;
+    this.radius = this.isPinkSniper ? 4.5 : 5.5;
+    this.maxDistance = this.isPinkSniper ? 1400 : 560;
     this.distanceTraveled = 0;
     this.active = true;
     this.trail = [];
@@ -41,7 +42,7 @@ class AcidSpit {
     if (Math.random() < 0.45 && window.particleSystem) {
       window.particleSystem.emit(this.x, this.y, 1, {
         speed: 35,
-        color: this.color === '#b026ff' ? '#b026ff' : '#39ff14',
+        color: this.isPinkSniper ? '#ff00aa' : '#39ff14',
         life: 0.2,
         size: 2
       });
@@ -52,8 +53,8 @@ class AcidSpit {
       return;
     }
 
-    // All enemy projectiles collide with and are stopped by obstacles/walls
-    if (this.distanceTraveled > 20 && map && map.isColliding(this.x, this.y, this.radius)) {
+    // Only non-piercing projectiles collide with walls; sniper beams pierce walls!
+    if (!this.ignoreWalls && this.distanceTraveled > 20 && map && map.isColliding(this.x, this.y, this.radius)) {
       this.explode(game);
       return;
     }
@@ -83,15 +84,17 @@ class AcidSpit {
   explode(game) {
     this.active = false;
     if (window.particleSystem) {
+      const pColor = this.isPinkSniper ? '#ff00aa' : '#00ff88';
+      const sColor = this.isPinkSniper ? '#ffffff' : '#39ff14';
       window.particleSystem.emit(this.x, this.y, 11, {
         speed: 130,
-        color: '#00ff88',
+        color: pColor,
         life: 0.3,
         size: 3
       });
       window.particleSystem.emit(this.x, this.y, 6, {
         speed: 80,
-        color: '#39ff14',
+        color: sColor,
         life: 0.4,
         size: 3.5
       });
@@ -479,7 +482,7 @@ class Enemy {
           this.sniperTimer = 5.0;
           this.sniperAimTimer = 0;
           if (game && game.spawnAcidSpit) {
-            game.spawnAcidSpit(this.x, this.y, this.angle, 820, 28, '#b026ff', false);
+            game.spawnAcidSpit(this.x, this.y, this.angle, 820, 28, '#ff00aa', true);
           }
           if (window.soundSystem) {
             window.soundSystem.playWeaponShoot('railgun');

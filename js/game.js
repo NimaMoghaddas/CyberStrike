@@ -82,6 +82,12 @@ class GameEngine {
     this.medkits = [];
     this.medkitTimer = 0;
 
+    // Tactical Weapon Drop System (Ground Scavenger Mode)
+    this.weaponDrops = [];
+    this.weaponDropTimer = 0;
+    this.weaponMode = 'standard'; // 'standard' | 'ground'
+    this.pvpOnly = false;
+
     // Network Multiplayer System
     this.localPlayerId = null;
     this.network = new NetworkSystem(this);
@@ -123,6 +129,8 @@ class GameEngine {
     this.updateLiveRoster();
     this.updateCustomizationSections();
     this.initLightingUI();
+    this.initWeaponModeUI();
+    this.initPvPModeUI();
   }
 
   initModeSelector() {
@@ -145,6 +153,11 @@ class GameEngine {
       }
 
       if (mode === 'singleplayer') {
+        const soloRecordsPanel = document.getElementById('solo-records-panel');
+        if (soloRecordsPanel) {
+          soloRecordsPanel.classList.remove('hidden');
+          soloRecordsPanel.style.display = 'block';
+        }
         if (netBadge) {
           netBadge.textContent = 'OFFLINE // SOLO';
           netBadge.className = 'status-chip offline-chip';
@@ -155,6 +168,11 @@ class GameEngine {
         }
         if (rosterBadge) rosterBadge.textContent = 'SOLO';
       } else {
+        const soloRecordsPanel = document.getElementById('solo-records-panel');
+        if (soloRecordsPanel) {
+          soloRecordsPanel.classList.add('hidden');
+          soloRecordsPanel.style.display = 'none';
+        }
         if (netBadge) {
           netBadge.textContent = 'ONLINE // LAN';
           netBadge.className = 'status-chip online-chip';
@@ -542,6 +560,165 @@ class GameEngine {
     }
   }
 
+  // --- Weapon Mode UI & Protocol (Standard vs Ground Scavenger) ---
+  setWeaponMode(mode, userInitiated = true) {
+    if (mode !== 'standard' && mode !== 'ground') return;
+    this.weaponMode = mode;
+    localStorage.setItem('syberstrike_weapon_mode', mode);
+
+    const btnStandard = document.getElementById('btn-weapon-standard');
+    const btnGround = document.getElementById('btn-weapon-ground');
+    if (btnStandard) btnStandard.classList.toggle('active', this.weaponMode === 'standard');
+    if (btnGround) btnGround.classList.toggle('active', this.weaponMode === 'ground');
+
+    if (userInitiated && this.network && this.network.socket && this.network.connected) {
+      if (this.network.isHost || !this.network.isInMultiplayerSquad()) {
+        this.network.socket.emit('lobby_set_weapon_mode', { weaponMode: mode });
+      }
+    }
+  }
+
+  updateWeaponModeUIState() {
+    const btnStandard = document.getElementById('btn-weapon-standard');
+    const btnGround = document.getElementById('btn-weapon-ground');
+    const hostTag = document.getElementById('weapon-mode-host-tag');
+
+    const inSquad = this.network && this.network.connected && this.network.isInMultiplayerSquad();
+    const isHost = this.network && this.network.isHost;
+
+    if (btnStandard) btnStandard.classList.toggle('active', this.weaponMode === 'standard');
+    if (btnGround) btnGround.classList.toggle('active', this.weaponMode === 'ground');
+
+    if (inSquad) {
+      if (hostTag) {
+        hostTag.classList.remove('hidden');
+        hostTag.textContent = isHost ? 'SQUAD LEADER (YOU)' : 'SQUAD LEADER ONLY';
+        hostTag.style.color = isHost ? '#00ff88' : 'rgba(255, 255, 255, 0.4)';
+      }
+      if (btnStandard) {
+        btnStandard.style.opacity = isHost ? '1' : '0.6';
+        btnStandard.style.cursor = isHost ? 'pointer' : 'not-allowed';
+      }
+      if (btnGround) {
+        btnGround.style.opacity = isHost ? '1' : '0.6';
+        btnGround.style.cursor = isHost ? 'pointer' : 'not-allowed';
+      }
+    } else {
+      if (hostTag) hostTag.classList.add('hidden');
+      if (btnStandard) {
+        btnStandard.style.opacity = '1';
+        btnStandard.style.cursor = 'pointer';
+      }
+      if (btnGround) {
+        btnGround.style.opacity = '1';
+        btnGround.style.cursor = 'pointer';
+      }
+    }
+  }
+
+  initWeaponModeUI() {
+    const btnStandard = document.getElementById('btn-weapon-standard');
+    const btnGround = document.getElementById('btn-weapon-ground');
+    this.weaponMode = localStorage.getItem('syberstrike_weapon_mode') || 'standard';
+
+    this.updateWeaponModeUIState();
+
+    if (btnStandard) {
+      btnStandard.addEventListener('click', () => {
+        if (this.network && this.network.connected && this.network.isInMultiplayerSquad() && !this.network.isHost) {
+          return;
+        }
+        this.setWeaponMode('standard', true);
+      });
+    }
+    if (btnGround) {
+      btnGround.addEventListener('click', () => {
+        if (this.network && this.network.connected && this.network.isInMultiplayerSquad() && !this.network.isHost) {
+          return;
+        }
+        this.setWeaponMode('ground', true);
+      });
+    }
+  }
+
+  // --- Threat Protocol / PvP Only UI ---
+  setPvPMode(mode, userInitiated = true) {
+    this.pvpOnly = (mode === 'pvp_only');
+    const btnEnemies = document.getElementById('btn-pvp-with-enemies');
+    const btnPvPOnly = document.getElementById('btn-pvp-only');
+    if (btnEnemies) btnEnemies.classList.toggle('active', !this.pvpOnly);
+    if (btnPvPOnly) btnPvPOnly.classList.toggle('active', this.pvpOnly);
+
+    if (userInitiated && this.network && this.network.socket && this.network.connected) {
+      if (this.network.isHost || !this.network.isInMultiplayerSquad()) {
+        this.network.socket.emit('lobby_set_pvp_only', { pvpOnly: this.pvpOnly });
+      }
+    }
+  }
+
+  updatePvPModeUIState() {
+    const btnEnemies = document.getElementById('btn-pvp-with-enemies');
+    const btnPvPOnly = document.getElementById('btn-pvp-only');
+    const hostTag = document.getElementById('pvp-host-tag');
+
+    const inSquad = this.network && this.network.connected && this.network.isInMultiplayerSquad();
+    const isHost = this.network && this.network.isHost;
+
+    if (btnEnemies) btnEnemies.classList.toggle('active', !this.pvpOnly);
+    if (btnPvPOnly) btnPvPOnly.classList.toggle('active', this.pvpOnly);
+
+    if (inSquad) {
+      if (hostTag) {
+        hostTag.classList.remove('hidden');
+        hostTag.textContent = isHost ? 'SQUAD LEADER (YOU)' : 'SQUAD LEADER ONLY';
+        hostTag.style.color = isHost ? '#00ff88' : 'rgba(255, 255, 255, 0.4)';
+      }
+      if (btnEnemies) {
+        btnEnemies.style.opacity = isHost ? '1' : '0.6';
+        btnEnemies.style.cursor = isHost ? 'pointer' : 'not-allowed';
+      }
+      if (btnPvPOnly) {
+        btnPvPOnly.style.opacity = isHost ? '1' : '0.6';
+        btnPvPOnly.style.cursor = isHost ? 'pointer' : 'not-allowed';
+      }
+    } else {
+      if (hostTag) hostTag.classList.add('hidden');
+      if (btnEnemies) {
+        btnEnemies.style.opacity = '1';
+        btnEnemies.style.cursor = 'pointer';
+      }
+      if (btnPvPOnly) {
+        btnPvPOnly.style.opacity = '1';
+        btnPvPOnly.style.cursor = 'pointer';
+      }
+    }
+  }
+
+  initPvPModeUI() {
+    const btnEnemies = document.getElementById('btn-pvp-with-enemies');
+    const btnPvPOnly = document.getElementById('btn-pvp-only');
+    this.pvpOnly = false;
+
+    this.updatePvPModeUIState();
+
+    if (btnEnemies) {
+      btnEnemies.addEventListener('click', () => {
+        if (this.network && this.network.connected && this.network.isInMultiplayerSquad() && !this.network.isHost) {
+          return;
+        }
+        this.setPvPMode('enemies', true);
+      });
+    }
+    if (btnPvPOnly) {
+      btnPvPOnly.addEventListener('click', () => {
+        if (this.network && this.network.connected && this.network.isInMultiplayerSquad() && !this.network.isHost) {
+          return;
+        }
+        this.setPvPMode('pvp_only', true);
+      });
+    }
+  }
+
   // --- Persistent Operative Profile Management ---
   loadProfile() {
     try {
@@ -808,6 +985,71 @@ class GameEngine {
     this.updateLiveRoster();
   }
 
+  // --- Tactical Weapon Drops (Ground Scavenger Mode) ---
+  spawnLocalWeaponDrop(specificType = null) {
+    const map = this.map;
+    let spawnX, spawnY;
+    let attempts = 0;
+    const pad = 140;
+    do {
+      spawnX = pad + Math.random() * (map.width - pad * 2);
+      spawnY = pad + Math.random() * (map.height - pad * 2);
+      attempts++;
+    } while (attempts < 30 && map.isColliding(spawnX, spawnY, 35));
+
+    const weaponTypes = ['rifle', 'shotgun', 'smg', 'railgun', 'cannon'];
+    const chosenType = specificType || weaponTypes[Math.floor(Math.random() * weaponTypes.length)];
+
+    if (typeof WeaponDrop !== 'undefined') {
+      this.weaponDrops.push(new WeaponDrop(spawnX, spawnY, chosenType));
+    }
+  }
+
+  syncWeaponDrops(serverDrops) {
+    if (!serverDrops || typeof WeaponDrop === 'undefined') return;
+    const serverMap = new Map();
+    serverDrops.forEach(d => serverMap.set(d.id, d));
+
+    // Retain existing drops matching server list
+    this.weaponDrops = this.weaponDrops.filter(d => serverMap.has(d.id));
+
+    // Add new drops from server
+    const existingIds = new Set(this.weaponDrops.map(d => d.id));
+    serverDrops.forEach(sd => {
+      if (!existingIds.has(sd.id)) {
+        this.weaponDrops.push(new WeaponDrop(sd.x, sd.y, sd.weaponType, sd.id));
+      }
+    });
+  }
+
+  onWeaponDropSpawned(data) {
+    if (typeof WeaponDrop === 'undefined') return;
+    if (!this.weaponDrops.some(d => d.id === data.id)) {
+      this.weaponDrops.push(new WeaponDrop(data.x, data.y, data.weaponType, data.id));
+    }
+  }
+
+  onWeaponDropCollected(data) {
+    const idx = this.weaponDrops.findIndex(d => d.id === data.id);
+    if (idx !== -1) {
+      const drop = this.weaponDrops[idx];
+      if (window.particleSystem) {
+        const color = (drop.def && drop.def.color) || '#00f0ff';
+        window.particleSystem.emit(drop.x, drop.y, 25, { speed: 130, color: color, life: 0.5 });
+      }
+      this.weaponDrops.splice(idx, 1);
+    }
+    if (data.collectorId === this.localPlayerId && this.player) {
+      this.player.equipWeapon(data.weaponType);
+      this.player.ammo = this.player.magSize;
+      this.updateHUD();
+      if (this.showWeaponToast) {
+        const def = window.WEAPON_DEFINITIONS ? window.WEAPON_DEFINITIONS[data.weaponType] : null;
+        if (def) this.showWeaponToast(def);
+      }
+    }
+  }
+
   // --- In-Game Live Operatives Roster Strip (Left Sidebar) ---
   updateLiveRoster() {
     const rosterList = document.getElementById('roster-list');
@@ -883,15 +1125,15 @@ class GameEngine {
     window.addEventListener('keydown', (e) => {
       this.input.keys[e.code] = true;
 
-      // Weapon Selection Hotkeys (1 to 5 - supports both Digit and Numpad)
-      if (e.code === 'Digit1' || e.code === 'Numpad1') this.player.equipWeapon('rifle');
-      if (e.code === 'Digit2' || e.code === 'Numpad2') this.player.equipWeapon('shotgun');
-      if (e.code === 'Digit3' || e.code === 'Numpad3') this.player.equipWeapon('smg');
-      if (e.code === 'Digit4' || e.code === 'Numpad4') this.player.equipWeapon('railgun');
-      if (e.code === 'Digit5' || e.code === 'Numpad5') this.player.equipWeapon('cannon');
-
-      // Quick Switch (Q)
-      if (e.code === 'KeyQ') this.player.quickSwitchWeapon();
+      // Weapon Selection Hotkeys (1 to 5) - only allowed in Standard Arsenal mode!
+      if (this.weaponMode !== 'ground') {
+        if (e.code === 'Digit1' || e.code === 'Numpad1') this.player.equipWeapon('rifle');
+        if (e.code === 'Digit2' || e.code === 'Numpad2') this.player.equipWeapon('shotgun');
+        if (e.code === 'Digit3' || e.code === 'Numpad3') this.player.equipWeapon('smg');
+        if (e.code === 'Digit4' || e.code === 'Numpad4') this.player.equipWeapon('railgun');
+        if (e.code === 'Digit5' || e.code === 'Numpad5') this.player.equipWeapon('cannon');
+        if (e.code === 'KeyQ') this.player.quickSwitchWeapon();
+      }
 
       // Audio Mute Quick Toggle (M)
       if (e.code === 'KeyM') {
@@ -932,9 +1174,10 @@ class GameEngine {
     // Prevent default context menu
     window.addEventListener('contextmenu', (e) => e.preventDefault());
 
-    // Mouse Wheel Weapon Cycle
+    // Mouse Wheel Weapon Cycle (Only in standard mode)
     window.addEventListener('wheel', (e) => {
       if (this.gameState !== 'playing' || !this.player || !this.player.alive) return;
+      if (this.weaponMode === 'ground') return; // Cannot cycle weapons in ground drop mode
       if (e.deltaY > 0) {
         this.player.nextWeapon();
       } else if (e.deltaY < 0) {
@@ -1071,6 +1314,8 @@ class GameEngine {
 
     this.medkits = [];
     this.medkitTimer = 0;
+    this.weaponDrops = [];
+    this.weaponDropTimer = 0;
 
     if (this.gameMode === 'multiplayer') {
       this.enemies = [];
@@ -1082,6 +1327,10 @@ class GameEngine {
     } else {
       // Singleplayer Solo Mode
       this.spawnLocalMedkit();
+      if (this.weaponMode === 'ground') {
+        const types = ['rifle', 'shotgun', 'smg', 'railgun', 'cannon'];
+        types.forEach(t => this.spawnLocalWeaponDrop(t));
+      }
       this.startWave(1);
     }
 
@@ -1282,6 +1531,25 @@ class GameEngine {
       }
     }
 
+    // 1.6. Update Weapon Drops (Ground Scavenger Mode)
+    if (this.gameMode === 'singleplayer' && this.weaponMode === 'ground') {
+      this.weaponDropTimer += dt;
+      if (this.weaponDropTimer >= 5.0) {
+        this.weaponDropTimer = 0;
+        if (this.weaponDrops.length < 10) {
+          this.spawnLocalWeaponDrop();
+        }
+      }
+    }
+
+    for (let i = this.weaponDrops.length - 1; i >= 0; i--) {
+      const drop = this.weaponDrops[i];
+      const collected = drop.update(dt, this.player, this);
+      if (collected || drop.collected) {
+        this.weaponDrops.splice(i, 1);
+      }
+    }
+
     // 2. Camera Lerping towards Player
     const targetCamX = this.player.x - this.width / 2;
     const targetCamY = this.player.y - this.height / 2;
@@ -1379,14 +1647,8 @@ class GameEngine {
     this.waveState = 'cleared';
     this.score += 1000;
 
-    // Exponential Max HP scaling:
-    // Base: 100 HP
-    // Wave 1: +15 -> 115 Max HP
-    // Wave 2: +24 -> 139 Max HP
-    // Wave 3: +38 -> 177 Max HP
-    // Wave 4: +61 -> 238 Max HP
-    // Wave 5: +98 -> 336 Max HP
-    const maxHpBonus = Math.round(15 * Math.pow(1.6, this.wave - 1));
+    // Moderate, steady HP progression (+10 at wave 1, +16 at wave 2, +22 at wave 3...)
+    const maxHpBonus = Math.round(10 + (this.wave - 1) * 6);
     this.player.maxHp = (this.player.maxHp || 100) + maxHpBonus;
     this.player.hp = this.player.maxHp; // Full heal to 100% of new upgraded baseline vitality!
     const healAmount = maxHpBonus;
@@ -1765,6 +2027,11 @@ class GameEngine {
     // 1.5. Draw Medkits (Health Packs)
     for (const medkit of this.medkits) {
       medkit.draw(this.ctx);
+    }
+
+    // 1.6. Draw Weapon Drops (Ground Scavenger Mode)
+    for (const drop of this.weaponDrops) {
+      drop.draw(this.ctx);
     }
 
     // 2. Draw Enemies

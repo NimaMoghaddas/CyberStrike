@@ -306,6 +306,20 @@
           <span id="lighting-host-tag" class="host-only-tag hidden" style="margin-left: 12px; font-size: 0.68rem; font-weight: 800; letter-spacing: 0.08em;">SQUAD LEADER (YOU)</span>
         </div>
 
+        <!-- Weapon Procurement Protocol (Standard Arsenal vs Ground Weapon Drops) -->
+        <div class="lighting-switch-bar weapon-mode-switch-bar">
+          <span class="lighting-switch-label">🔫 WEAPON PROTOCOL:</span>
+          <div class="lighting-btn-group">
+            <button type="button" class="lighting-opt-btn active" id="btn-weapon-standard" data-weapon-mode="standard">
+              <span>🎒</span> STANDARD LOADOUT
+            </button>
+            <button type="button" class="lighting-opt-btn" id="btn-weapon-ground" data-weapon-mode="ground">
+              <span>📍</span> GROUND DROPS (SCAVENGER)
+            </button>
+          </div>
+          <span id="weapon-mode-host-tag" class="host-only-tag hidden" style="margin-left: 12px; font-size: 0.68rem; font-weight: 800; letter-spacing: 0.08em;">SQUAD LEADER (YOU)</span>
+        </div>
+
         <!-- Multiplayer Team Deployment Hub -->
         <div id="multiplayer-team-hub" class="multiplayer-team-hub hidden">
           <!-- Squad Link & Room ID Network Bar -->
@@ -334,6 +348,20 @@
             <button type="button" class="mp-submode-btn" id="btn-submode-ffa" data-submode="ffa">
               FREE FOR ALL
             </button>
+          </div>
+
+          <!-- Hostile Threat Protocol (With Enemies vs PvP Only 10 Kills) -->
+          <div class="lighting-switch-bar pvp-only-switch-bar">
+            <span class="lighting-switch-label">👾 THREAT PROTOCOL:</span>
+            <div class="lighting-btn-group">
+              <button type="button" class="lighting-opt-btn active" id="btn-pvp-with-enemies" data-pvp-mode="enemies">
+                <span>💀</span> WITH ENEMIES (PvE+PvP)
+              </button>
+              <button type="button" class="lighting-opt-btn" id="btn-pvp-only" data-pvp-mode="pvp_only">
+                <span>⚔️</span> PvP ONLY (FIRST TO 10 KILLS)
+              </button>
+            </div>
+            <span id="pvp-host-tag" class="host-only-tag hidden" style="margin-left: 12px; font-size: 0.68rem; font-weight: 800; letter-spacing: 0.08em;">SQUAD LEADER (YOU)</span>
           </div>
 
           <!-- Two-Section Live Team Battle Grid -->

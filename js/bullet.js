@@ -76,8 +76,8 @@ class Bullet {
       return;
     }
 
-    // 1. Collision with Map Obstacles (Walls, Pillars)
-    if (map.isColliding(this.x, this.y, this.radius)) {
+    // 1. Collision with Map Obstacles (Walls, Pillars) - with 24px muzzle grace distance
+    if (this.distanceTraveled > 24 && map.isColliding(this.x, this.y, this.radius)) {
       if (this.explosive) {
         this.detonate(map, enemies, barrels, game);
       } else {

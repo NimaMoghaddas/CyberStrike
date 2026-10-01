@@ -588,6 +588,13 @@ class Player {
     return false;
   }
 
+  getDamageMultiplier() {
+    const wave = (this.game && this.game.wave) ? this.game.wave : (window.gameInstance && window.gameInstance.wave ? window.gameInstance.wave : 1);
+    // Steady progressive damage scaling (+10% per wave):
+    // Wave 1: 1.0x, Wave 2: 1.1x, Wave 3: 1.2x, Wave 5: 1.4x, Wave 10: 1.9x
+    return 1.0 + Math.max(0, wave - 1) * 0.10;
+  }
+
   refillAllAmmo() {
     this.inventory.refillAll();
   }
@@ -897,9 +904,13 @@ class Player {
       const bulletColor = isMultiplayer ? (this.color || (this.skin && this.skin.color) || w.color) : w.color;
       const bulletGlow = isMultiplayer ? bulletColor : (w.glowColor || w.color);
 
+      const dmgMult = this.getDamageMultiplier();
+      const scaledDamage = Math.round(w.damage * dmgMult);
+      const scaledSplash = w.splashDamage ? Math.round(w.splashDamage * dmgMult) : 0;
+
       const bullet = new Bullet(muzzleX, muzzleY, fireAngle, {
         speed: w.speed,
-        damage: w.damage,
+        damage: scaledDamage,
         range: w.range,
         radius: w.bulletRadius,
         color: bulletColor,
@@ -908,7 +919,7 @@ class Player {
         penetrating: w.penetrating,
         maxPenetrations: w.maxPenetrations,
         explosive: w.explosive,
-        splashDamage: w.splashDamage,
+        splashDamage: scaledSplash,
         blastRadius: w.blastRadius,
         screenShake: w.screenShake,
         shooterId: game.localPlayerId || null,

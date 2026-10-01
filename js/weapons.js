@@ -236,5 +236,144 @@ class WeaponInventory {
   }
 }
 
+class WeaponDrop {
+  constructor(x, y, weaponType = 'rifle', id = null) {
+    this.x = x;
+    this.y = y;
+    this.weaponType = weaponType;
+    this.id = id || `wdrop_${Math.floor(Math.random() * 1000000)}`;
+    this.def = WEAPON_DEFINITIONS[weaponType] || WEAPON_DEFINITIONS.rifle;
+    this.radius = 24;
+    this.collected = false;
+    this.createdAt = performance.now();
+    this.pulsePhase = Math.random() * Math.PI * 2;
+  }
+
+  update(dt, player, game) {
+    if (this.collected) return false;
+    if (!player || !player.alive) return false;
+
+    const dx = player.x - this.x;
+    const dy = player.y - this.y;
+    const distSq = dx * dx + dy * dy;
+    const touchDist = player.radius + this.radius;
+
+    if (distSq <= touchDist * touchDist) {
+      this.collect(player, game);
+      return true;
+    }
+    return false;
+  }
+
+  collect(player, game) {
+    if (this.collected) return;
+    this.collected = true;
+
+    player.equipWeapon(this.weaponType);
+    player.ammo = player.magSize; // Full clip reload on pickup!
+
+    const color = this.def.color || '#00f0ff';
+    if (window.particleSystem) {
+      window.particleSystem.emit(this.x, this.y, 25, {
+        speed: 140,
+        color: color,
+        life: 0.5
+      });
+      if (window.particleSystem.emitDamageNumber) {
+        window.particleSystem.emitDamageNumber(this.x, this.y - 15, `+${this.def.shortName}`, true);
+      }
+    }
+
+    if (window.soundSystem && window.soundSystem.playWeaponShoot) {
+      window.soundSystem.playWeaponShoot(this.weaponType);
+    }
+
+    if (game && game.showWeaponToast) {
+      game.showWeaponToast(this.def);
+    }
+    if (game && game.updateHUD) {
+      game.updateHUD();
+    }
+
+    // Multiplayer reporting
+    if (game && game.network && game.gameMode === 'multiplayer') {
+      game.network.reportWeaponDropPickup(this.id, this.weaponType);
+    }
+  }
+
+  draw(ctx) {
+    if (this.collected) return;
+
+    const time = performance.now() * 0.001;
+    const bob = Math.sin(time * 3.5 + this.pulsePhase) * 4;
+    const pulse = 1 + Math.sin(time * 4.0 + this.pulsePhase) * 0.08;
+    const drawY = this.y + bob;
+    const color = this.def.color || '#00f0ff';
+
+    ctx.save();
+
+    // 1. Ground Shadow & Aura
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.22;
+    ctx.beginPath();
+    ctx.ellipse(this.x, this.y + 16, 22 * pulse, 8 * pulse, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 2. Rotating Holographic Tech Ring
+    ctx.save();
+    ctx.translate(this.x, drawY);
+    ctx.rotate(time * 1.8);
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = 0.55;
+    ctx.lineWidth = 1.8;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.arc(0, 0, 24 * pulse, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+
+    // 3. Central Hexagonal Pedestal
+    ctx.save();
+    ctx.translate(this.x, drawY);
+    ctx.scale(pulse, pulse);
+
+    ctx.fillStyle = '#060c18';
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2.2;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 12;
+    ctx.beginPath();
+    const side = 18;
+    for (let i = 0; i < 6; i++) {
+      const a = (i * Math.PI) / 3;
+      const px = Math.cos(a) * side;
+      const py = Math.sin(a) * side;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Weapon Icon
+    ctx.font = '16px "Rajdhani", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowBlur = 8;
+    ctx.fillText(this.def.icon || '⚡', 0, 0);
+
+    // Floating text label above
+    ctx.font = 'bold 11px "Rajdhani", monospace';
+    ctx.fillStyle = color;
+    ctx.shadowBlur = 6;
+    ctx.fillText(this.def.shortName, 0, -28);
+
+    ctx.restore();
+    ctx.restore();
+  }
+}
+
 window.WEAPON_DEFINITIONS = WEAPON_DEFINITIONS;
 window.WeaponInventory = WeaponInventory;
+window.WeaponDrop = WeaponDrop;

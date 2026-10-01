@@ -181,6 +181,12 @@ class NetworkSystem {
         if (data && data.lightingMode && this.game && this.game.setLightingMode) {
           this.game.setLightingMode(data.lightingMode, false);
         }
+        if (data && data.weaponMode && this.game && this.game.setWeaponMode) {
+          this.game.setWeaponMode(data.weaponMode, false);
+        }
+        if (data && data.pvpOnly !== undefined && this.game && this.game.setPvPMode) {
+          this.game.setPvPMode(data.pvpOnly ? 'pvp_only' : 'enemies', false);
+        }
         const teamHud = document.getElementById('team-scoreboard-hud');
         if (teamHud) {
           if (data && data.mode === 'teams') {
@@ -201,6 +207,20 @@ class NetworkSystem {
       this.socket.on('lighting_sync', (data) => {
         if (data && data.lightingMode && this.game && this.game.setLightingMode) {
           this.game.setLightingMode(data.lightingMode, false);
+        }
+      });
+
+      // 1.36. Weapon Mode Sync
+      this.socket.on('weapon_mode_sync', (data) => {
+        if (data && data.weaponMode && this.game && this.game.setWeaponMode) {
+          this.game.setWeaponMode(data.weaponMode, false);
+        }
+      });
+
+      // 1.37. Hostile Threat Protocol / PvP Only Sync
+      this.socket.on('pvp_only_sync', (data) => {
+        if (data && this.game && this.game.setPvPMode) {
+          this.game.setPvPMode(data.pvpOnly ? 'pvp_only' : 'enemies', false);
         }
       });
 
@@ -318,7 +338,8 @@ class NetworkSystem {
 
       this.socket.on('wave_cleared', (data) => {
         const clearBanner = document.getElementById('wave-clear-banner');
-        const maxHpBonus = data.maxHpBonus || Math.round(15 * Math.pow(1.6, ((data.wave || 1) - 1)));
+        // Reduced steady HP scaling
+        const maxHpBonus = data.maxHpBonus || Math.round(10 + (((data.wave || 1) - 1) * 6));
         this.game.player.maxHp = (this.game.player.maxHp || 100) + maxHpBonus;
         this.game.player.hp = this.game.player.maxHp; // Full heal to 100% of new upgraded max vitality baseline!
         this.game.player.ammo = this.game.player.magSize;
@@ -456,6 +477,19 @@ class NetworkSystem {
       this.socket.on('medkit_collected', (data) => {
         if (this.game && this.game.onMedkitCollected) {
           this.game.onMedkitCollected(data);
+        }
+      });
+
+      // 11.6. Tactical Weapon Drops (Ground Scavenger Mode)
+      this.socket.on('weapon_drop_spawned', (drop) => {
+        if (this.game && this.game.onWeaponDropSpawned) {
+          this.game.onWeaponDropSpawned(drop);
+        }
+      });
+
+      this.socket.on('weapon_drop_collected', (data) => {
+        if (this.game && this.game.onWeaponDropCollected) {
+          this.game.onWeaponDropCollected(data);
         }
       });
 
@@ -760,6 +794,17 @@ class NetworkSystem {
     // 4. Synchronize Medkits from snapshot
     if (snapshot.medkits && this.game && this.game.syncMedkits) {
       this.game.syncMedkits(snapshot.medkits);
+    }
+
+    // 4.5. Synchronize Weapon Drops from snapshot
+    if (snapshot.weaponDrops && this.game && this.game.syncWeaponDrops) {
+      this.game.syncWeaponDrops(snapshot.weaponDrops);
+    }
+    if (snapshot.weaponMode && this.game && this.game.weaponMode !== snapshot.weaponMode && this.game.setWeaponMode) {
+      this.game.setWeaponMode(snapshot.weaponMode, false);
+    }
+    if (snapshot.pvpOnly !== undefined && this.game && this.game.setPvPMode) {
+      this.game.setPvPMode(snapshot.pvpOnly ? 'pvp_only' : 'enemies', false);
     }
 
     this.updateScoreboard();
@@ -1094,6 +1139,13 @@ class NetworkSystem {
     }
   }
 
+  // --- Report Weapon Drop Pickup (Ground Mode) ---
+  reportWeaponDropPickup(id, weaponType) {
+    if (this.socket && this.connected) {
+      this.socket.emit('pickup_weapon_drop', { id, weaponType });
+    }
+  }
+
   // --- Tactical Kill Feed System ---
   addKillFeedEntry(data) {
     const container = document.getElementById('kill-feed-container');
@@ -1175,20 +1227,29 @@ class NetworkSystem {
   }
 
   startRespawnCountdown(seconds) {
+    if (this.respawnTimerInterval) {
+      clearInterval(this.respawnTimerInterval);
+      this.respawnTimerInterval = null;
+    }
     let left = Math.round(seconds);
     const countEl = document.getElementById('respawn-seconds');
     if (countEl) countEl.textContent = left;
 
-    const timer = setInterval(() => {
+    this.respawnTimerInterval = setInterval(() => {
       left--;
       if (countEl) countEl.textContent = Math.max(0, left);
       if (left <= 0) {
-        clearInterval(timer);
+        clearInterval(this.respawnTimerInterval);
+        this.respawnTimerInterval = null;
       }
     }, 1000);
   }
 
   hideRespawnOverlay() {
+    if (this.respawnTimerInterval) {
+      clearInterval(this.respawnTimerInterval);
+      this.respawnTimerInterval = null;
+    }
     const ov = document.getElementById('respawn-overlay');
     if (ov) ov.classList.add('hidden');
   }
@@ -1569,6 +1630,14 @@ class NetworkSystem {
       this.game.setLightingMode(data.lightingMode, false);
     }
 
+    if (data.weaponMode && this.game && this.game.setWeaponMode) {
+      this.game.setWeaponMode(data.weaponMode, false);
+    }
+
+    if (data.pvpOnly !== undefined && this.game && this.game.setPvPMode) {
+      this.game.setPvPMode(data.pvpOnly ? 'pvp_only' : 'enemies', false);
+    }
+
     const me = this.lobbyPlayers.find(p => p.id === this.myId);
     if (me) {
       this.myTeam = me.team;
@@ -1597,6 +1666,12 @@ class NetworkSystem {
   renderLobbyUI() {
     if (this.game && this.game.updateLightingUIState) {
       this.game.updateLightingUIState();
+    }
+    if (this.game && this.game.updateWeaponModeUIState) {
+      this.game.updateWeaponModeUIState();
+    }
+    if (this.game && this.game.updatePvPModeUIState) {
+      this.game.updatePvPModeUIState();
     }
 
     // 0. Update Operative ID
@@ -1920,9 +1995,10 @@ class NetworkSystem {
     const killsBeta = document.getElementById('res-beta-kills');
     const scoreBeta = document.getElementById('res-beta-score');
 
-    if (killsAlpha) killsAlpha.textContent = `${alpha.kills} / 20`;
+    const targetKills = teamStats.targetKills || 10;
+    if (killsAlpha) killsAlpha.textContent = `${alpha.kills} / ${targetKills}`;
     if (scoreAlpha) scoreAlpha.textContent = Number(alpha.score).toLocaleString() + ' PTS';
-    if (killsBeta) killsBeta.textContent = `${beta.kills} / 20`;
+    if (killsBeta) killsBeta.textContent = `${beta.kills} / ${targetKills}`;
     if (scoreBeta) scoreBeta.textContent = Number(beta.score).toLocaleString() + ' PTS';
 
     if (winner === 'alpha') {

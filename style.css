@@ -1700,26 +1700,17 @@ html, body {
   background: rgba(10, 15, 26, 0.96) !important;
   border: 1px solid rgba(0, 240, 255, 0.35) !important;
   box-shadow: 0 12px 48px rgba(0, 0, 0, 0.8), 0 0 30px rgba(0, 240, 255, 0.12) !important;
-  overflow-y: scroll !important;
+  overflow-y: auto !important;
   overflow-x: hidden !important;
-  scrollbar-width: thin;
-  scrollbar-color: var(--accent-cyan) rgba(10, 15, 26, 0.8);
+  scrollbar-width: none !important; /* Firefox */
+  -ms-overflow-style: none !important; /* IE & Edge */
   -webkit-overflow-scrolling: touch;
 }
 
 .terminal-modal::-webkit-scrollbar {
-  width: 7px;
-}
-
-.terminal-modal::-webkit-scrollbar-track {
-  background: rgba(10, 15, 26, 0.8);
-  border-radius: 4px;
-}
-
-.terminal-modal::-webkit-scrollbar-thumb {
-  background: var(--accent-cyan);
-  border-radius: 4px;
-  box-shadow: 0 0 6px rgba(0, 240, 255, 0.5);
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }
 
 .terminal-header {
