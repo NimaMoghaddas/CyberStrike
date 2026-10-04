@@ -292,32 +292,71 @@
           </button>
         </div>
 
-        <!-- Global Lighting & Environment Visibility Switcher -->
-        <div class="lighting-switch-bar">
-          <span class="lighting-switch-label">💡 VISIBILITY PROTOCOL:</span>
-          <div class="lighting-btn-group">
-            <button type="button" class="lighting-opt-btn active" id="btn-lighting-tactical" data-lighting="tactical">
-              <span>🔦</span> TACTICAL (DARK + FLASHLIGHT)
-            </button>
-            <button type="button" class="lighting-opt-btn" id="btn-lighting-full" data-lighting="full">
-              <span>☀️</span> FULL BRIGHTNESS (NO FOG)
-            </button>
+        <!-- Unified Tactical Protocols Deck (Visibility, Weapon Procurement & Hostile Threat) -->
+        <div class="tactical-protocols-panel">
+          <!-- 1. Environment Visibility -->
+          <div class="protocol-column" id="protocol-col-visibility">
+            <div class="protocol-col-header">
+              <div class="protocol-col-title">
+                <span class="protocol-icon">💡</span>
+                <span>VISIBILITY</span>
+              </div>
+              <span id="lighting-host-tag" class="host-only-tag hidden">HOST</span>
+            </div>
+            <div class="protocol-btn-row">
+              <button type="button" class="protocol-opt-btn lighting-opt-btn active" id="btn-lighting-tactical" data-lighting="tactical" title="Tactical Darkness with Flashlight">
+                <span class="btn-ic">🔦</span>
+                <span class="btn-txt">TACTICAL</span>
+              </button>
+              <button type="button" class="protocol-opt-btn lighting-opt-btn" id="btn-lighting-full" data-lighting="full" title="Full Brightness (No Fog)">
+                <span class="btn-ic">☀️</span>
+                <span class="btn-txt">FULL LIGHT</span>
+              </button>
+            </div>
           </div>
-          <span id="lighting-host-tag" class="host-only-tag hidden" style="margin-left: 12px; font-size: 0.68rem; font-weight: 800; letter-spacing: 0.08em;">SQUAD LEADER (YOU)</span>
-        </div>
 
-        <!-- Weapon Procurement Protocol (Standard Arsenal vs Ground Weapon Drops) -->
-        <div class="lighting-switch-bar weapon-mode-switch-bar">
-          <span class="lighting-switch-label">🔫 WEAPON PROTOCOL:</span>
-          <div class="lighting-btn-group">
-            <button type="button" class="lighting-opt-btn active" id="btn-weapon-standard" data-weapon-mode="standard">
-              <span>🎒</span> STANDARD LOADOUT
-            </button>
-            <button type="button" class="lighting-opt-btn" id="btn-weapon-ground" data-weapon-mode="ground">
-              <span>📍</span> GROUND DROPS (SCAVENGER)
-            </button>
+          <!-- 2. Weapon Protocol -->
+          <div class="protocol-column" id="protocol-col-weapons">
+            <div class="protocol-col-header">
+              <div class="protocol-col-title">
+                <span class="protocol-icon">🔫</span>
+                <span>WEAPONS</span>
+              </div>
+              <span id="weapon-mode-host-tag" class="host-only-tag hidden">HOST</span>
+            </div>
+            <div class="protocol-btn-row">
+              <button type="button" class="protocol-opt-btn lighting-opt-btn active" id="btn-weapon-standard" data-weapon-mode="standard" title="Standard Loadout (All Weapons)">
+                <span class="btn-ic">🎒</span>
+                <span class="btn-txt">LOADOUT</span>
+              </button>
+              <button type="button" class="protocol-opt-btn lighting-opt-btn" id="btn-weapon-ground" data-weapon-mode="ground" title="Ground Drops (Scavenger)">
+                <span class="btn-ic">📍</span>
+                <span class="btn-txt">GROUND DROPS</span>
+              </button>
+            </div>
           </div>
-          <span id="weapon-mode-host-tag" class="host-only-tag hidden" style="margin-left: 12px; font-size: 0.68rem; font-weight: 800; letter-spacing: 0.08em;">SQUAD LEADER (YOU)</span>
+
+          <!-- 3. Threat Protocol (Multiplayer PvE vs PvP Only) -->
+          <div class="protocol-column hidden" id="protocol-col-threat">
+            <div class="protocol-col-header">
+              <div class="protocol-col-title">
+                <span class="protocol-icon">👾</span>
+                <span>THREAT</span>
+                <span class="mp-badge-chip">MP</span>
+              </div>
+              <span id="pvp-host-tag" class="host-only-tag hidden">HOST</span>
+            </div>
+            <div class="protocol-btn-row">
+              <button type="button" class="protocol-opt-btn lighting-opt-btn active" id="btn-pvp-with-enemies" data-pvp-mode="enemies" title="With AI alien swarm enemies (PvE+PvP)">
+                <span class="btn-ic">💀</span>
+                <span class="btn-txt">WITH ENEMIES</span>
+              </button>
+              <button type="button" class="protocol-opt-btn lighting-opt-btn" id="btn-pvp-only" data-pvp-mode="pvp_only" title="Pure PvP only (First to 10 kills)">
+                <span class="btn-ic">⚔️</span>
+                <span class="btn-txt">PvP ONLY</span>
+              </button>
+            </div>
+          </div>
         </div>
 
         <!-- Multiplayer Team Deployment Hub -->
@@ -350,19 +389,7 @@
             </button>
           </div>
 
-          <!-- Hostile Threat Protocol (With Enemies vs PvP Only 10 Kills) -->
-          <div class="lighting-switch-bar pvp-only-switch-bar">
-            <span class="lighting-switch-label">👾 THREAT PROTOCOL:</span>
-            <div class="lighting-btn-group">
-              <button type="button" class="lighting-opt-btn active" id="btn-pvp-with-enemies" data-pvp-mode="enemies">
-                <span>💀</span> WITH ENEMIES (PvE+PvP)
-              </button>
-              <button type="button" class="lighting-opt-btn" id="btn-pvp-only" data-pvp-mode="pvp_only">
-                <span>⚔️</span> PvP ONLY (FIRST TO 10 KILLS)
-              </button>
-            </div>
-            <span id="pvp-host-tag" class="host-only-tag hidden" style="margin-left: 12px; font-size: 0.68rem; font-weight: 800; letter-spacing: 0.08em;">SQUAD LEADER (YOU)</span>
-          </div>
+
 
           <!-- Two-Section Live Team Battle Grid -->
           <div class="team-battle-grid" id="team-battle-grid">
@@ -483,6 +510,15 @@
                 </div>
               </div>
 
+              <!-- Active Map Indicator / Quick Switch -->
+              <div class="active-map-banner" id="active-map-banner" title="Click to view & change deployment map">
+                <div class="map-banner-left">
+                  <span class="map-banner-label">MAP:</span>
+                  <span class="map-banner-val" id="active-map-banner-val">🏢 SECTOR-09</span>
+                </div>
+                <span class="map-banner-change">CHANGE ➔</span>
+              </div>
+
               <!-- Start / Ready Button (Arrow removed) -->
               <button id="start-btn" class="btn-primary btn-deploy">
                 <span class="btn-text">START</span>
@@ -520,6 +556,7 @@
               <button class="terminal-tab-btn" data-tab="maps" type="button">
                 <span class="tab-icon">🗺️</span>
                 <span class="tab-title">MAPS</span>
+                <span class="tab-mini-badge" id="nav-active-map-name">SECTOR-09</span>
               </button>
               <button class="terminal-tab-btn" data-tab="loadout" type="button">
                 <span class="tab-icon">⚡</span>
@@ -558,6 +595,11 @@
 
             <!-- Tab 2: Maps -->
             <div class="terminal-tab-content" id="tab-content-maps">
+              <div class="custom-block-header">
+                <span class="custom-block-tag">TACTICAL ARENA</span>
+                <span class="custom-block-title">SELECT COMBAT MAP</span>
+                <span class="custom-block-status" id="lobby-active-map-badge">CURRENT: SECTOR-09</span>
+              </div>
               <div class="maps-grid" id="maps-grid">
                 <!-- Dynamically populated by game.initMapsUI() -->
               </div>
@@ -623,7 +665,7 @@
 
         <div class="game-over-btn-row">
           <button id="restart-btn" class="btn-primary">
-            <span class="btn-text">REDEPLOY SQUAD</span>
+            <span class="btn-text">TRY AGAIN</span>
           </button>
           <button id="game-over-lobby-btn" class="btn-secondary btn-return-lobby" type="button">
             <span class="btn-text">RETURN TO LOBBY</span>

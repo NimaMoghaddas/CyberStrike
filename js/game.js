@@ -40,6 +40,7 @@ class GameEngine {
     this.player = new Player(1200, 1200); // Start in center courtyard
     this.bullets = [];
     this.enemyProjectiles = [];
+    this.acidPools = [];
     this.enemies = [];
 
     // Wave Progression State
@@ -147,9 +148,13 @@ class GameEngine {
       const startBtn = document.getElementById('start-btn');
       const rosterBadge = document.getElementById('roster-mode-badge');
       const teamHub = document.getElementById('multiplayer-team-hub');
+      const threatCol = document.getElementById('protocol-col-threat');
 
       if (teamHub) {
         teamHub.classList.toggle('hidden', mode !== 'multiplayer');
+      }
+      if (threatCol) {
+        threatCol.classList.toggle('hidden', mode !== 'multiplayer');
       }
 
       if (mode === 'singleplayer') {
@@ -190,6 +195,7 @@ class GameEngine {
       }
       this.updateLiveRoster();
       this.updateCustomizationSections();
+      this.updateMapSelectionUI();
       if (window.soundSystem && window.soundSystem.playDryFire) {
         window.soundSystem.playDryFire();
       }
@@ -311,7 +317,8 @@ class GameEngine {
       sector_09: '🏢',
       cyber_bunker: '🛡️',
       neon_slums: '🏮',
-      reactor_crucible: '☢️'
+      reactor_crucible: '☢️',
+      orbital_station: '🛰️'
     };
 
     for (const id in MAP_DEFINITIONS) {
@@ -319,16 +326,23 @@ class GameEngine {
       const card = document.createElement('div');
       card.className = `map-card ${id === this.selectedMapId ? 'selected' : ''}`;
       card.id = `map-card-${id}`;
+      card.setAttribute('data-map', id);
+      card.dataset.map = id;
       card.style.setProperty('--map-accent', mapDef.accentColor || '#00f0ff');
       card.style.setProperty('--map-glow', `${mapDef.accentColor || '#00f0ff'}55`);
 
       const icon = mapIcons[id] || '🗺️';
+      const isSelected = (id === this.selectedMapId);
 
       card.innerHTML = `
         <div class="map-card-header">
           <span class="map-icon">${icon}</span>
-          <div class="map-card-title">${mapDef.shortName || mapDef.name}</div>
+          <div class="map-card-info">
+            <div class="map-card-title">${mapDef.shortName || mapDef.name}</div>
+            <div class="map-card-sub">${mapDef.badge || mapDef.hazardLevel || 'TACTICAL ZONE'}</div>
+          </div>
         </div>
+        <div class="map-card-badge ${isSelected ? 'active' : ''}">${isSelected ? '● ACTIVE' : 'SELECT'}</div>
       `;
 
       card.addEventListener('click', () => {
@@ -349,10 +363,8 @@ class GameEngine {
 
         this.selectedMapId = id;
         this.saveProfile({ mapId: id });
-        document.querySelectorAll('.map-card').forEach(c => c.classList.remove('selected'));
-        card.classList.add('selected');
         this.map.setMap(id);
-        this.updateTerminalSummary();
+        this.updateMapSelectionUI();
 
         if (this.network && this.network.socket && this.network.connected && this.network.isHost) {
           this.network.socket.emit('lobby_set_map', { mapId: id });
@@ -365,7 +377,72 @@ class GameEngine {
 
       grid.appendChild(card);
     }
+
+    // Active map banner click shortcut to immediately open MAPS tab
+    const banner = document.getElementById('active-map-banner');
+    if (banner && !banner._hasMapJumpListener) {
+      banner._hasMapJumpListener = true;
+      banner.addEventListener('click', () => {
+        const mapsTabBtn = document.querySelector('.terminal-tab-btn[data-tab="maps"]');
+        if (mapsTabBtn) mapsTabBtn.click();
+      });
+    }
+
+    this.updateMapSelectionUI();
   }
+
+  updateMapSelectionUI() {
+    const currentId = this.selectedMapId || 'sector_09';
+    const mapIcons = {
+      sector_09: '🏢',
+      cyber_bunker: '🛡️',
+      neon_slums: '🏮',
+      reactor_crucible: '☢️',
+      orbital_station: '🛰️'
+    };
+
+    document.querySelectorAll('.map-card').forEach(c => {
+      const cardMapId = c.getAttribute('data-map') || c.id.replace('map-card-', '');
+      const isSel = (cardMapId === currentId);
+      c.classList.toggle('selected', isSel);
+      const badge = c.querySelector('.map-card-badge');
+      if (badge) {
+        badge.textContent = isSel ? '● ACTIVE' : 'SELECT';
+        badge.classList.toggle('active', isSel);
+      }
+    });
+
+    const mapDef = (typeof MAP_DEFINITIONS !== 'undefined' && MAP_DEFINITIONS[currentId]) || null;
+    const icon = mapIcons[currentId] || '🗺️';
+    const shortTitle = mapDef ? (mapDef.shortName || mapDef.name) : 'SECTOR-09';
+    const accentCol = mapDef ? (mapDef.accentColor || '#00f0ff') : '#00f0ff';
+
+    // 1. Tab Navigation Mini Badge
+    const navSub = document.getElementById('nav-active-map-name');
+    if (navSub) {
+      navSub.textContent = shortTitle;
+      navSub.style.color = accentCol;
+      navSub.style.borderColor = `${accentCol}55`;
+    }
+
+    // 2. Active Map Banner under Callsign (Left Column)
+    const bannerVal = document.getElementById('active-map-banner-val');
+    if (bannerVal) {
+      bannerVal.textContent = `${icon} ${shortTitle}`;
+      bannerVal.style.color = accentCol;
+    }
+
+    // 3. Header Status in Maps Tab
+    const lobbyActiveBadge = document.getElementById('lobby-active-map-badge');
+    if (lobbyActiveBadge) {
+      lobbyActiveBadge.textContent = `CURRENT: ${shortTitle}`;
+      lobbyActiveBadge.style.color = accentCol;
+      lobbyActiveBadge.style.borderColor = `${accentCol}66`;
+    }
+
+    this.updateTerminalSummary();
+  }
+
 
   initLoadoutUI() {
     const grid = document.getElementById('loadout-grid');
@@ -657,6 +734,11 @@ class GameEngine {
   }
 
   updatePvPModeUIState() {
+    const threatCol = document.getElementById('protocol-col-threat');
+    if (threatCol) {
+      threatCol.classList.toggle('hidden', this.gameMode !== 'multiplayer');
+    }
+
     const btnEnemies = document.getElementById('btn-pvp-with-enemies');
     const btnPvPOnly = document.getElementById('btn-pvp-only');
     const hostTag = document.getElementById('pvp-host-tag');
@@ -879,6 +961,7 @@ class GameEngine {
       this.gameState = 'start';
       this.renderLobbyHighScores();
       this.updateTerminalSummary();
+      this.updateMapSelectionUI();
       if (this.network && this.network.renderLobbyUI) {
         this.network.renderLobbyUI();
       }
@@ -1316,10 +1399,21 @@ class GameEngine {
     this.medkitTimer = 0;
     this.weaponDrops = [];
     this.weaponDropTimer = 0;
+    this.acidPools = [];
+
+    // Clear persistent blood decals and old particles on start
+    if (this.map && this.map.clearDecals) {
+      this.map.clearDecals();
+    }
+    if (window.particleSystem) {
+      window.particleSystem.particles = [];
+      window.particleSystem.damageNumbers = [];
+    }
 
     if (this.gameMode === 'multiplayer') {
       this.enemies = [];
       this.enemyProjectiles = [];
+      this.acidPools = [];
       this.bullets = [];
       if (this.network) {
         this.network.deployToBattlefield();
@@ -1372,6 +1466,7 @@ class GameEngine {
 
     this.bullets = [];
     this.enemyProjectiles = [];
+    this.acidPools = [];
     this.enemies = [];
     this.score = 0;
     this.kills = 0;
@@ -1379,6 +1474,15 @@ class GameEngine {
     this.shotsHit = 0;
     this.wave = 1;
     this.gameState = 'playing';
+
+    // Clear persistent blood decals and particles on Try Again / Restart
+    if (this.map && this.map.clearDecals) {
+      this.map.clearDecals();
+    }
+    if (window.particleSystem) {
+      window.particleSystem.particles = [];
+      window.particleSystem.damageNumbers = [];
+    }
 
     this.initArsenalUI();
     this.updateAmmoUI();
@@ -1425,29 +1529,33 @@ class GameEngine {
     const roll = Math.random();
 
     if (this.wave === 1) {
-      if (roll < 0.40) type = 'normal';
-      else if (roll < 0.65) type = 'fast'; // Agile speed enemy
-      else if (roll < 0.85) type = 'splitter'; // Organic Bio-Splitter Swarm
+      if (roll < 0.35) type = 'normal';
+      else if (roll < 0.55) type = 'fast';
+      else if (roll < 0.75) type = 'splitter';
+      else if (roll < 0.88) type = 'toxic'; // Bio-Slimer toxic spitter
       else type = 'bomber';
     } else if (this.wave === 2) {
-      if (roll < 0.30) type = 'normal';
-      else if (roll < 0.50) type = 'fast'; // Agile speed enemy
-      else if (roll < 0.70) type = 'splitter';
-      else if (roll < 0.86) type = 'bomber';
+      if (roll < 0.25) type = 'normal';
+      else if (roll < 0.42) type = 'fast';
+      else if (roll < 0.60) type = 'splitter';
+      else if (roll < 0.74) type = 'toxic'; // Bio-Slimer toxic spitter
+      else if (roll < 0.87) type = 'bomber';
       else type = 'sniper';
     } else if (this.wave === 3) {
-      if (roll < 0.22) type = 'normal';
-      else if (roll < 0.42) type = 'fast'; // Agile speed enemy
-      else if (roll < 0.62) type = 'splitter';
-      else if (roll < 0.78) type = 'bomber';
-      else if (roll < 0.90) type = 'sniper';
-      else type = 'tank'; // Heavy armored behemoth
-    } else { // Wave 4+
       if (roll < 0.18) type = 'normal';
-      else if (roll < 0.35) type = 'fast'; // Agile speed enemy
-      else if (roll < 0.55) type = 'splitter';
-      else if (roll < 0.72) type = 'bomber';
-      else if (roll < 0.86) type = 'sniper';
+      else if (roll < 0.34) type = 'fast';
+      else if (roll < 0.48) type = 'splitter';
+      else if (roll < 0.62) type = 'toxic'; // Bio-Slimer toxic spitter
+      else if (roll < 0.75) type = 'bomber';
+      else if (roll < 0.88) type = 'sniper';
+      else type = 'tank';
+    } else { // Wave 4+
+      if (roll < 0.14) type = 'normal';
+      else if (roll < 0.28) type = 'fast';
+      else if (roll < 0.42) type = 'splitter';
+      else if (roll < 0.56) type = 'toxic'; // Bio-Slimer toxic spitter
+      else if (roll < 0.70) type = 'bomber';
+      else if (roll < 0.84) type = 'sniper';
       else type = 'tank';
     }
 
@@ -1492,13 +1600,23 @@ class GameEngine {
     this.screenShake = Math.max(this.screenShake, intensity);
   }
 
-  spawnAcidSpit(x, y, angle, speed = 460, damage = 16, color = '#39ff14', ignoreWalls = false) {
+  spawnAcidSpit(x, y, angle, speed = 460, damage = 16, color = '#39ff14', ignoreWalls = false, leavesPool = false) {
     if (!this.enemyProjectiles) this.enemyProjectiles = [];
     if (typeof AcidSpit !== 'undefined') {
-      this.enemyProjectiles.push(new AcidSpit(x, y, angle, speed, damage, color, ignoreWalls || color === '#b026ff'));
+      this.enemyProjectiles.push(new AcidSpit(x, y, angle, speed, damage, color, ignoreWalls || color === '#b026ff', leavesPool));
       if (window.soundSystem && window.soundSystem.playAcidSpit) {
         window.soundSystem.playAcidSpit();
       }
+    }
+  }
+
+  spawnAcidPool(x, y, radius = 24, duration = 3.0, dps = 6, color = '#39ff14') {
+    if (!this.acidPools) this.acidPools = [];
+    if (typeof AcidPool !== 'undefined') {
+      if (this.acidPools.length > 30) {
+        this.acidPools.shift();
+      }
+      this.acidPools.push(new AcidPool(x, y, radius, duration, dps, color));
     }
   }
 
@@ -1582,6 +1700,17 @@ class GameEngine {
         proj.update(dt, this.map, this.player, this);
         if (!proj.active) {
           this.enemyProjectiles.splice(i, 1);
+        }
+      }
+    }
+
+    // 3.6. Update Acid Pools (Ground Toxic Hazards)
+    if (this.acidPools) {
+      for (let i = this.acidPools.length - 1; i >= 0; i--) {
+        const pool = this.acidPools[i];
+        pool.update(dt, this.player, this);
+        if (!pool.active) {
+          this.acidPools.splice(i, 1);
         }
       }
     }
@@ -2032,6 +2161,13 @@ class GameEngine {
     // 1.6. Draw Weapon Drops (Ground Scavenger Mode)
     for (const drop of this.weaponDrops) {
       drop.draw(this.ctx);
+    }
+
+    // 1.7. Draw Acid Pools (Ground Toxic Hazards)
+    if (this.acidPools) {
+      for (const pool of this.acidPools) {
+        pool.draw(this.ctx);
+      }
     }
 
     // 2. Draw Enemies

@@ -1159,7 +1159,10 @@ class GameMap {
     // 2. Decal Canvas (Blood & Scorch marks)
     ctx.drawImage(this.decalCanvas, 0, 0);
 
-    // 3. Render Solid Walls & Containers
+    const now = Date.now();
+    const mapId = this.mapId || 'sector_09';
+
+    // 3. Render Solid Obstacles (Thematic real-world objects)
     for (const wall of this.walls) {
       // Frustum culling: skip if offscreen
       if (wall.x + wall.w < camera.x || wall.x > camera.x + camera.width ||
@@ -1168,224 +1171,1855 @@ class GameMap {
       }
 
       ctx.save();
-      // Drop Shadow
+      // Drop Shadow for high depth
       ctx.shadowColor = 'rgba(0, 0, 0, 0.65)';
-      ctx.shadowBlur = 16;
-      ctx.shadowOffsetX = 8;
-      ctx.shadowOffsetY = 8;
-
-      if (wall.type === 'boundary') {
-        // High-security boundary wall
-        ctx.fillStyle = '#141a29';
-        ctx.fillRect(wall.x, wall.y, wall.w, wall.h);
-        ctx.strokeStyle = this.accentColor || '#00f0ff';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(wall.x, wall.y, wall.w, wall.h);
-      } else if (wall.subType === 'server') {
-        // --- High-Density Subterranean Server Rack ---
-        ctx.fillStyle = '#0a0d14';
-        ctx.fillRect(wall.x, wall.y, wall.w, wall.h);
-
-        // Rack Face Border
-        ctx.strokeStyle = '#1a2436';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(wall.x, wall.y, wall.w, wall.h);
-
-        // Server Blade Slots & Blinking Status LEDs
-        const isVert = wall.h > wall.w;
-        const now = Date.now();
-        if (isVert) {
-          for (let sy = wall.y + 12; sy < wall.y + wall.h - 12; sy += 24) {
-            ctx.fillStyle = '#121926';
-            ctx.fillRect(wall.x + 4, sy, wall.w - 8, 16);
-
-            // Blinking Activity LEDs (Cyan, Green, Amber, Red)
-            const blinkA = Math.sin(now * 0.008 + sy * 0.05) > 0;
-            const blinkB = Math.cos(now * 0.006 + sy * 0.08) > 0;
-            ctx.fillStyle = blinkA ? '#00f0ff' : '#004455';
-            ctx.fillRect(wall.x + 8, sy + 6, 4, 4);
-
-            ctx.fillStyle = blinkB ? '#00ff88' : '#004422';
-            ctx.fillRect(wall.x + 16, sy + 6, 4, 4);
-
-            ctx.fillStyle = (sy % 48 === 0) ? '#ff3366' : '#ffb703';
-            ctx.fillRect(wall.x + 24, sy + 6, 4, 4);
-          }
-        } else {
-          for (let sx = wall.x + 12; sx < wall.x + wall.w - 12; sx += 24) {
-            ctx.fillStyle = '#121926';
-            ctx.fillRect(sx, wall.y + 4, 16, wall.h - 8);
-
-            const blinkA = Math.sin(now * 0.008 + sx * 0.05) > 0;
-            ctx.fillStyle = blinkA ? '#00f0ff' : '#004455';
-            ctx.fillRect(sx + 6, wall.y + 8, 4, 4);
-
-            ctx.fillStyle = '#00ff88';
-            ctx.fillRect(sx + 6, wall.y + 16, 4, 4);
-          }
-        }
-      } else if (wall.type === 'container') {
-        // --- Cargo Shipping Container with Dynamic Thematic Colors ---
-        const contColor = wall.color || '#1a2838';
-        ctx.fillStyle = contColor;
-        ctx.fillRect(wall.x, wall.y, wall.w, wall.h);
-        
-        // Corrugated ridges
-        ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
-        ctx.lineWidth = 3;
-        const step = 22;
-        if (wall.w > wall.h) {
-          for (let rx = wall.x + step; rx < wall.x + wall.w - step; rx += step) {
-            ctx.beginPath();
-            ctx.moveTo(rx, wall.y + 4);
-            ctx.lineTo(rx, wall.y + wall.h - 4);
-            ctx.stroke();
-          }
-        } else {
-          for (let ry = wall.y + step; ry < wall.y + wall.h - step; ry += step) {
-            ctx.beginPath();
-            ctx.moveTo(wall.x + 4, ry);
-            ctx.lineTo(wall.x + wall.w - 4, ry);
-            ctx.stroke();
-          }
-        }
-
-        // Corner Steel Reinforcement Brackets
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(wall.x, wall.y, wall.w, wall.h);
-
-        // Tech Stencil Badge
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
-        ctx.font = 'bold 10px monospace';
-        ctx.fillText('CY-7', wall.x + 8, wall.y + 16);
-      } else if (wall.type === 'crate') {
-        // Heavy military crate
-        ctx.fillStyle = '#222633';
-        ctx.fillRect(wall.x, wall.y, wall.w, wall.h);
-        
-        // Inner X brace
-        ctx.strokeStyle = '#383f54';
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.moveTo(wall.x + 6, wall.y + 6);
-        ctx.lineTo(wall.x + wall.w - 6, wall.y + wall.h - 6);
-        ctx.moveTo(wall.x + wall.w - 6, wall.y + 6);
-        ctx.lineTo(wall.x + 6, wall.y + wall.h - 6);
-        ctx.stroke();
-
-        ctx.strokeStyle = '#4a5470';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(wall.x, wall.y, wall.w, wall.h);
-      } else {
-        // Reinforced Concrete Blast Barrier with Hazard Cap
-        ctx.fillStyle = '#1c2230';
-        ctx.fillRect(wall.x, wall.y, wall.w, wall.h);
-
-        // Warning Hazard Cap on top
-        ctx.save();
-        ctx.strokeStyle = '#ffb703';
-        ctx.lineWidth = 3;
-        ctx.setLineDash([8, 8]);
-        ctx.strokeRect(wall.x + 2, wall.y + 2, wall.w - 4, wall.h - 4);
-        ctx.restore();
-
-        ctx.strokeStyle = '#323c52';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(wall.x, wall.y, wall.w, wall.h);
-      }
-      ctx.restore();
-    }
-
-    // 4. Render Reactor & Structural Pillars (Themed visuals)
-    for (const pillar of this.pillars) {
-      ctx.save();
-      // Base shadow
-      ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
-      ctx.shadowBlur = 18;
+      ctx.shadowBlur = 14;
       ctx.shadowOffsetX = 6;
       ctx.shadowOffsetY = 6;
 
-      // Outer metal cylinder rim
-      ctx.fillStyle = '#181f2b';
-      ctx.beginPath();
-      ctx.arc(pillar.x, pillar.y, pillar.radius, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Metallic border
-      ctx.strokeStyle = '#3f4e70';
-      ctx.lineWidth = 4;
-      ctx.stroke();
-
-      // Theme-tailored Pulsating Core Center
-      const pulse = Math.sin(Date.now() * 0.004) * 0.2 + 0.8;
-      let coreColor = '#00f0ff';
-      let shadowColor = '#00f0ff';
-
-      if (this.mapId === 'reactor_crucible') {
-        coreColor = '#ff5500';
-        shadowColor = '#ff3300';
-      } else if (this.mapId === 'cyber_bunker') {
-        coreColor = '#ff0055';
-        shadowColor = '#ff0055';
-      } else if (this.mapId === 'neon_slums') {
-        coreColor = '#bd00ff';
-        shadowColor = '#bd00ff';
+      if (wall.type === 'boundary') {
+        this.drawBoundary(ctx, wall, mapId);
+      } else {
+        this.drawThemedObstacle(ctx, wall, mapId, now);
       }
-
-      ctx.fillStyle = coreColor;
-      ctx.globalAlpha = 0.5 * pulse;
-      ctx.shadowColor = shadowColor;
-      ctx.shadowBlur = 16 * pulse;
-      ctx.beginPath();
-      ctx.arc(pillar.x, pillar.y, pillar.radius * 0.5, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Core Highlight
-      ctx.fillStyle = '#ffffff';
-      ctx.globalAlpha = 0.7 * pulse;
-      ctx.beginPath();
-      ctx.arc(pillar.x, pillar.y, pillar.radius * 0.2, 0, Math.PI * 2);
-      ctx.fill();
-
       ctx.restore();
     }
 
-    // 5. Render Explosive Barrels
+    // 4. Render Structural Pillars & Columns
+    for (const pillar of this.pillars) {
+      // Frustum culling
+      if (pillar.x + pillar.radius < camera.x || pillar.x - pillar.radius > camera.x + camera.width ||
+          pillar.y + pillar.radius < camera.y || pillar.y - pillar.radius > camera.y + camera.height) {
+        continue;
+      }
+      ctx.save();
+      this.drawThemedPillar(ctx, pillar, now, mapId);
+      ctx.restore();
+    }
+
+    // 5. Render Barrels / Hazard Canisters
     for (const barrel of this.barrels) {
       if (barrel.exploded) continue;
-
+      if (barrel.x + barrel.radius < camera.x || barrel.x - barrel.radius > camera.x + camera.width ||
+          barrel.y + barrel.radius < camera.y || barrel.y - barrel.radius > camera.y + camera.height) {
+        continue;
+      }
       ctx.save();
-      ctx.shadowColor = 'rgba(0, 0, 0, 0.6)';
-      ctx.shadowBlur = 8;
-      ctx.shadowOffsetX = 4;
-      ctx.shadowOffsetY = 4;
+      this.drawThemedBarrel(ctx, barrel, now, mapId);
+      ctx.restore();
+    }
+  }
 
-      // Red barrel body
-      ctx.fillStyle = '#d90429';
+  // Helper for safe rounded rect
+  drawRoundedBox(ctx, x, y, w, h, r) {
+    if (ctx.roundRect) {
       ctx.beginPath();
-      ctx.arc(barrel.x, barrel.y, barrel.radius, 0, Math.PI * 2);
+      ctx.roundRect(x, y, w, h, r);
+      ctx.fill();
+    } else {
+      ctx.fillRect(x, y, w, h);
+    }
+  }
+
+  // =========================================================================
+  // BOUNDARY WALL RENDERING (Distinct per map)
+  // =========================================================================
+  drawBoundary(ctx, wall, mapId) {
+    const { x, y, w, h } = wall;
+    if (mapId === 'neon_slums') {
+      // Tenement Brick/Concrete Building Facades with graffiti and neon edge
+      ctx.fillStyle = '#0a0612';
+      ctx.fillRect(x, y, w, h);
+      ctx.strokeStyle = '#bd00ff';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x, y, w, h);
+      // Neon rooftop trim
+      ctx.strokeStyle = 'rgba(255, 0, 127, 0.4)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x + 3, y + 3, w - 6, h - 6);
+    } else if (mapId === 'cyber_bunker') {
+      // Under-bedrock reinforced blast bunker boundary
+      ctx.fillStyle = '#08050c';
+      ctx.fillRect(x, y, w, h);
+      ctx.strokeStyle = '#ff0055';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x, y, w, h);
+      // Steel rivets along perimeter
+      ctx.fillStyle = '#2a1226';
+      if (w > h) {
+        for (let rx = x + 20; rx < x + w - 20; rx += 50) {
+          ctx.fillRect(rx, y + h / 2 - 2, 4, 4);
+        }
+      } else {
+        for (let ry = y + 20; ry < y + h - 20; ry += 50) {
+          ctx.fillRect(x + w / 2 - 2, ry, 4, 4);
+        }
+      }
+    } else if (mapId === 'reactor_crucible') {
+      // Scorched volcanic containment wall with thermal orange accents
+      ctx.fillStyle = '#140704';
+      ctx.fillRect(x, y, w, h);
+      ctx.strokeStyle = '#ff5500';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x, y, w, h);
+      // Thermal hazard warning dashes
+      ctx.strokeStyle = 'rgba(255, 100, 0, 0.35)';
+      ctx.setLineDash([12, 12]);
+      ctx.strokeRect(x + 4, y + 4, w - 8, h - 8);
+      ctx.setLineDash([]);
+    } else if (mapId === 'orbital_station') {
+      // Sleek pressurized aerospace space station hull looking into void
+      ctx.fillStyle = '#0b101d';
+      ctx.fillRect(x, y, w, h);
+      ctx.strokeStyle = '#00d4ff';
+      ctx.lineWidth = 2.5;
+      ctx.strokeRect(x, y, w, h);
+      // Aerodynamic bevel line
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x + 2, y + 2, w - 4, h - 4);
+    } else {
+      // Sector 09: Industrial Docks heavy steel retaining wall
+      ctx.fillStyle = '#101622';
+      ctx.fillRect(x, y, w, h);
+      ctx.strokeStyle = '#00f0ff';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x, y, w, h);
+      // Yellow hazard diagonal trim
+      ctx.save();
+      ctx.strokeStyle = '#ffb703';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([10, 10]);
+      ctx.strokeRect(x + 3, y + 3, w - 6, h - 6);
+      ctx.restore();
+    }
+  }
+
+  // =========================================================================
+  // THEMED OBSTACLE DISPATCHER
+  // =========================================================================
+  drawThemedObstacle(ctx, wall, mapId, now) {
+    const type = wall.type;
+
+    // Sector 09 Obstacles
+    if (type === 'container') return this.drawContainer(ctx, wall);
+    if (type === 'pallet' || type === 'crate') return this.drawPallet(ctx, wall);
+    if (type === 'forklift') return this.drawForklift(ctx, wall, now);
+    if (type === 'furnace') return this.drawFurnace(ctx, wall, now);
+    if (type === 'steel_stack') return this.drawSteelStack(ctx, wall);
+    if (type === 'fuel_depot_tank') return this.drawFuelDepotTank(ctx, wall);
+    if (type === 'industrial_barrier') return this.drawIndustrialBarrier(ctx, wall);
+
+    // Cyber Bunker Obstacles
+    if (type === 'server_bank' || wall.subType === 'server') return this.drawServerBank(ctx, wall, now);
+    if (type === 'blast_door') return this.drawBlastDoor(ctx, wall, now);
+    if (type === 'cryo_chamber') return this.drawCryoChamber(ctx, wall, now);
+    if (type === 'command_console') return this.drawCommandConsole(ctx, wall, now);
+    if (type === 'decon_station') return this.drawDeconStation(ctx, wall, now);
+    if (type === 'reinforced_bulkhead') return this.drawReinforcedBulkhead(ctx, wall);
+
+    // Neon Slums Obstacles
+    if (type === 'ramen_stall') return this.drawRamenStall(ctx, wall, now);
+    if (type === 'cyber_car') return this.drawCyberCar(ctx, wall, now);
+    if (type === 'vending_machine') return this.drawVendingMachine(ctx, wall, now);
+    if (type === 'dumpster') return this.drawDumpster(ctx, wall);
+    if (type === 'transformer_box') return this.drawTransformerBox(ctx, wall, now);
+    if (type === 'neon_billboard') return this.drawNeonBillboard(ctx, wall, now);
+    if (type === 'neon_barrier') return this.drawNeonBarrier(ctx, wall);
+
+    // Reactor Crucible Obstacles
+    if (type === 'heat_shield') return this.drawHeatShield(ctx, wall);
+    if (type === 'coolant_pipe') return this.drawCoolantPipe(ctx, wall, now);
+    if (type === 'slag_barrier') return this.drawSlagBarrier(ctx, wall, now);
+    if (type === 'turbine_block') return this.drawTurbineBlock(ctx, wall, now);
+    if (type === 'waste_containment') return this.drawWasteContainment(ctx, wall);
+
+    // Orbital Station Obstacles
+    if (type === 'orbital_bulkhead') return this.drawOrbitalBulkhead(ctx, wall);
+    if (type === 'airlock_hatch') return this.drawAirlockHatch(ctx, wall, now);
+    if (type === 'solar_capacitor') return this.drawSolarCapacitor(ctx, wall, now);
+    if (type === 'science_station') return this.drawScienceStation(ctx, wall, now);
+    if (type === 'magnetic_barrier') return this.drawMagneticBarrier(ctx, wall, now);
+    if (type === 'thruster_housing') return this.drawThrusterHousing(ctx, wall, now);
+
+    // Fallback: draw theme-tailored tactical barrier
+    this.drawFallbackBarrier(ctx, wall, mapId);
+  }
+
+  // =========================================================================
+  // 1. SECTOR-09 OBJECTS: Containers, Pallets, Forklifts, Furnaces, Fuel Tanks
+  // =========================================================================
+  drawContainer(ctx, wall) {
+    const { x, y, w, h } = wall;
+    const baseColor = wall.color || '#133e66';
+
+    // Metal container base
+    ctx.fillStyle = baseColor;
+    ctx.fillRect(x, y, w, h);
+
+    // Corrugated metal ridges with 3D beveling
+    const step = 18;
+    const isHoriz = w > h;
+    ctx.lineWidth = 2.5;
+
+    if (isHoriz) {
+      for (let rx = x + step; rx < x + w - step; rx += step) {
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.45)';
+        ctx.beginPath();
+        ctx.moveTo(rx, y + 3);
+        ctx.lineTo(rx, y + h - 3);
+        ctx.stroke();
+
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+        ctx.beginPath();
+        ctx.moveTo(rx + 2, y + 3);
+        ctx.lineTo(rx + 2, y + h - 3);
+        ctx.stroke();
+      }
+    } else {
+      for (let ry = y + step; ry < y + h - step; ry += step) {
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.45)';
+        ctx.beginPath();
+        ctx.moveTo(x + 3, ry);
+        ctx.lineTo(x + w - 3, ry);
+        ctx.stroke();
+
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+        ctx.beginPath();
+        ctx.moveTo(x + 3, ry + 2);
+        ctx.lineTo(x + w - 3, ry + 2);
+        ctx.stroke();
+      }
+    }
+
+    // Cast steel corner castings (ISO corners)
+    ctx.fillStyle = '#0a0d14';
+    ctx.fillRect(x, y, 14, 14);
+    ctx.fillRect(x + w - 14, y, 14, 14);
+    ctx.fillRect(x, y + h - 14, 14, 14);
+    ctx.fillRect(x + w - 14, y + h - 14, 14, 14);
+
+    // Corner lifting holes
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(x + 4, y + 4, 6, 6);
+    ctx.fillRect(x + w - 10, y + 4, 6, 6);
+    ctx.fillRect(x + 4, y + h - 10, 6, 6);
+    ctx.fillRect(x + w - 10, y + h - 10, 6, 6);
+
+    // Outer frame outline
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.22)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, w, h);
+
+    // Double locking door bars at one end
+    ctx.fillStyle = '#222834';
+    if (isHoriz) {
+      ctx.fillRect(x + w - 18, y + 4, 4, h - 8);
+      ctx.fillRect(x + w - 10, y + 4, 4, h - 8);
+    } else {
+      ctx.fillRect(x + 4, y + h - 18, w - 8, 4);
+      ctx.fillRect(x + 4, y + h - 10, w - 8, 4);
+    }
+
+    // Stencil brand & serial text
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+    ctx.font = 'bold 11px monospace';
+    const label = wall.label || 'CY-CARGO';
+    ctx.fillText(label, x + 20, y + 20);
+    if (wall.serial) {
+      ctx.font = '9px monospace';
+      ctx.fillStyle = '#ffb703';
+      ctx.fillText(wall.serial, x + 20, y + 33);
+    }
+  }
+
+  drawPallet(ctx, wall) {
+    const { x, y, w, h } = wall;
+    // Wooden pallet base slats
+    ctx.fillStyle = '#4a3728';
+    ctx.fillRect(x, y, w, h);
+
+    // Pallet wood slats
+    ctx.strokeStyle = '#2b1f16';
+    ctx.lineWidth = 3;
+    for (let py = y + 8; py < y + h; py += 16) {
+      ctx.beginPath();
+      ctx.moveTo(x, py); ctx.lineTo(x + w, py); ctx.stroke();
+    }
+
+    // Shrink-wrapped industrial equipment payload (center block)
+    const pad = 8;
+    ctx.fillStyle = '#2b394a';
+    ctx.fillRect(x + pad, y + pad, w - pad * 2, h - pad * 2);
+
+    // Plastic shrink wrap sheen
+    const grad = ctx.createLinearGradient(x + pad, y + pad, x + w - pad, y + h - pad);
+    grad.addColorStop(0, 'rgba(255, 255, 255, 0.15)');
+    grad.addColorStop(0.5, 'rgba(255, 255, 255, 0.02)');
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0.25)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(x + pad, y + pad, w - pad * 2, h - pad * 2);
+
+    // Heavy orange tie-down ratchet straps
+    ctx.strokeStyle = '#ff7b00';
+    ctx.lineWidth = 4;
+    // Strap 1
+    ctx.beginPath();
+    ctx.moveTo(x + w * 0.3, y); ctx.lineTo(x + w * 0.3, y + h); ctx.stroke();
+    // Strap 2
+    ctx.beginPath();
+    ctx.moveTo(x + w * 0.7, y); ctx.lineTo(x + w * 0.7, y + h); ctx.stroke();
+
+    // Metal buckles
+    ctx.fillStyle = '#c0c0c0';
+    ctx.fillRect(x + w * 0.3 - 4, y + h * 0.5 - 4, 8, 8);
+    ctx.fillRect(x + w * 0.7 - 4, y + h * 0.5 - 4, 8, 8);
+
+    // Stencil
+    ctx.fillStyle = '#ffb703';
+    ctx.font = 'bold 9px monospace';
+    ctx.fillText('FRAGILE // HEAVY', x + 12, y + 20);
+  }
+
+  drawForklift(ctx, wall, now) {
+    const { x, y, w, h } = wall;
+    const isHoriz = w > h;
+
+    // Safety Yellow/Orange Chassis
+    ctx.fillStyle = '#f39c12';
+    this.drawRoundedBox(ctx, x, y, w, h, 8);
+
+    // Black heavy rear counterweight block
+    ctx.fillStyle = '#1c2331';
+    if (isHoriz) {
+      ctx.fillRect(x, y, 40, h);
+    } else {
+      ctx.fillRect(x, y, w, 40);
+    }
+
+    // Overhead Safety Roll-Cage (Lattice)
+    ctx.strokeStyle = '#111722';
+    ctx.lineWidth = 3;
+    const cx = x + (isHoriz ? 45 : 8);
+    const cy = y + (isHoriz ? 8 : 45);
+    const cw = isHoriz ? w - 90 : w - 16;
+    const ch = isHoriz ? h - 16 : h - 90;
+    ctx.strokeRect(cx, cy, cw, ch);
+
+    // Cage cross slats
+    ctx.lineWidth = 2;
+    for (let i = 1; i <= 3; i++) {
+      ctx.beginPath();
+      if (isHoriz) {
+        ctx.moveTo(cx + (cw * i) / 4, cy);
+        ctx.lineTo(cx + (cw * i) / 4, cy + ch);
+      } else {
+        ctx.moveTo(cx, cy + (ch * i) / 4);
+        ctx.lineTo(cx + cw, cy + (ch * i) / 4);
+      }
+      ctx.stroke();
+    }
+
+    // Driver seat & steering wheel
+    ctx.fillStyle = '#34495e';
+    ctx.beginPath();
+    ctx.arc(cx + cw / 2, cy + ch / 2, 10, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Hydraulic Front Mast & Two Steel Fork Tines
+    ctx.fillStyle = '#2c3e50';
+    if (isHoriz) {
+      // Mast
+      ctx.fillRect(x + w - 40, y + 10, 12, h - 20);
+      // Forks extending forward
+      ctx.fillStyle = '#7f8c8d';
+      ctx.fillRect(x + w - 28, y + 15, 26, 8);
+      ctx.fillRect(x + w - 28, y + h - 23, 26, 8);
+    } else {
+      ctx.fillRect(x + 10, y + h - 40, w - 20, 12);
+      ctx.fillStyle = '#7f8c8d';
+      ctx.fillRect(x + 15, y + h - 28, 8, 26);
+      ctx.fillRect(x + w - 23, y + h - 28, 8, 26);
+    }
+
+    // Flashing Amber Warning Beacon on Roll-cage Roof
+    const beaconFlash = Math.sin(now * 0.01) > 0;
+    ctx.fillStyle = beaconFlash ? '#ffea00' : '#d35400';
+    ctx.shadowColor = '#ffea00';
+    ctx.shadowBlur = beaconFlash ? 14 : 2;
+    ctx.beginPath();
+    ctx.arc(cx + cw * 0.25, cy + ch * 0.3, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Label
+    ctx.fillStyle = '#111';
+    ctx.font = 'bold 9px monospace';
+    ctx.fillText('CAT-FORK', cx + 4, cy + ch - 6);
+  }
+
+  drawFurnace(ctx, wall, now) {
+    const { x, y, w, h } = wall;
+    // Heavy cast iron foundry structure
+    ctx.fillStyle = '#1c1512';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = '#44281d';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(x, y, w, h);
+
+    // Glowing Molten Core Grate (breathing pulse)
+    const pulse = 0.7 + Math.sin(now * 0.005 + x) * 0.3;
+    ctx.fillStyle = `rgba(255, 80, 0, ${0.45 * pulse})`;
+    ctx.shadowColor = '#ff4400';
+    ctx.shadowBlur = 16 * pulse;
+    const innerPad = 12;
+    ctx.fillRect(x + innerPad, y + innerPad, w - innerPad * 2, h - innerPad * 2);
+    ctx.shadowBlur = 0;
+
+    // Heavy iron ventilation bars over the furnace
+    ctx.strokeStyle = '#2d180f';
+    ctx.lineWidth = 5;
+    if (w > h) {
+      for (let fx = x + 24; fx < x + w - 20; fx += 28) {
+        ctx.beginPath();
+        ctx.moveTo(fx, y + innerPad); ctx.lineTo(fx, y + h - innerPad); ctx.stroke();
+      }
+    } else {
+      for (let fy = y + 24; fy < y + h - 20; fy += 28) {
+        ctx.beginPath();
+        ctx.moveTo(x + innerPad, fy); ctx.lineTo(x + w - innerPad, fy); ctx.stroke();
+      }
+    }
+
+    // Heat shimmer label
+    ctx.fillStyle = '#ffaa44';
+    ctx.font = 'bold 10px monospace';
+    ctx.fillText('HOT // 1450°C', x + 16, y + 22);
+  }
+
+  drawSteelStack(ctx, wall) {
+    const { x, y, w, h } = wall;
+    ctx.fillStyle = '#1a222d';
+    ctx.fillRect(x, y, w, h);
+
+    // Individual steel billets / ingots
+    const isHoriz = w > h;
+    const count = 5;
+    ctx.lineWidth = 1.5;
+    for (let i = 0; i < count; i++) {
+      const bx = isHoriz ? x : x + (w * i) / count;
+      const by = isHoriz ? y + (h * i) / count : y;
+      const bw = isHoriz ? w : w / count;
+      const bh = isHoriz ? h / count : h;
+
+      ctx.fillStyle = i % 2 === 0 ? '#3a475a' : '#2d3746';
+      ctx.fillRect(bx + 2, by + 2, bw - 4, bh - 4);
+      ctx.strokeStyle = '#5a6e8c';
+      ctx.strokeRect(bx + 2, by + 2, bw - 4, bh - 4);
+    }
+
+    // Heavy steel banding
+    ctx.strokeStyle = '#c0c0c0';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(x + 10, y + 10, w - 20, h - 20);
+  }
+
+  drawFuelDepotTank(ctx, wall) {
+    const { x, y, w, h } = wall;
+    // Pressurized heavy steel fuel tank
+    ctx.fillStyle = '#1a2634';
+    this.drawRoundedBox(ctx, x, y, w, h, 10);
+    ctx.strokeStyle = '#324a66';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(x, y, w, h);
+
+    // Fuel Manifold Piping & Valves
+    ctx.strokeStyle = '#e74c3c';
+    ctx.lineWidth = 6;
+    if (w > h) {
+      ctx.beginPath();
+      ctx.moveTo(x + 15, y + h / 2);
+      ctx.lineTo(x + w - 15, y + h / 2);
+      ctx.stroke();
+
+      // Valves
+      ctx.fillStyle = '#f1c40f';
+      ctx.beginPath();
+      ctx.arc(x + w * 0.3, y + h / 2, 7, 0, Math.PI * 2);
+      ctx.arc(x + w * 0.7, y + h / 2, 7, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(x + w / 2, y + 15);
+      ctx.lineTo(x + w / 2, y + h - 15);
+      ctx.stroke();
+
+      ctx.fillStyle = '#f1c40f';
+      ctx.beginPath();
+      ctx.arc(x + w / 2, y + h * 0.3, 7, 0, Math.PI * 2);
+      ctx.arc(x + w / 2, y + h * 0.7, 7, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Pressure Gauge Dial
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(x + 20, y + 20, 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#111';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    // Needle
+    ctx.strokeStyle = '#e74c3c';
+    ctx.beginPath();
+    ctx.moveTo(x + 20, y + 20); ctx.lineTo(x + 24, y + 16); ctx.stroke();
+
+    ctx.fillStyle = '#ff7b00';
+    ctx.font = 'bold 9px monospace';
+    ctx.fillText('DIESEL', x + 35, y + 23);
+  }
+
+  drawIndustrialBarrier(ctx, wall) {
+    const { x, y, w, h } = wall;
+    // Reinforced steel/concrete crash barrier
+    ctx.fillStyle = '#1a1f2b';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = '#3d4b66';
+    ctx.lineWidth = 2.5;
+    ctx.strokeRect(x, y, w, h);
+
+    // Diagonal Hazard Stripes (Yellow / Black)
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x + 2, y + 2, w - 4, h - 4);
+    ctx.clip();
+
+    ctx.strokeStyle = '#f1c40f';
+    ctx.lineWidth = 10;
+    const span = w + h;
+    for (let d = -span; d < span; d += 24) {
+      ctx.beginPath();
+      ctx.moveTo(x + d, y);
+      ctx.lineTo(x + d + h, y + h);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Top metal cap
+    ctx.strokeStyle = '#5a6e8c';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+  }
+
+  // =========================================================================
+  // 2. CYBER-BUNKER OBJECTS: Server Banks, Blast Doors, Cryo Pods, Command Desks
+  // =========================================================================
+  drawServerBank(ctx, wall, now) {
+    const { x, y, w, h } = wall;
+    // High-Density Subterranean Server Enclosure
+    ctx.fillStyle = '#06080d';
+    ctx.fillRect(x, y, w, h);
+
+    // Outer metal chassis border
+    ctx.strokeStyle = '#1c2638';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, w, h);
+
+    // Server blade racks with blinking high-density LED arrays
+    const isVert = h > w;
+    const baseLedColor = wall.ledColor || '#00f0ff';
+
+    if (isVert) {
+      for (let sy = y + 8; sy < y + h - 8; sy += 20) {
+        ctx.fillStyle = '#0e1420';
+        ctx.fillRect(x + 3, sy, w - 6, 15);
+        ctx.strokeStyle = '#1b263b';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x + 3, sy, w - 6, 15);
+
+        // Blinking activity LEDs
+        const b1 = Math.sin(now * 0.009 + sy * 0.1) > 0;
+        const b2 = Math.cos(now * 0.007 + sy * 0.15) > 0;
+        ctx.fillStyle = b1 ? baseLedColor : '#003344';
+        ctx.fillRect(x + 6, sy + 5, 4, 4);
+
+        ctx.fillStyle = b2 ? '#00ff88' : '#004422';
+        ctx.fillRect(x + 14, sy + 5, 4, 4);
+
+        ctx.fillStyle = (sy % 40 === 0) ? '#ff3366' : '#ffb703';
+        ctx.fillRect(x + 22, sy + 5, 4, 4);
+      }
+    } else {
+      for (let sx = x + 8; sx < x + w - 8; sx += 20) {
+        ctx.fillStyle = '#0e1420';
+        ctx.fillRect(sx, y + 3, 15, h - 6);
+        ctx.strokeStyle = '#1b263b';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(sx, y + 3, 15, h - 6);
+
+        const b1 = Math.sin(now * 0.009 + sx * 0.1) > 0;
+        ctx.fillStyle = b1 ? baseLedColor : '#003344';
+        ctx.fillRect(sx + 5, y + 6, 4, 4);
+
+        ctx.fillStyle = '#00ff88';
+        ctx.fillRect(sx + 5, y + 14, 4, 4);
+      }
+    }
+
+    // Top cable management tray (Orange & Cyan fiber cables)
+    ctx.strokeStyle = '#ff7700';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x + 4, y + 2); ctx.lineTo(x + w - 4, y + 2); ctx.stroke();
+    ctx.strokeStyle = '#00f0ff';
+    ctx.beginPath();
+    ctx.moveTo(x + 4, y + 4); ctx.lineTo(x + w - 4, y + 4); ctx.stroke();
+  }
+
+  drawBlastDoor(ctx, wall, now) {
+    const { x, y, w, h } = wall;
+    // Heavy Reinforced Vault Blast Door
+    ctx.fillStyle = '#150d18';
+    ctx.fillRect(x, y, w, h);
+
+    // Hazard striped door frame
+    ctx.strokeStyle = '#ff3366';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(x, y, w, h);
+
+    // Interlocking hydraulic teeth / locking wedges
+    const isHoriz = w > h;
+    ctx.fillStyle = '#2d182e';
+    if (isHoriz) {
+      for (let dx = x + 16; dx < x + w - 16; dx += 32) {
+        ctx.fillRect(dx, y + 4, 16, h - 8);
+      }
+      // Center locking seam
+      ctx.strokeStyle = '#ff0055';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x + 8, y + h / 2); ctx.lineTo(x + w - 8, y + h / 2); ctx.stroke();
+
+      // Hydraulic pistons on left & right ends
+      ctx.fillStyle = '#666';
+      ctx.fillRect(x + 4, y + 6, 8, h - 12);
+      ctx.fillRect(x + w - 12, y + 6, 8, h - 12);
+    } else {
+      for (let dy = y + 16; dy < y + h - 16; dy += 32) {
+        ctx.fillRect(x + 4, dy, w - 8, 16);
+      }
+      ctx.strokeStyle = '#ff0055';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x + w / 2, y + 8); ctx.lineTo(x + w / 2, y + h - 8); ctx.stroke();
+
+      ctx.fillStyle = '#666';
+      ctx.fillRect(x + 6, y + 4, w - 12, 8);
+      ctx.fillRect(x + 6, y + h - 12, w - 12, 8);
+    }
+
+    // Center Mechanical Locking Wheel & Status LED
+    const mx = x + w / 2;
+    const my = y + h / 2;
+    ctx.fillStyle = '#222';
+    ctx.beginPath();
+    ctx.arc(mx, my, 12, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#ffb703';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Pulsing Security Status LED (Green locked)
+    const ledGlow = Math.sin(now * 0.005) > 0;
+    ctx.fillStyle = ledGlow ? '#00ff88' : '#005522';
+    ctx.shadowColor = '#00ff88';
+    ctx.shadowBlur = ledGlow ? 10 : 0;
+    ctx.beginPath();
+    ctx.arc(mx, my, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  drawCryoChamber(ctx, wall, now) {
+    const { x, y, w, h } = wall;
+    // Medical-Grade Cryo Containment Station
+    ctx.fillStyle = '#08141d';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = '#00f0ff';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, w, h);
+
+    // Luminous Cryogenic Fluid Chamber
+    const pulse = 0.8 + Math.sin(now * 0.004 + x) * 0.2;
+    ctx.fillStyle = `rgba(0, 240, 255, ${0.25 * pulse})`;
+    ctx.shadowColor = '#00f0ff';
+    ctx.shadowBlur = 12 * pulse;
+    ctx.fillRect(x + 6, y + 6, w - 12, h - 12);
+    ctx.shadowBlur = 0;
+
+    // Cryo glass reflection line
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x + 10, y + 10);
+    ctx.lineTo(x + w - 10, y + h - 10);
+    ctx.stroke();
+
+    // Telemetry Vitals Display on Corner
+    ctx.fillStyle = '#00ff88';
+    ctx.font = 'bold 9px monospace';
+    ctx.fillText('CRYO: -196°C', x + 10, y + 20);
+
+    // ECG Heartbeat line simulation
+    ctx.strokeStyle = '#00ff88';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    const eY = y + h - 14;
+    ctx.moveTo(x + 10, eY);
+    ctx.lineTo(x + 25, eY);
+    ctx.lineTo(x + 30, eY - 6);
+    ctx.lineTo(x + 35, eY + 6);
+    ctx.lineTo(x + 40, eY);
+    ctx.lineTo(x + 55, eY);
+    ctx.stroke();
+  }
+
+  drawCommandConsole(ctx, wall, now) {
+    const { x, y, w, h } = wall;
+    // Tactical Ergonomic Command Station
+    ctx.fillStyle = '#140c18';
+    this.drawRoundedBox(ctx, x, y, w, h, 6);
+    ctx.strokeStyle = '#ff3366';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, w, h);
+
+    // Tactical Radar CRT Display (Circular Screen)
+    const cx = x + 28;
+    const cy = y + h / 2;
+    const r = Math.min(18, h / 2 - 6);
+    ctx.fillStyle = '#051810';
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#00ff88';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Radar rotating sweep hand
+    const sweepAngle = (now * 0.003) % (Math.PI * 2);
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(sweepAngle) * r, cy + Math.sin(sweepAngle) * r);
+    ctx.stroke();
+
+    // Keyboard & Telemetry Buttons Deck
+    const kx = cx + r + 10;
+    const kw = w - (kx - x) - 10;
+    if (kw > 30) {
+      ctx.fillStyle = '#1f1624';
+      ctx.fillRect(kx, y + 8, kw, h - 16);
+
+      // Multicolor indicator switches
+      for (let bx = kx + 4; bx < kx + kw - 4; bx += 10) {
+        ctx.fillStyle = (bx % 20 === 0) ? '#ff3366' : '#00f0ff';
+        ctx.fillRect(bx, y + 12, 6, 6);
+      }
+    }
+  }
+
+  drawDeconStation(ctx, wall, now) {
+    const { x, y, w, h } = wall;
+    // Decontamination Air-Shower Unit
+    ctx.fillStyle = '#12161f';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = '#ffb703';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, w, h);
+
+    // Floor drain grating
+    ctx.strokeStyle = '#273447';
+    ctx.lineWidth = 2;
+    for (let gx = x + 8; gx < x + w - 8; gx += 12) {
+      ctx.beginPath();
+      ctx.moveTo(gx, y + 6); ctx.lineTo(gx, y + h - 6); ctx.stroke();
+    }
+
+    // High-pressure spray mist nozzles
+    ctx.fillStyle = '#00f0ff';
+    ctx.fillRect(x + 4, y + 4, 6, 6);
+    ctx.fillRect(x + w - 10, y + 4, 6, 6);
+    ctx.fillRect(x + 4, y + h - 10, 6, 6);
+    ctx.fillRect(x + w - 10, y + h - 10, 6, 6);
+
+    ctx.fillStyle = '#ffb703';
+    ctx.font = 'bold 9px monospace';
+    ctx.fillText('DECON // BIO-CLEAN', x + 12, y + h / 2 + 3);
+  }
+
+  drawReinforcedBulkhead(ctx, wall) {
+    const { x, y, w, h } = wall;
+    ctx.fillStyle = '#100c14';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = '#3d2542';
+    ctx.lineWidth = 2.5;
+    ctx.strokeRect(x, y, w, h);
+
+    // Heavy steel rebar plate joints
+    ctx.fillStyle = '#221426';
+    if (w > h) {
+      for (let rx = x + 40; rx < x + w - 40; rx += 60) {
+        ctx.fillRect(rx, y + 2, 8, h - 4);
+      }
+    } else {
+      for (let ry = y + 40; ry < y + h - 40; ry += 60) {
+        ctx.fillRect(x + 2, ry, w - 4, 8);
+      }
+    }
+
+    // Hex bolts
+    ctx.fillStyle = '#55335e';
+    ctx.fillRect(x + 4, y + 4, 4, 4);
+    ctx.fillRect(x + w - 8, y + 4, 4, 4);
+    ctx.fillRect(x + 4, y + h - 8, 4, 4);
+    ctx.fillRect(x + w - 8, y + h - 8, 4, 4);
+  }
+
+  // =========================================================================
+  // 3. NEON-SLUMS OBJECTS: Ramen Stalls, Cyber Cars, Vending Machines, Dumpsters
+  // =========================================================================
+  drawRamenStall(ctx, wall, now) {
+    const { x, y, w, h } = wall;
+    const isHoriz = w > h;
+
+    // Wooden bar counter foundation
+    ctx.fillStyle = '#2b1b17';
+    ctx.fillRect(x, y, w, h);
+
+    // Striped Fabric Awning / Canopy (Red & White or Magenta & Cyan)
+    const stripeColor1 = wall.color || '#ff0055';
+    const stripeColor2 = '#ffffff';
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x, y, w, isHoriz ? h * 0.6 : h);
+    ctx.clip();
+
+    const stripeW = 16;
+    for (let s = -h; s < w + h; s += stripeW * 2) {
+      ctx.fillStyle = stripeColor1;
+      ctx.fillRect(x + s, y, stripeW, h);
+      ctx.fillStyle = stripeColor2;
+      ctx.fillRect(x + s + stripeW, y, stripeW, h);
+    }
+    ctx.restore();
+
+    // Wooden Dining Counter Bar (Front)
+    ctx.fillStyle = '#5c3a21';
+    if (isHoriz) {
+      ctx.fillRect(x, y + h * 0.6, w, h * 0.4);
+      // Food bowls on counter
+      for (let bx = x + 30; bx < x + w - 30; bx += 60) {
+        // Ceramic bowl
+        ctx.fillStyle = '#ecf0f1';
+        ctx.beginPath();
+        ctx.arc(bx, y + h * 0.8, 8, 0, Math.PI * 2);
+        ctx.fill();
+        // Broth / ramen inside
+        ctx.fillStyle = '#d35400';
+        ctx.beginPath();
+        ctx.arc(bx, y + h * 0.8, 6, 0, Math.PI * 2);
+        ctx.fill();
+        // Chopsticks
+        ctx.strokeStyle = '#2c3e50';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(bx - 10, y + h * 0.8 - 4);
+        ctx.lineTo(bx + 10, y + h * 0.8 + 4);
+        ctx.stroke();
+      }
+    } else {
+      ctx.fillRect(x + w * 0.6, y, w * 0.4, h);
+      for (let by = y + 30; by < y + h - 30; by += 60) {
+        ctx.fillStyle = '#ecf0f1';
+        ctx.beginPath();
+        ctx.arc(x + w * 0.8, by, 8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#d35400';
+        ctx.beginPath();
+        ctx.arc(x + w * 0.8, by, 6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // Glowing Red/Amber Japanese Lanterns at Corners
+    const lanternGlow = 0.8 + Math.sin(now * 0.006) * 0.2;
+    ctx.fillStyle = '#ff2200';
+    ctx.shadowColor = '#ff3300';
+    ctx.shadowBlur = 14 * lanternGlow;
+    ctx.beginPath();
+    ctx.arc(x + 12, y + 12, 7, 0, Math.PI * 2);
+    ctx.arc(x + w - 12, y + 12, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Glowing Neon Kanji Signboard on top
+    ctx.fillStyle = '#ffea00';
+    ctx.shadowColor = '#ffea00';
+    ctx.shadowBlur = 8;
+    ctx.font = 'bold 12px sans-serif';
+    ctx.fillText(wall.kanji || 'ラーメン', x + w / 2 - 25, y + 16);
+    ctx.shadowBlur = 0;
+  }
+
+  drawCyberCar(ctx, wall, now) {
+    const { x, y, w, h } = wall;
+    const isHoriz = w > h;
+    const carColor = wall.color || '#bd00ff';
+
+    // Aerodynamic Cyberpunk Vehicle Chassis
+    ctx.fillStyle = carColor;
+    this.drawRoundedBox(ctx, x, y, w, h, 14);
+
+    // Metallic body shading
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x + 2, y + 2, w - 4, h - 4);
+
+    // Tinted Glass Cockpit (Windshield & Roof)
+    ctx.fillStyle = '#080d1a';
+    if (isHoriz) {
+      const wx = x + w * 0.25;
+      const wy = y + 8;
+      const ww = w * 0.5;
+      const wh = h - 16;
+      this.drawRoundedBox(ctx, wx, wy, ww, wh, 6);
+
+      // Glass reflection streak
+      ctx.strokeStyle = 'rgba(0, 240, 255, 0.45)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(wx + 8, wy + 4); ctx.lineTo(wx + ww - 8, wy + wh - 4); ctx.stroke();
+
+      // Twin LED Headlights (Front - Right side)
+      ctx.fillStyle = '#00f0ff';
+      ctx.shadowColor = '#00f0ff';
+      ctx.shadowBlur = 12;
+      ctx.fillRect(x + w - 6, y + 8, 4, 12);
+      ctx.fillRect(x + w - 6, y + h - 20, 4, 12);
+
+      // Neon Red Full-width Taillight Bar (Rear - Left side)
+      ctx.fillStyle = '#ff0033';
+      ctx.shadowColor = '#ff0033';
+      ctx.shadowBlur = 12;
+      ctx.fillRect(x + 2, y + 10, 4, h - 20);
+      ctx.shadowBlur = 0;
+
+      // Aerodynamic Rear Wing / Spoiler
+      ctx.fillStyle = '#111';
+      ctx.fillRect(x + 8, y + 6, 6, h - 12);
+    } else {
+      const wx = x + 8;
+      const wy = y + h * 0.25;
+      const ww = w - 16;
+      const wh = h * 0.5;
+      this.drawRoundedBox(ctx, wx, wy, ww, wh, 6);
+
+      ctx.strokeStyle = 'rgba(0, 240, 255, 0.45)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(wx + 4, wy + 8); ctx.lineTo(wx + ww - 4, wy + wh - 8); ctx.stroke();
+
+      // Headlights (Bottom)
+      ctx.fillStyle = '#00f0ff';
+      ctx.shadowColor = '#00f0ff';
+      ctx.shadowBlur = 12;
+      ctx.fillRect(x + 8, y + h - 6, 12, 4);
+      ctx.fillRect(x + w - 20, y + h - 6, 12, 4);
+
+      // Taillight (Top)
+      ctx.fillStyle = '#ff0033';
+      ctx.shadowColor = '#ff0033';
+      ctx.shadowBlur = 12;
+      ctx.fillRect(x + 10, y + 2, w - 20, 4);
+      ctx.shadowBlur = 0;
+
+      ctx.fillStyle = '#111';
+      ctx.fillRect(x + 6, y + 8, w - 12, 6);
+    }
+
+    // High-tech hood vents
+    ctx.fillStyle = '#111';
+    if (isHoriz) {
+      ctx.fillRect(x + w * 0.8, y + h * 0.35, 12, h * 0.3);
+    } else {
+      ctx.fillRect(x + w * 0.35, y + h * 0.8, w * 0.3, 12);
+    }
+  }
+
+  drawVendingMachine(ctx, wall, now) {
+    const { x, y, w, h } = wall;
+    // Cyberpunk Illuminated Vending Machine Cabinet
+    ctx.fillStyle = '#110b1a';
+    this.drawRoundedBox(ctx, x, y, w, h, 6);
+    ctx.strokeStyle = '#bd00ff';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, w, h);
+
+    // Glowing Glass Showcase showing beverage cans
+    const isHoriz = w > h;
+    const brand = wall.brand || 'NEO-COLA';
+
+    // Top Neon Brand Header
+    ctx.fillStyle = '#ff007f';
+    ctx.shadowColor = '#ff007f';
+    ctx.shadowBlur = 10;
+    ctx.font = 'bold 10px monospace';
+    ctx.fillText(brand, x + 8, y + 16);
+    ctx.shadowBlur = 0;
+
+    // Illuminated rows of drinks
+    const rowPad = 22;
+    if (isHoriz) {
+      for (let cx = x + 10; cx < x + w - 40; cx += 18) {
+        // Can 1 (Cyan)
+        ctx.fillStyle = '#00f0ff';
+        ctx.fillRect(cx, y + rowPad, 12, 18);
+        // Can 2 (Gold)
+        ctx.fillStyle = '#ffb703';
+        ctx.fillRect(cx, y + rowPad + 22, 12, 18);
+      }
+      // Right side coin slot / keypad
+      ctx.fillStyle = '#2a1a38';
+      ctx.fillRect(x + w - 30, y + rowPad, 22, h - rowPad - 8);
+      ctx.fillStyle = '#00ff88';
+      ctx.fillRect(x + w - 24, y + rowPad + 8, 10, 4);
+    } else {
+      for (let cy = y + rowPad; cy < y + h - 40; cy += 18) {
+        ctx.fillStyle = '#00f0ff';
+        ctx.fillRect(x + 10, cy, 18, 12);
+        ctx.fillStyle = '#ffb703';
+        ctx.fillRect(x + 32, cy, 18, 12);
+      }
+      ctx.fillStyle = '#2a1a38';
+      ctx.fillRect(x + 10, y + h - 32, w - 20, 22);
+      ctx.fillStyle = '#00ff88';
+      ctx.fillRect(x + 16, y + h - 24, 10, 4);
+    }
+
+    // Soft neon ground glow
+    ctx.strokeStyle = 'rgba(189, 0, 255, 0.4)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x + 2, y + 2, w - 4, h - 4);
+  }
+
+  drawDumpster(ctx, wall) {
+    const { x, y, w, h } = wall;
+    // Municipal Green / Steel Industrial Dumpster
+    ctx.fillStyle = '#1e382b';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = '#2d5a42';
+    ctx.lineWidth = 2.5;
+    ctx.strokeRect(x, y, w, h);
+
+    // Split Plastic Lids (Black ribbed)
+    const isHoriz = w > h;
+    ctx.fillStyle = '#0f1712';
+    if (isHoriz) {
+      // Left lid
+      ctx.fillRect(x + 4, y + 4, w * 0.48 - 4, h - 8);
+      // Right lid (slightly open)
+      ctx.fillRect(x + w * 0.52, y + 4, w * 0.48 - 4, h - 8);
+
+      // Ribbing
+      ctx.strokeStyle = '#223026';
+      ctx.lineWidth = 1.5;
+      for (let rx = x + 12; rx < x + w - 12; rx += 14) {
+        ctx.beginPath();
+        ctx.moveTo(rx, y + 6); ctx.lineTo(rx, y + h - 6); ctx.stroke();
+      }
+    } else {
+      ctx.fillRect(x + 4, y + 4, w - 8, h * 0.48 - 4);
+      ctx.fillRect(x + 4, y + h * 0.52, w - 8, h * 0.48 - 4);
+    }
+
+    // Street Graffiti Tag in vibrant spray paint
+    ctx.fillStyle = '#ff007f';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.fillText('REVOLT', x + 16, y + h / 2 + 4);
+  }
+
+  drawTransformerBox(ctx, wall, now) {
+    const { x, y, w, h } = wall;
+    // High-Voltage Electrical Utility Box
+    ctx.fillStyle = '#1f242e';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = '#3a4457';
+    ctx.lineWidth = 2.5;
+    ctx.strokeRect(x, y, w, h);
+
+    // Cooling louver grates
+    ctx.strokeStyle = '#11161f';
+    ctx.lineWidth = 2;
+    for (let gy = y + 10; gy < y + h - 10; gy += 8) {
+      ctx.beginPath();
+      ctx.moveTo(x + 8, gy); ctx.lineTo(x + w - 8, gy); ctx.stroke();
+    }
+
+    // Yellow Lightning Warning Decal
+    ctx.fillStyle = '#f1c40f';
+    ctx.beginPath();
+    const mx = x + w / 2;
+    const my = y + h / 2;
+    ctx.moveTo(mx + 2, my - 8);
+    ctx.lineTo(mx - 4, my);
+    ctx.lineTo(mx + 1, my);
+    ctx.lineTo(mx - 2, my + 8);
+    ctx.lineTo(mx + 5, my - 1);
+    ctx.lineTo(mx, my - 1);
+    ctx.closePath();
+    ctx.fill();
+
+    // Sprawling electric conduit cables coming out
+    ctx.strokeStyle = '#e74c3c';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(x + 10, y + h); ctx.quadraticCurveTo(x + 5, y + h + 15, x - 10, y + h + 20); ctx.stroke();
+    ctx.strokeStyle = '#3498db';
+    ctx.beginPath();
+    ctx.moveTo(x + 20, y + h); ctx.quadraticCurveTo(x + 25, y + h + 18, x + 35, y + h + 22); ctx.stroke();
+  }
+
+  drawNeonBillboard(ctx, wall, now) {
+    const { x, y, w, h } = wall;
+    const neonColor = wall.color || '#ff0033';
+
+    // Dark glass advertising stanchion
+    ctx.fillStyle = '#0a0510';
+    ctx.fillRect(x, y, w, h);
+
+    // Glowing Neon Frame
+    const pulse = 0.8 + Math.sin(now * 0.007) * 0.2;
+    ctx.strokeStyle = neonColor;
+    ctx.lineWidth = 3;
+    ctx.shadowColor = neonColor;
+    ctx.shadowBlur = 14 * pulse;
+    ctx.strokeRect(x, y, w, h);
+    ctx.shadowBlur = 0;
+
+    // Glowing holographic advertisement text
+    ctx.fillStyle = neonColor;
+    ctx.font = 'bold 11px monospace';
+    ctx.fillText(wall.label || 'ARASAKA // AD', x + 12, y + 24);
+
+    // Scanlines
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
+    for (let sy = y + 4; sy < y + h; sy += 6) {
+      ctx.fillRect(x, sy, w, 2);
+    }
+  }
+
+  drawNeonBarrier(ctx, wall) {
+    const { x, y, w, h } = wall;
+    ctx.fillStyle = '#130a1c';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = '#bd00ff';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, w, h);
+
+    // Glowing cat-eye reflectors
+    if (w > h) {
+      for (let rx = x + 20; rx < x + w - 20; rx += 30) {
+        ctx.fillStyle = '#00f0ff';
+        ctx.beginPath();
+        ctx.arc(rx, y + h / 2, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else {
+      for (let ry = y + 20; ry < y + h - 20; ry += 30) {
+        ctx.fillStyle = '#00f0ff';
+        ctx.beginPath();
+        ctx.arc(x + w / 2, ry, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+
+  // =========================================================================
+  // 4. REACTOR-CRUCIBLE OBJECTS: Heat Shields, Coolant Pipes, Slag Barriers, Turbines
+  // =========================================================================
+  drawHeatShield(ctx, wall) {
+    const { x, y, w, h } = wall;
+    // Thermal Protection System (Ceramic TPS Tiles)
+    ctx.fillStyle = '#1c1514';
+    ctx.fillRect(x, y, w, h);
+
+    // Burnt Titanium Rainbow Oxidation Gradient on Edge
+    const grad = ctx.createLinearGradient(x, y, x + w, y);
+    grad.addColorStop(0, '#784212');
+    grad.addColorStop(0.3, '#7d3c98');
+    grad.addColorStop(0.7, '#2471a3');
+    grad.addColorStop(1, '#117864');
+    ctx.strokeStyle = grad;
+    ctx.lineWidth = 3;
+    ctx.strokeRect(x, y, w, h);
+
+    // Hexagonal / Square thermal tile grid
+    ctx.strokeStyle = '#2d1f1c';
+    ctx.lineWidth = 1;
+    const tSize = 16;
+    for (let tx = x; tx < x + w; tx += tSize) {
+      ctx.beginPath(); ctx.moveTo(tx, y); ctx.lineTo(tx, y + h); ctx.stroke();
+    }
+    for (let ty = y; ty < y + h; ty += tSize) {
+      ctx.beginPath(); ctx.moveTo(x, ty); ctx.lineTo(x + w, ty); ctx.stroke();
+    }
+
+    // Heavy titanium anchor bolts
+    ctx.fillStyle = '#ff7b00';
+    ctx.fillRect(x + 4, y + 4, 4, 4);
+    ctx.fillRect(x + w - 8, y + 4, 4, 4);
+    ctx.fillRect(x + 4, y + h - 8, 4, 4);
+    ctx.fillRect(x + w - 8, y + h - 8, 4, 4);
+  }
+
+  drawCoolantPipe(ctx, wall, now) {
+    const { x, y, w, h } = wall;
+    // Superheated Coolant Conduit wrapped in thermal gold/bronze foil
+    ctx.fillStyle = '#593816';
+    this.drawRoundedBox(ctx, x, y, w, h, 8);
+
+    // Thermal foil wrapping pattern
+    ctx.strokeStyle = '#a06e30';
+    ctx.lineWidth = 2;
+    const isHoriz = w > h;
+    if (isHoriz) {
+      for (let px = x + 16; px < x + w; px += 24) {
+        ctx.beginPath();
+        ctx.moveTo(px, y); ctx.lineTo(px, y + h); ctx.stroke();
+      }
+    } else {
+      for (let py = y + 16; py < y + h; py += 24) {
+        ctx.beginPath();
+        ctx.moveTo(x, py); ctx.lineTo(x + w, py); ctx.stroke();
+      }
+    }
+
+    // Glowing steam relief vents
+    const ventPulse = Math.sin(now * 0.008) > 0.5;
+    ctx.fillStyle = ventPulse ? '#ffaa00' : '#442200';
+    ctx.shadowColor = '#ffaa00';
+    ctx.shadowBlur = ventPulse ? 12 : 0;
+    ctx.beginPath();
+    ctx.arc(x + w / 2, y + h / 2, 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Stencil
+    ctx.fillStyle = '#ffbe0b';
+    ctx.font = 'bold 9px monospace';
+    ctx.fillText('SODIUM // 650°C', x + 8, y + 16);
+  }
+
+  drawSlagBarrier(ctx, wall, now) {
+    const { x, y, w, h } = wall;
+    // Scorched Molten Basalt & Shattered Rebar Barrier
+    ctx.fillStyle = '#140c0a';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = '#3d2019';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(x, y, w, h);
+
+    // Glowing Molten Magma Veins Cracking Through the Rock
+    const pulse = 0.7 + Math.sin(now * 0.006 + x) * 0.3;
+    ctx.strokeStyle = '#ff3700';
+    ctx.lineWidth = 2.5;
+    ctx.shadowColor = '#ff3700';
+    ctx.shadowBlur = 12 * pulse;
+
+    ctx.beginPath();
+    ctx.moveTo(x + 10, y + h * 0.3);
+    ctx.lineTo(x + w * 0.4, y + h * 0.7);
+    ctx.lineTo(x + w * 0.7, y + h * 0.2);
+    ctx.lineTo(x + w - 10, y + h * 0.6);
+    ctx.stroke();
+
+    ctx.strokeStyle = '#ffea00';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Exposed rebar rods sticking out
+    ctx.strokeStyle = '#7f8c8d';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x + 6, y); ctx.lineTo(x + 6, y - 6);
+    ctx.moveTo(x + w - 12, y + h); ctx.lineTo(x + w - 12, y + h + 6);
+    ctx.stroke();
+  }
+
+  drawTurbineBlock(ctx, wall, now) {
+    const { x, y, w, h } = wall;
+    // Heavy Turbine Generator Housing
+    ctx.fillStyle = '#1a100c';
+    this.drawRoundedBox(ctx, x, y, w, h, 8);
+    ctx.strokeStyle = '#59321c';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(x, y, w, h);
+
+    // Exposed electromagnetic rotor coil
+    const cx = x + w / 2;
+    const cy = y + h / 2;
+    const r = Math.min(w, h) * 0.35;
+    ctx.fillStyle = '#3a1c0d';
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Swirling magnetic induction arcs
+    const spin = now * 0.005;
+    ctx.strokeStyle = '#ff7700';
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 4; i++) {
+      const a = spin + (i * Math.PI) / 2;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * 0.7, a, a + 0.6);
+      ctx.stroke();
+    }
+
+    ctx.fillStyle = '#ffbe0b';
+    ctx.font = 'bold 9px monospace';
+    ctx.fillText('TURBINE // 12kV', x + 10, y + 18);
+  }
+
+  drawWasteContainment(ctx, wall) {
+    const { x, y, w, h } = wall;
+    // Lead-Lined Nuclear Waste Cask
+    ctx.fillStyle = '#221e10';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = '#e67e22';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(x, y, w, h);
+
+    // Hazard yellow/black border
+    ctx.strokeStyle = '#f1c40f';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([8, 8]);
+    ctx.strokeRect(x + 4, y + 4, w - 8, h - 8);
+    ctx.setLineDash([]);
+
+    // Radiation Trefoil symbol in center
+    this.drawRadiationSymbol(ctx, x + w / 2, y + h / 2, Math.min(16, h / 2 - 6));
+  }
+
+  // =========================================================================
+  // 5. ORBITAL-STATION OBJECTS: Bulkheads, Airlocks, Solar Capacitors, Telemetry
+  // =========================================================================
+  drawOrbitalBulkhead(ctx, wall) {
+    const { x, y, w, h } = wall;
+    // Aerospace Cleanroom Composite Hull (Sleek white / matte slate)
+    ctx.fillStyle = '#141d2e';
+    this.drawRoundedBox(ctx, x, y, w, h, 6);
+
+    // Smooth composite white outer panels
+    ctx.strokeStyle = '#2b3f63';
+    ctx.lineWidth = 2.5;
+    ctx.strokeRect(x, y, w, h);
+
+    // Continuous Inset Blue LED Status Line
+    ctx.strokeStyle = '#00d4ff';
+    ctx.lineWidth = 2;
+    ctx.shadowColor = '#00d4ff';
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    if (w > h) {
+      ctx.moveTo(x + 8, y + h / 2); ctx.lineTo(x + w - 8, y + h / 2);
+    } else {
+      ctx.moveTo(x + w / 2, y + 8); ctx.lineTo(x + w / 2, y + h - 8);
+    }
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Aerospace panel seams & hex bolts
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(x + 4, y + 4, 3, 3);
+    ctx.fillRect(x + w - 7, y + 4, 3, 3);
+    ctx.fillRect(x + 4, y + h - 7, 3, 3);
+    ctx.fillRect(x + w - 7, y + h - 7, 3, 3);
+
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+    ctx.font = 'bold 9px monospace';
+    ctx.fillText('AEROSPACE-9', x + 10, y + 16);
+  }
+
+  drawAirlockHatch(ctx, wall, now) {
+    const { x, y, w, h } = wall;
+    // Pressurized Space Station Airlock Hatch
+    ctx.fillStyle = '#0f1826';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = '#00d4ff';
+    ctx.lineWidth = 2.5;
+    ctx.strokeRect(x, y, w, h);
+
+    // Circular Hatch Door
+    const cx = x + w / 2;
+    const cy = y + h / 2;
+    const r = Math.min(22, Math.min(w, h) / 2 - 4);
+
+    ctx.fillStyle = '#1b2a42';
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#ffb703';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    // Rotating Manual Yellow Locking Wheel
+    ctx.strokeStyle = '#f1c40f';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 0.5, 0, Math.PI * 2);
+    ctx.stroke();
+    // Wheel spokes
+    for (let i = 0; i < 4; i++) {
+      const a = (i * Math.PI) / 2;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + Math.cos(a) * (r * 0.5), cy + Math.sin(a) * (r * 0.5));
+      ctx.stroke();
+    }
+
+    // Depressurization Warning Beacon
+    const sealGlow = Math.sin(now * 0.005) > 0;
+    ctx.fillStyle = sealGlow ? '#00ff88' : '#005522';
+    ctx.shadowColor = '#00ff88';
+    ctx.shadowBlur = sealGlow ? 10 : 0;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    ctx.fillStyle = '#ffbe0b';
+    ctx.font = 'bold 9px monospace';
+    ctx.fillText('AIRLOCK // VACUUM', x + 10, y + 16);
+  }
+
+  drawSolarCapacitor(ctx, wall, now) {
+    const { x, y, w, h } = wall;
+    // Photovoltaic Solar Capacitor Array
+    ctx.fillStyle = '#061324';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = '#00aaff';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, w, h);
+
+    // Deep-blue crystalline solar cells with silver grid lines
+    const cellSize = 18;
+    ctx.strokeStyle = 'rgba(0, 212, 255, 0.35)';
+    ctx.lineWidth = 1;
+    for (let sx = x + 4; sx < x + w - 4; sx += cellSize) {
+      for (let sy = y + 4; sy < y + h - 4; sy += cellSize) {
+        ctx.fillStyle = '#0a2544';
+        ctx.fillRect(sx, sy, cellSize - 2, cellSize - 2);
+        ctx.strokeRect(sx, sy, cellSize - 2, cellSize - 2);
+      }
+    }
+
+    // Segmented Power Level LED Bar Display
+    const barW = Math.min(80, w - 20);
+    const chargeLevel = 0.5 + Math.sin(now * 0.003) * 0.45;
+    ctx.fillStyle = '#003344';
+    ctx.fillRect(x + 10, y + h - 14, barW, 6);
+
+    ctx.fillStyle = '#00f0ff';
+    ctx.shadowColor = '#00f0ff';
+    ctx.shadowBlur = 8;
+    ctx.fillRect(x + 10, y + h - 14, barW * chargeLevel, 6);
+    ctx.shadowBlur = 0;
+  }
+
+  drawScienceStation(ctx, wall, now) {
+    const { x, y, w, h } = wall;
+    // Sterile White Science Telemetry Station
+    ctx.fillStyle = '#101726';
+    this.drawRoundedBox(ctx, x, y, w, h, 6);
+    ctx.strokeStyle = '#324a73';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, w, h);
+
+    // Holographic Orbital Trajectory Projector (Wireframe Globe)
+    const cx = x + 30;
+    const cy = y + h / 2;
+    const r = Math.min(18, h / 2 - 6);
+
+    ctx.strokeStyle = '#00d4ff';
+    ctx.lineWidth = 1.5;
+    ctx.shadowColor = '#00d4ff';
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Rotating orbital ring
+    const spin = now * 0.002;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, r, r * 0.4, spin, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Satellite coordinate telemetry readout
+    ctx.fillStyle = '#00d4ff';
+    ctx.font = 'bold 9px monospace';
+    ctx.fillText('ORBIT: 420km', x + 55, y + 20);
+    ctx.fillStyle = '#00ff88';
+    ctx.fillText('TELEMETRY: SYNC', x + 55, y + 33);
+  }
+
+  drawMagneticBarrier(ctx, wall, now) {
+    const { x, y, w, h } = wall;
+    ctx.fillStyle = '#0e1624';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = '#00d4ff';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, w, h);
+
+    // Pulsing magnetic guide-rail strip
+    const pulse = 0.7 + Math.sin(now * 0.006) * 0.3;
+    ctx.fillStyle = `rgba(0, 212, 255, ${0.4 * pulse})`;
+    ctx.shadowColor = '#00d4ff';
+    ctx.shadowBlur = 10 * pulse;
+    if (w > h) {
+      ctx.fillRect(x + 4, y + h / 2 - 2, w - 8, 4);
+    } else {
+      ctx.fillRect(x + w / 2 - 2, y + 4, 4, h - 8);
+    }
+    ctx.shadowBlur = 0;
+  }
+
+  drawThrusterHousing(ctx, wall, now) {
+    const { x, y, w, h } = wall;
+    // Reaction Control System (RCS) Rocket Cowling
+    ctx.fillStyle = '#131b26';
+    this.drawRoundedBox(ctx, x, y, w, h, 8);
+    ctx.strokeStyle = '#2b3f5c';
+    ctx.lineWidth = 2.5;
+    ctx.strokeRect(x, y, w, h);
+
+    // Titanium Rocket Nozzles in Housing
+    ctx.fillStyle = '#2c3e50';
+    if (w > h) {
+      for (let nx = x + 24; nx < x + w - 20; nx += 40) {
+        ctx.beginPath();
+        ctx.arc(nx, y + h / 2, 10, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#bdc3c7';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.fillStyle = '#111';
+        ctx.beginPath();
+        ctx.arc(nx, y + h / 2, 5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else {
+      for (let ny = y + 24; ny < y + h - 20; ny += 40) {
+        ctx.beginPath();
+        ctx.arc(x + w / 2, ny, 10, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#bdc3c7';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.fillStyle = '#111';
+        ctx.beginPath();
+        ctx.arc(x + w / 2, ny, 5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.fillStyle = '#ff7b00';
+    ctx.font = 'bold 9px monospace';
+    ctx.fillText('RCS-THRUSTER', x + 8, y + 16);
+  }
+
+  drawFallbackBarrier(ctx, wall, mapId) {
+    const { x, y, w, h } = wall;
+    ctx.fillStyle = '#141a24';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = this.accentColor || '#00f0ff';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, w, h);
+
+    ctx.save();
+    ctx.strokeStyle = '#ffb703';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 8]);
+    ctx.strokeRect(x + 2, y + 2, w - 4, h - 4);
+    ctx.restore();
+  }
+
+  // =========================================================================
+  // THEMED PILLARS (Distinct per map)
+  // =========================================================================
+  drawThemedPillar(ctx, pillar, now, mapId) {
+    const { x, y, radius } = pillar;
+
+    // Base Shadow
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
+    ctx.shadowBlur = 18;
+    ctx.shadowOffsetX = 6;
+    ctx.shadowOffsetY = 6;
+
+    if (mapId === 'neon_slums') {
+      // Massive Concrete Monorail / Overpass Column Wrapped with Hologram Ads
+      ctx.fillStyle = '#160c20';
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#3d2054';
+      ctx.lineWidth = 4;
+      ctx.stroke();
+
+      // Wrapped Neon Advertising Hologram Ring
+      const adColor = pillar.adColor || '#ff007f';
+      const pulse = 0.75 + Math.sin(now * 0.005 + x) * 0.25;
+      ctx.strokeStyle = adColor;
+      ctx.lineWidth = 3;
+      ctx.shadowColor = adColor;
+      ctx.shadowBlur = 16 * pulse;
+      ctx.beginPath();
+      ctx.arc(x, y, radius * 0.7, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 9px sans-serif';
+      ctx.fillText('AD // 広告', x - 18, y + 3);
+      ctx.shadowBlur = 0;
+
+    } else if (mapId === 'cyber_bunker') {
+      // Vertical Cryo-Stasis Pod with human/specimen silhouette inside
+      ctx.fillStyle = '#08141d';
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#00f0ff';
+      ctx.lineWidth = 4;
+      ctx.stroke();
+
+      // Glowing Cyan Cryogenic Bioliquid Core
+      const pulse = 0.8 + Math.sin(now * 0.004) * 0.2;
+      ctx.fillStyle = '#00f0ff';
+      ctx.shadowColor = '#00f0ff';
+      ctx.shadowBlur = 18 * pulse;
+      ctx.beginPath();
+      ctx.arc(x, y, radius * 0.55, 0, Math.PI * 2);
       ctx.fill();
 
-      // Outer rim
+      // Frozen specimen core silhouette
+      ctx.fillStyle = '#03141f';
+      ctx.beginPath();
+      ctx.arc(x, y, radius * 0.25, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+    } else if (mapId === 'reactor_crucible') {
+      // Breached Reactor Core Rod with swirling fiery plasma flare
+      ctx.fillStyle = '#180703';
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#ff3300';
+      ctx.lineWidth = 4;
+      ctx.stroke();
+
+      // Swirling fiery plasma core
+      const pulse = 0.7 + Math.sin(now * 0.006 + x) * 0.3;
+      ctx.fillStyle = '#ff5500';
+      ctx.shadowColor = '#ff2200';
+      ctx.shadowBlur = 22 * pulse;
+      ctx.beginPath();
+      ctx.arc(x, y, radius * 0.6, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#ffea00';
+      ctx.beginPath();
+      ctx.arc(x, y, radius * 0.25, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+    } else if (mapId === 'orbital_station') {
+      // Artificial Gravity / Magnetic Docking Coil with concentric blue rings
+      ctx.fillStyle = '#0c1422';
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#00d4ff';
+      ctx.lineWidth = 4;
+      ctx.stroke();
+
+      const pulse = 0.8 + Math.sin(now * 0.005) * 0.2;
+      ctx.strokeStyle = '#00d4ff';
+      ctx.lineWidth = 2.5;
+      ctx.shadowColor = '#00d4ff';
+      ctx.shadowBlur = 16 * pulse;
+      ctx.beginPath();
+      ctx.arc(x, y, radius * 0.6, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(x, y, radius * 0.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+    } else {
+      // Sector-09: Heavy Industrial Fuel Silo & Smelting Vat
+      ctx.fillStyle = '#141b26';
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#394b66';
+      ctx.lineWidth = 4;
+      ctx.stroke();
+
+      // Circular Rivet Flange
+      ctx.fillStyle = '#ffb703';
+      for (let i = 0; i < 8; i++) {
+        const a = (i * Math.PI) / 4;
+        const rx = x + Math.cos(a) * (radius - 8);
+        const ry = y + Math.sin(a) * (radius - 8);
+        ctx.fillRect(rx - 2, ry - 2, 4, 4);
+      }
+
+      // Center inspection hatch
+      ctx.fillStyle = '#222d3d';
+      ctx.beginPath();
+      ctx.arc(x, y, radius * 0.35, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#5a7199';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+  }
+
+  // =========================================================================
+  // THEMED BARRELS / HAZARD CONTAINERS (Distinct per map)
+  // =========================================================================
+  drawThemedBarrel(ctx, barrel, now, mapId) {
+    const { x, y, radius } = barrel;
+
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.6)';
+    ctx.shadowBlur = 8;
+    ctx.shadowOffsetX = 4;
+    ctx.shadowOffsetY = 4;
+
+    if (mapId === 'reactor_crucible') {
+      // Radioactive Waste Barrel (Hazard Yellow with Glowing Green Sludge)
+      ctx.fillStyle = '#f1c40f';
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#2c3e50';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+
+      // Glowing radioactive center
+      const pulse = 0.8 + Math.sin(now * 0.008 + x) * 0.2;
+      ctx.fillStyle = '#00ff88';
+      ctx.shadowColor = '#00ff88';
+      ctx.shadowBlur = 12 * pulse;
+      ctx.beginPath();
+      ctx.arc(x, y, 6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // Radiation symbol
+      this.drawRadiationSymbol(ctx, x, y, 9);
+
+    } else if (mapId === 'neon_slums') {
+      // Street Burn Barrel (Trash fire barrel with flickering orange flame)
+      ctx.fillStyle = '#2c1e19';
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#4a2d24';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+
+      // Flickering orange fire core
+      const flame = 0.7 + Math.sin(now * 0.015 + x * 0.1) * 0.3;
+      ctx.fillStyle = '#ff4400';
+      ctx.shadowColor = '#ff5500';
+      ctx.shadowBlur = 14 * flame;
+      ctx.beginPath();
+      ctx.arc(x, y, 8 * flame, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#ffea00';
+      ctx.beginPath();
+      ctx.arc(x, y, 4 * flame, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+    } else if (mapId === 'cyber_bunker') {
+      // Pressurized Chemical Agent Canister (Dark Titanium with Purple Biohazard)
+      ctx.fillStyle = '#1c1322';
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#bd00ff';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+
+      // Purple Biohazard Core
+      ctx.fillStyle = '#ff0055';
+      ctx.shadowColor = '#ff0055';
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      ctx.arc(x, y, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+    } else if (mapId === 'orbital_station') {
+      // Cryogenic LOX (Liquid Oxygen) Aerospace Pressure Sphere
+      ctx.fillStyle = '#e8f4f8';
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#00aaff';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+
+      // Blue cryogenic thermal band
+      ctx.strokeStyle = '#00d4ff';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(x, y, 8, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.fillStyle = '#00d4ff';
+      ctx.beginPath();
+      ctx.arc(x, y, 3, 0, Math.PI * 2);
+      ctx.fill();
+
+    } else {
+      // Sector-09: Industrial Oil Drum (Deep Red / Crimson with Oil Stains)
+      ctx.fillStyle = '#d90429';
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.fill();
       ctx.strokeStyle = '#2b2d42';
       ctx.lineWidth = 2.5;
       ctx.stroke();
 
-      // Yellow hazard indicator / biohazard dot
+      // Yellow Flammable Hazard Dot
       ctx.fillStyle = '#ffb703';
       ctx.beginPath();
-      ctx.arc(barrel.x, barrel.y, 6, 0, Math.PI * 2);
+      ctx.arc(x, y, 6, 0, Math.PI * 2);
       ctx.fill();
 
-      // Small hazard stripes
       ctx.strokeStyle = '#ffb703';
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(barrel.x, barrel.y, 11, 0, Math.PI * 2);
+      ctx.arc(x, y, 11, 0, Math.PI * 2);
       ctx.stroke();
-
-      ctx.restore();
     }
   }
 }

@@ -7,7 +7,7 @@
  */
 
 class AcidSpit {
-  constructor(x, y, angle, speed = 460, damage = 16, color = '#39ff14', ignoreWalls = false) {
+  constructor(x, y, angle, speed = 460, damage = 16, color = '#39ff14', ignoreWalls = false, leavesPool = false) {
     this.x = x;
     this.y = y;
     this.angle = angle;
@@ -16,6 +16,7 @@ class AcidSpit {
     this.color = color;
     this.isPinkSniper = (color === '#b026ff' || color === '#ff00aa' || color === '#ff3366');
     this.ignoreWalls = ignoreWalls || this.isPinkSniper;
+    this.leavesPool = !!leavesPool;
     this.vx = Math.cos(angle) * speed;
     this.vy = Math.sin(angle) * speed;
     this.radius = this.isPinkSniper ? 4.5 : 5.5;
@@ -74,6 +75,7 @@ class AcidSpit {
       const dist = Math.hypot(this.x - targetP.x, this.y - targetP.y);
       if (dist <= this.radius + targetP.radius) {
         if (targetP.takeDamage) targetP.takeDamage(this.damage);
+        if (targetP.applyAcidDoT) targetP.applyAcidDoT(3.0, 3);
         if (game) game.addScreenShake(5);
         this.explode(game);
         return;
@@ -82,7 +84,14 @@ class AcidSpit {
   }
 
   explode(game) {
+    if (!this.active) return;
     this.active = false;
+
+    // Only special toxic acid spit (from the new toxic enemy) leaves an acid puddle on the ground!
+    if (this.leavesPool && !this.isPinkSniper && game && game.spawnAcidPool) {
+      game.spawnAcidPool(this.x, this.y, 25, 3.0, 6, this.color);
+    }
+
     if (window.particleSystem) {
       const pColor = this.isPinkSniper ? '#ff00aa' : '#00ff88';
       const sColor = this.isPinkSniper ? '#ffffff' : '#39ff14';
@@ -150,6 +159,184 @@ class AcidSpit {
   }
 }
 window.AcidSpit = AcidSpit;
+
+class AcidPool {
+  constructor(x, y, radius = 24, duration = 3.0, dps = 6, color = '#39ff14') {
+    this.x = x;
+    this.y = y;
+    this.radius = radius;
+    this.duration = duration;
+    this.timeLeft = duration;
+    this.dps = dps;
+    this.color = color;
+    this.active = true;
+    this.animTimer = Math.random() * 10;
+    this.tickTimer = 0;
+
+    // Organic blob lobes for a realistic chemical pool contour
+    this.lobes = [];
+    const count = 7;
+    for (let i = 0; i < count; i++) {
+      this.lobes.push({
+        angle: (i / count) * Math.PI * 2,
+        rFactor: 0.75 + Math.random() * 0.45,
+        pulseSpeed: 1.5 + Math.random() * 2.0,
+        phase: Math.random() * Math.PI * 2
+      });
+    }
+
+    // Boiling surface bubbles
+    this.bubbles = [];
+    for (let b = 0; b < 4; b++) {
+      this.bubbles.push({
+        xOffset: (Math.random() - 0.5) * radius * 1.1,
+        yOffset: (Math.random() - 0.5) * radius * 0.75,
+        r: 1.5 + Math.random() * 2.2,
+        speed: 2.0 + Math.random() * 2.5,
+        phase: Math.random() * Math.PI * 2
+      });
+    }
+  }
+
+  update(dt, player, game) {
+    if (!this.active) return;
+    this.timeLeft -= dt;
+    this.animTimer += dt;
+    this.tickTimer += dt;
+
+    if (this.timeLeft <= 0) {
+      this.active = false;
+      return;
+    }
+
+    // Emit rising toxic acid steam/smoke particles occasionally
+    if (Math.random() < 0.35 && window.particleSystem) {
+      const rx = this.x + (Math.random() - 0.5) * this.radius * 1.3;
+      const ry = this.y + (Math.random() - 0.5) * this.radius * 0.8;
+      window.particleSystem.emit(rx, ry, 1, {
+        speed: 18,
+        color: '#39ff14',
+        life: 0.35,
+        size: 2.2
+      });
+    }
+
+    // Check collision with operative / targets
+    const targets = [];
+    if (player && player.alive) targets.push(player);
+    if (game && game.network && game.network.remotePlayers) {
+      for (const rId in game.network.remotePlayers) {
+        const rp = game.network.remotePlayers[rId];
+        if (rp && rp.alive) targets.push(rp);
+      }
+    }
+
+    for (let i = 0; i < targets.length; i++) {
+      const targetP = targets[i];
+      const dist = Math.hypot(this.x - targetP.x, this.y - targetP.y);
+      if (dist <= this.radius + targetP.radius * 0.75) {
+        // Player is touching or standing in the acid pool!
+        if (targetP.applyAcidDoT) {
+          targetP.applyAcidDoT(3.0, 3);
+        }
+        if (this.tickTimer >= 0.5) {
+          if (targetP.takeDamage) {
+            targetP.takeDamage(2);
+          }
+          if (window.particleSystem) {
+            window.particleSystem.emit(targetP.x, targetP.y, 3, {
+              speed: 50,
+              color: '#39ff14',
+              life: 0.25
+            });
+          }
+        }
+      }
+    }
+
+    if (this.tickTimer >= 0.5) {
+      this.tickTimer = 0;
+    }
+  }
+
+  draw(ctx) {
+    if (!this.active) return;
+    ctx.save();
+
+    // Smooth fade out in the last 0.6 seconds of its 3s lifetime
+    const fade = Math.min(1.0, this.timeLeft / 0.6);
+    const pulse = 1 + Math.sin(this.animTimer * 2.5) * 0.05;
+
+    // 1. Soft glowing outer hazard halo
+    ctx.beginPath();
+    ctx.ellipse(this.x, this.y, this.radius * 1.5 * pulse, this.radius * 0.95 * pulse, 0, 0, Math.PI * 2);
+    ctx.fillStyle = this.color;
+    ctx.globalAlpha = 0.18 * fade;
+    ctx.shadowColor = this.color;
+    ctx.shadowBlur = 16;
+    ctx.fill();
+
+    // 2. Main Organic Acid Puddle Blob
+    ctx.beginPath();
+    for (let i = 0; i < this.lobes.length; i++) {
+      const lobe = this.lobes[i];
+      const dynamicR = this.radius * lobe.rFactor * (1 + Math.sin(this.animTimer * lobe.pulseSpeed + lobe.phase) * 0.08);
+      const px = this.x + Math.cos(lobe.angle) * dynamicR * pulse;
+      const py = this.y + Math.sin(lobe.angle) * dynamicR * 0.65 * pulse;
+      if (i === 0) ctx.moveTo(px, py);
+      else {
+        const prev = this.lobes[i - 1];
+        const prevR = this.radius * prev.rFactor * (1 + Math.sin(this.animTimer * prev.pulseSpeed + prev.phase) * 0.08);
+        const mx = this.x + Math.cos((prev.angle + lobe.angle) / 2) * ((prevR + dynamicR) / 2) * pulse;
+        const my = this.y + Math.sin((prev.angle + lobe.angle) / 2) * ((prevR + dynamicR) / 2) * 0.65 * pulse;
+        ctx.quadraticCurveTo(mx, my, px, py);
+      }
+    }
+    ctx.closePath();
+
+    // Toxic Acid Gradient (deep dark green base to electric neon green core)
+    const acidGrad = ctx.createRadialGradient(this.x, this.y, 2, this.x, this.y, this.radius * pulse);
+    acidGrad.addColorStop(0, '#75ff3b');
+    acidGrad.addColorStop(0.45, '#22c55e');
+    acidGrad.addColorStop(0.85, '#14532d');
+    acidGrad.addColorStop(1, 'rgba(5, 46, 22, 0.4)');
+    ctx.fillStyle = acidGrad;
+    ctx.globalAlpha = 0.72 * fade;
+    ctx.shadowBlur = 10;
+    ctx.shadowColor = '#39ff14';
+    ctx.fill();
+
+    // Acid Outer Edge Ring
+    ctx.strokeStyle = `rgba(163, 255, 112, ${0.65 * fade})`;
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+
+    // 3. Boiling / Sizzling Surface Bubbles
+    ctx.shadowBlur = 0;
+    for (const b of this.bubbles) {
+      const bPulse = (Math.sin(this.animTimer * b.speed + b.phase) + 1) * 0.5;
+      const bx = this.x + b.xOffset;
+      const by = this.y + b.yOffset;
+      const currentR = Math.max(0.8, b.r * bPulse);
+
+      ctx.beginPath();
+      ctx.arc(bx, by, currentR, 0, Math.PI * 2);
+      ctx.fillStyle = '#bbf7d0';
+      ctx.globalAlpha = (0.5 + bPulse * 0.45) * fade;
+      ctx.fill();
+
+      // Bubble highlight
+      ctx.beginPath();
+      ctx.arc(bx - currentR * 0.3, by - currentR * 0.3, currentR * 0.3, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.globalAlpha = 0.85 * fade;
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
+}
+window.AcidPool = AcidPool;
 
 class Enemy {
   constructor(x, y, type = 'normal', id = null, generation = 0) {
@@ -267,6 +454,20 @@ class Enemy {
       this.hp = this.maxHp;
       this.attackRange = this.radius + 14;
       this.attackCooldown = 0.75;
+    } else if (type === 'toxic') {
+      // NEW ENEMY: BIO-SLIMER (Heavy acid spitter that leaves toxic puddles)
+      this.radius = 24;
+      this.maxHp = 110;
+      this.hp = this.maxHp;
+      this.speed = 130;
+      this.damage = 22;
+      this.scoreValue = 220;
+      this.color = '#39ff14';
+      this.attackRange = 52;
+      this.attackCooldown = 0.9;
+      this.spitCooldown = 3.6;
+      this.spitTimer = 1.0 + Math.random() * 2.0;
+      this.spitWindupTimer = 0;
     } else { // normal
       this.radius = 22;
       this.maxHp = 90;
@@ -460,7 +661,8 @@ class Enemy {
           const mouthX = this.x + Math.cos(this.angle) * (this.radius + 8);
           const mouthY = this.y + Math.sin(this.angle) * (this.radius + 8);
           if (game && game.spawnAcidSpit) {
-            game.spawnAcidSpit(mouthX, mouthY, this.angle, 460, 16);
+            // Normal green enemy spit: poisons player on hit, but leavesPool = false (no puddle on ground)
+            game.spawnAcidSpit(mouthX, mouthY, this.angle, 460, 16, '#00ff88', false, false);
           }
         }
       } else {
@@ -468,6 +670,45 @@ class Enemy {
         if (this.spitTimer <= 0) {
           this.spitWindupTimer = 0.35;
           this.spitTimer = 5.0; // Shoot every 5 seconds unconditionally wherever they are!
+        }
+      }
+    }
+
+    // NEW ENEMY: Bio-Slimer (Toxic Spitter) - Shoots heavy acid mortar that leaves a 3-second acid pool!
+    if (this.type === 'toxic') {
+      if (this.spitWindupTimer > 0) {
+        this.spitWindupTimer -= dt;
+        if (player && player.alive) {
+          this.angle = Math.atan2(dy, dx);
+        }
+        moveVx *= 0.1;
+        moveVy *= 0.1;
+
+        if (Math.random() < 0.75 && window.particleSystem) {
+          const mouthX = this.x + Math.cos(this.angle) * (this.radius + 5);
+          const mouthY = this.y + Math.sin(this.angle) * (this.radius + 5);
+          window.particleSystem.emit(mouthX, mouthY, 2, {
+            speed: 40,
+            color: '#39ff14',
+            life: 0.2,
+            size: 2.8
+          });
+        }
+
+        if (this.spitWindupTimer <= 0) {
+          this.spitWindupTimer = 0;
+          const mouthX = this.x + Math.cos(this.angle) * (this.radius + 10);
+          const mouthY = this.y + Math.sin(this.angle) * (this.radius + 10);
+          if (game && game.spawnAcidSpit) {
+            // Toxic Slime Mortar: leavesPool = true!
+            game.spawnAcidSpit(mouthX, mouthY, this.angle, 400, 20, '#39ff14', false, true);
+          }
+        }
+      } else {
+        if (this.spitTimer > 0) this.spitTimer -= dt;
+        if (this.spitTimer <= 0) {
+          this.spitWindupTimer = 0.45;
+          this.spitTimer = 3.8; // Spews toxic puddle mortars every 3.8 seconds!
         }
       }
     }
@@ -569,6 +810,21 @@ class Enemy {
 
     window.soundSystem.playEnemyDeath(isTank || isBomber);
     window.particleSystem.emitBlood(this.x, this.y, 0, isTank ? 30 : 16, true);
+
+    if (this.type === 'toxic') {
+      // Toxic Slimer ruptured sac leaves an acid pool on the floor upon death!
+      if (game && game.spawnAcidPool) {
+        game.spawnAcidPool(this.x, this.y, 28, 3.0, 6, '#39ff14');
+      }
+      if (window.particleSystem) {
+        window.particleSystem.emit(this.x, this.y, 20, {
+          speed: 140,
+          color: '#39ff14',
+          life: 0.45,
+          size: 3.2
+        });
+      }
+    }
 
     if (this.type === 'splitter') {
       if (window.particleSystem) {
@@ -711,6 +967,8 @@ class Enemy {
       this.drawKamikazeBomber(ctx, isHit);
     } else if (this.type === 'splitter') {
       this.drawSplitter(ctx, isHit);
+    } else if (this.type === 'toxic') {
+      this.drawToxicSlimer(ctx, isHit);
     } else {
       this.drawNormalCyborg(ctx, isHit);
     }
@@ -735,6 +993,174 @@ class Enemy {
 
       ctx.restore();
       return;
+    }
+
+    ctx.restore();
+  }
+
+  // --- Bio-Slimer (Heavy Acid Mortar Spitter with Pulsating Toxic Sacs) ---
+  drawToxicSlimer(ctx, isHit) {
+    const t = this.animTimer || 0;
+    const R = this.radius; // 24
+    const pulse = Math.sin(t * 3.5) * 0.5 + 0.5;
+
+    // Palette: Toxic Neon Lime, Deep Bile Green, and Rotten Carapace
+    const cDark = isHit ? '#ffffff' : '#041d0e';
+    const cMid = isHit ? '#ffffff' : '#0d401e';
+    const cLight = isHit ? '#ffffff' : '#1b6330';
+    const cToxicGlow = isHit ? '#ffffff' : '#39ff14';
+    const cYellowAcid = isHit ? '#ffffff' : '#a3e635';
+
+    ctx.save();
+
+    // 1. Jointed Toxic Arachnid Crawling Legs (6 spidery limbs)
+    const legCount = 3;
+    for (let side = -1; side <= 1; side += 2) {
+      for (let i = 0; i < legCount; i++) {
+        const legPhase = t * 11 + i * 1.6 + (side === 1 ? Math.PI : 0);
+        const legSwing = Math.sin(legPhase) * 0.28;
+        const baseAngle = (i === 0 ? -0.4 : i === 1 ? -0.05 : 0.45) * side + legSwing;
+
+        const jointX = Math.cos(baseAngle) * (R * 0.85);
+        const jointY = Math.sin(baseAngle) * (R * 0.85);
+        const tipX = Math.cos(baseAngle) * (R * 1.55);
+        const tipY = Math.sin(baseAngle) * (R * 1.55);
+
+        ctx.save();
+        ctx.strokeStyle = cMid;
+        ctx.lineWidth = 2.4;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(jointX * 0.5, jointY * 0.5);
+        ctx.lineTo(jointX, jointY);
+        ctx.lineTo(tipX, tipY);
+        ctx.stroke();
+
+        // Glowing toxic claw tip
+        ctx.fillStyle = cToxicGlow;
+        ctx.shadowColor = cToxicGlow;
+        ctx.shadowBlur = 4;
+        ctx.beginPath();
+        ctx.arc(tipX, tipY, 1.6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.restore();
+      }
+    }
+
+    // 2. Heavy Pulsating Toxic Abdomen Sac (Bloated rear reservoir)
+    const sacPulse = 1 + Math.sin(t * 4.0) * 0.08 + (this.spitWindupTimer > 0 ? Math.sin(t * 22) * 0.15 : 0);
+    const sacX = -R * 0.42;
+    const sacY = 0;
+    const sacW = R * 0.95 * sacPulse;
+    const sacH = R * 0.82 * sacPulse;
+
+    // Outer Acid Glow Aura
+    ctx.beginPath();
+    ctx.ellipse(sacX, sacY, sacW * 1.25, sacH * 1.25, 0, 0, Math.PI * 2);
+    ctx.fillStyle = cToxicGlow;
+    ctx.globalAlpha = isHit ? 0.9 : (0.28 + pulse * 0.22);
+    ctx.shadowColor = cToxicGlow;
+    ctx.shadowBlur = isHit ? 18 : 12;
+    ctx.fill();
+    ctx.globalAlpha = 1.0;
+    ctx.shadowBlur = 0;
+
+    // Translucent Toxic Acid Fluid Sac
+    ctx.beginPath();
+    ctx.ellipse(sacX, sacY, sacW, sacH, 0, 0, Math.PI * 2);
+    const sacGrad = ctx.createRadialGradient(sacX - 3, sacY - 3, 2, sacX, sacY, sacW);
+    sacGrad.addColorStop(0, cYellowAcid);
+    sacGrad.addColorStop(0.45, cToxicGlow);
+    sacGrad.addColorStop(0.85, cMid);
+    sacGrad.addColorStop(1, cDark);
+    ctx.fillStyle = sacGrad;
+    ctx.fill();
+    ctx.strokeStyle = cToxicGlow;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Boiling Bubbles inside the Acid Sac
+    for (let b = 0; b < 3; b++) {
+      const bPhase = t * (2.0 + b) + b * 1.5;
+      const bx = sacX + Math.sin(bPhase) * (sacW * 0.45);
+      const by = sacY + Math.cos(bPhase * 1.3) * (sacH * 0.4);
+      const br = 1.8 + Math.sin(bPhase * 2) * 0.8;
+      ctx.beginPath();
+      ctx.arc(bx, by, br, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.globalAlpha = isHit ? 0.9 : 0.65;
+      ctx.fill();
+      ctx.globalAlpha = 1.0;
+    }
+
+    // 3. Armored Chitin Carapace Plates & Dorsal Spikes
+    ctx.beginPath();
+    ctx.ellipse(R * 0.15, 0, R * 0.72, R * 0.62, 0, 0, Math.PI * 2);
+    const bodyGrad = ctx.createRadialGradient(R * 0.2, -2, 2, R * 0.15, 0, R * 0.72);
+    bodyGrad.addColorStop(0, cLight);
+    bodyGrad.addColorStop(0.55, cMid);
+    bodyGrad.addColorStop(1, cDark);
+    ctx.fillStyle = bodyGrad;
+    ctx.fill();
+    ctx.strokeStyle = cToxicGlow;
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+
+    // Dorsal Spikes
+    ctx.fillStyle = cLight;
+    ctx.strokeStyle = cToxicGlow;
+    ctx.lineWidth = 1.2;
+    for (let sp = -1; sp <= 1; sp += 2) {
+      ctx.beginPath();
+      ctx.moveTo(-R * 0.1, sp * R * 0.35);
+      ctx.lineTo(-R * 0.45, sp * R * 0.58);
+      ctx.lineTo(-R * 0.25, sp * R * 0.22);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    // 4. Acid Venom Maw & Mandibles (Fangs open wide on spit windup)
+    const mouthSpread = (this.spitWindupTimer > 0 ? 0.38 : 0.15) + Math.sin(t * 6) * 0.05;
+    for (let m = -1; m <= 1; m += 2) {
+      ctx.save();
+      ctx.translate(R * 0.62, m * R * 0.25);
+      ctx.rotate(m * mouthSpread);
+      ctx.fillStyle = cMid;
+      ctx.strokeStyle = cToxicGlow;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(R * 0.42, m * R * 0.18);
+      ctx.lineTo(R * 0.22, 0);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // 5. Acid Gland Maw (Glowing venom aperture in front)
+    const mawX = R * 0.68;
+    const mawR = R * (0.22 + (this.spitWindupTimer > 0 ? 0.15 : 0.05));
+    ctx.beginPath();
+    ctx.arc(mawX, 0, mawR, 0, Math.PI * 2);
+    ctx.fillStyle = cToxicGlow;
+    ctx.shadowColor = cToxicGlow;
+    ctx.shadowBlur = isHit ? 16 : (12 + pulse * 6);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // 6. 4 Cluster Eyes
+    for (let e = -1; e <= 1; e += 2) {
+      ctx.fillStyle = cYellowAcid;
+      ctx.shadowColor = cYellowAcid;
+      ctx.shadowBlur = 4;
+      ctx.beginPath();
+      ctx.arc(R * 0.45, e * R * 0.28, 1.8, 0, Math.PI * 2);
+      ctx.arc(R * 0.52, e * R * 0.15, 1.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
     }
 
     ctx.restore();

@@ -154,6 +154,8 @@ class NetworkSystem {
         if (mpBtn) mpBtn.classList.add('active');
         const teamHub = document.getElementById('multiplayer-team-hub');
         if (teamHub) teamHub.classList.remove('hidden');
+        const threatCol = document.getElementById('protocol-col-threat');
+        if (threatCol) threatCol.classList.remove('hidden');
 
         this.renderLobbyUI();
 
@@ -377,7 +379,7 @@ class NetworkSystem {
       // 8.5. Enemy Ranged Attack: Acid Spit
       this.socket.on('enemy_spit', (data) => {
         if (this.game && this.game.spawnAcidSpit) {
-          this.game.spawnAcidSpit(data.x, data.y, data.angle, data.speed, data.damage, data.color || '#39ff14', data.ignoreWalls || data.color === '#b026ff');
+          this.game.spawnAcidSpit(data.x, data.y, data.angle, data.speed, data.damage, data.color || '#39ff14', data.ignoreWalls || data.color === '#b026ff', !!data.leavesPool);
         }
       });
 
@@ -648,6 +650,7 @@ class NetworkSystem {
 
   // --- Remote Shoot Handler ---
   handleRemoteShoot(data) {
+    if (!data || data.shooterId === this.myId) return;
     const rp = this.remotePlayers[data.shooterId];
     const weaponType = data.weaponType || 'rifle';
     if (rp) {
@@ -1658,6 +1661,8 @@ class NetworkSystem {
       if (mpBtn) mpBtn.classList.add('active');
       const teamHub = document.getElementById('multiplayer-team-hub');
       if (teamHub) teamHub.classList.remove('hidden');
+      const threatCol = document.getElementById('protocol-col-threat');
+      if (threatCol) threatCol.classList.remove('hidden');
     }
 
     this.renderLobbyUI();

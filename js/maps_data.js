@@ -2,6 +2,7 @@
  * CYBER STRIKE // ASYMMETRICAL TACTICAL MAPS
  * Radically unique, non-symmetrical architectural layouts.
  * Fully compatible with server-side collision validation and LAN synchronization.
+ * Obstacles are rich, thematic real-world entities (vehicles, food kiosks, cryo pods, server mainframes, solar capacitors, etc.)
  */
 
 const MAP_WIDTH = 2400;
@@ -41,62 +42,62 @@ const MAP_DEFINITIONS = {
       { x: MAP_WIDTH - 50, y: 0, w: 50, h: MAP_HEIGHT, type: 'boundary' },
 
       // --- ZONE 1 (SOUTH-WEST): Multi-tier Shipping Container Maze ---
-      { x: 150, y: 1400, w: 260, h: 95, type: 'container', color: '#1a3a54' },
-      { x: 470, y: 1350, w: 95, h: 280, type: 'container', color: '#54201a' },
-      { x: 180, y: 1650, w: 220, h: 95, type: 'container', color: '#1a4a3a' },
-      { x: 300, y: 1880, w: 280, h: 95, type: 'container', color: '#4a3a1a' },
-      { x: 680, y: 1500, w: 95, h: 320, type: 'container', color: '#2a2040' },
-      { x: 680, y: 1920, w: 240, h: 95, type: 'container', color: '#1a3a54' },
-      { x: 860, y: 1350, w: 220, h: 95, type: 'container', color: '#54201a' },
-      { x: 980, y: 1520, w: 95, h: 260, type: 'container', color: '#1a4a3a' },
-      { x: 780, y: 1720, w: 140, h: 80, type: 'crate' },
-      { x: 180, y: 2100, w: 160, h: 80, type: 'crate' },
+      { x: 150, y: 1400, w: 260, h: 95, type: 'container', color: '#133e66', label: 'MAERSK-CYBER', serial: 'CY-902' },
+      { x: 470, y: 1350, w: 95, h: 280, type: 'container', color: '#873600', label: 'TITAN-CARGO', serial: 'TC-411' },
+      { x: 180, y: 1650, w: 220, h: 95, type: 'container', color: '#114b3f', label: 'TAIKANG-LOG', serial: 'TK-880' },
+      { x: 300, y: 1880, w: 280, h: 95, type: 'container', color: '#b9770e', label: 'ORION-FREIGHT', serial: 'OF-309' },
+      { x: 680, y: 1500, w: 95, h: 320, type: 'container', color: '#4a235a', label: 'NEXUS-CARGO', serial: 'NX-771' },
+      { x: 680, y: 1920, w: 240, h: 95, type: 'container', color: '#133e66', label: 'MAERSK-CYBER', serial: 'CY-903' },
+      { x: 860, y: 1350, w: 220, h: 95, type: 'container', color: '#873600', label: 'TITAN-CARGO', serial: 'TC-412' },
+      { x: 980, y: 1520, w: 95, h: 260, type: 'container', color: '#114b3f', label: 'TAIKANG-LOG', serial: 'TK-881' },
+      { x: 780, y: 1720, w: 140, h: 80, type: 'pallet', label: 'HEAVY MACHINERY // P-14' },
+      { x: 180, y: 2100, w: 160, h: 80, type: 'pallet', label: 'STEEL ALLOY CRATE' },
 
       // --- ZONE 2 (NORTH-WEST): Forklift Staging & Cargo Pallets ---
-      { x: 200, y: 220, w: 320, h: 55, type: 'wall' },
-      { x: 200, y: 220, w: 55, h: 260, type: 'wall' },
-      { x: 380, y: 580, w: 140, h: 90, type: 'crate' },
-      { x: 600, y: 350, w: 90, h: 240, type: 'container', color: '#4a3a1a' },
-      { x: 800, y: 200, w: 240, h: 90, type: 'container', color: '#1a3a54' },
-      { x: 780, y: 550, w: 180, h: 80, type: 'barrier' },
-      { x: 320, y: 850, w: 280, h: 55, type: 'wall' },
-      { x: 720, y: 780, w: 55, h: 280, type: 'wall' },
+      { x: 200, y: 220, w: 320, h: 55, type: 'industrial_barrier', label: 'FORKLIFT GUIDERAIL' },
+      { x: 200, y: 220, w: 55, h: 260, type: 'industrial_barrier', label: 'LOADING DOCK #1' },
+      { x: 380, y: 580, w: 140, h: 90, type: 'pallet', label: 'PARTS PALLET #08' },
+      { x: 600, y: 350, w: 90, h: 240, type: 'container', color: '#b9770e', label: 'ORION-FREIGHT', serial: 'OF-310' },
+      { x: 800, y: 200, w: 240, h: 90, type: 'container', color: '#133e66', label: 'MAERSK-CYBER', serial: 'CY-904' },
+      { x: 780, y: 550, w: 180, h: 80, type: 'forklift', direction: 'horizontal', label: 'HEAVY FORKLIFT #03' },
+      { x: 320, y: 850, w: 280, h: 55, type: 'industrial_barrier', label: 'STAGING CHUTE' },
+      { x: 720, y: 780, w: 55, h: 280, type: 'industrial_barrier', label: 'BAY 02 PERIMETER' },
 
       // --- ZONE 3 (NORTH-EAST): Heavy Foundry & Conveyor Gantry ---
-      { x: 1350, y: 180, w: 420, h: 65, type: 'wall' },
-      { x: 1880, y: 180, w: 65, h: 360, type: 'wall' },
-      { x: 1350, y: 360, w: 90, h: 300, type: 'barrier' },
-      { x: 1560, y: 450, w: 240, h: 90, type: 'container', color: '#54201a' },
-      { x: 1920, y: 680, w: 280, h: 95, type: 'container', color: '#2a2040' },
-      { x: 1480, y: 850, w: 340, h: 60, type: 'wall' },
-      { x: 1350, y: 850, w: 60, h: 220, type: 'wall' },
-      { x: 1720, y: 980, w: 160, h: 90, type: 'crate' },
-      { x: 2050, y: 920, w: 180, h: 80, type: 'barrier' },
+      { x: 1350, y: 180, w: 420, h: 65, type: 'furnace', label: 'BLAST FURNACE UNIT A-1' },
+      { x: 1880, y: 180, w: 65, h: 360, type: 'furnace', label: 'SLAG RECOVERY TOWER' },
+      { x: 1350, y: 360, w: 90, h: 300, type: 'industrial_barrier', label: 'GANTRY CATWALK' },
+      { x: 1560, y: 450, w: 240, h: 90, type: 'container', color: '#873600', label: 'TITAN-CARGO', serial: 'TC-415' },
+      { x: 1920, y: 680, w: 280, h: 95, type: 'container', color: '#4a235a', label: 'NEXUS-CARGO', serial: 'NX-773' },
+      { x: 1480, y: 850, w: 340, h: 60, type: 'furnace', label: 'HEAT EXCHANGER COIL' },
+      { x: 1350, y: 850, w: 60, h: 220, type: 'steel_stack', label: 'INGOT STACK #4' },
+      { x: 1720, y: 980, w: 160, h: 90, type: 'forklift', direction: 'horizontal', label: 'HEAVY FORKLIFT #07' },
+      { x: 2050, y: 920, w: 180, h: 80, type: 'pallet', label: 'FOUNDRY TOOL PALLET' },
 
       // --- ZONE 4 (SOUTH-EAST): Fuel Depot & Maintenance Checkpoint ---
-      { x: 1250, y: 1400, w: 55, h: 360, type: 'wall' },
-      { x: 1400, y: 1320, w: 300, h: 60, type: 'wall' },
-      { x: 1820, y: 1250, w: 95, h: 260, type: 'container', color: '#1a4a3a' },
-      { x: 2050, y: 1420, w: 200, h: 95, type: 'container', color: '#4a3a1a' },
-      { x: 1450, y: 1680, w: 240, h: 85, type: 'barrier' },
-      { x: 1820, y: 1680, w: 85, h: 240, type: 'wall' },
-      { x: 1400, y: 1980, w: 380, h: 60, type: 'wall' },
-      { x: 1920, y: 2050, w: 180, h: 85, type: 'crate' },
-      { x: 2150, y: 1750, w: 90, h: 220, type: 'container', color: '#1a3a54' },
+      { x: 1250, y: 1400, w: 55, h: 360, type: 'fuel_depot_tank', orientation: 'v', label: 'FUEL MANIFOLD LINE' },
+      { x: 1400, y: 1320, w: 300, h: 60, type: 'fuel_depot_tank', orientation: 'h', label: 'DIESEL RESERVE TANK' },
+      { x: 1820, y: 1250, w: 95, h: 260, type: 'container', color: '#114b3f', label: 'TAIKANG-LOG', serial: 'TK-885' },
+      { x: 2050, y: 1420, w: 200, h: 95, type: 'container', color: '#b9770e', label: 'ORION-FREIGHT', serial: 'OF-312' },
+      { x: 1450, y: 1680, w: 240, h: 85, type: 'pallet', label: 'HIGH-PRESSURE DRUM RACK' },
+      { x: 1820, y: 1680, w: 85, h: 240, type: 'fuel_depot_tank', orientation: 'v', label: 'HYDRAULIC VALVE BLOCK' },
+      { x: 1400, y: 1980, w: 380, h: 60, type: 'fuel_depot_tank', orientation: 'h', label: 'FUEL PIPELINE TRUNK' },
+      { x: 1920, y: 2050, w: 180, h: 85, type: 'forklift', direction: 'horizontal', label: 'TRANSFER TUG #02' },
+      { x: 2150, y: 1750, w: 90, h: 220, type: 'container', color: '#133e66', label: 'MAERSK-CYBER', serial: 'CY-908' },
 
       // --- ASYMMETRICAL TRANSIT CHOKEPOINTS (Midfield) ---
-      { x: 1100, y: 650, w: 80, h: 260, type: 'barrier' },
-      { x: 1050, y: 1080, w: 320, h: 65, type: 'barrier' }
+      { x: 1100, y: 650, w: 80, h: 260, type: 'industrial_barrier', label: 'RAIL CARRIER BUFFER' },
+      { x: 1050, y: 1080, w: 320, h: 65, type: 'industrial_barrier', label: 'GANTRY CRANE STANCHION' }
     ],
     pillars: [
-      // Smelting Vats & Hydraulic Crane Columns (Irregular)
-      { x: 1655, y: 330, radius: 36 },
-      { x: 2120, y: 420, radius: 42 },
-      { x: 1525, y: 650, radius: 36 },
-      { x: 1480, y: 1520, radius: 44 },
-      { x: 1680, y: 1520, radius: 44 },
-      { x: 550, y: 1050, radius: 38 },
-      { x: 1180, y: 1820, radius: 40 }
+      // Smelting Vats & Hydraulic Crane Columns
+      { x: 1655, y: 330, radius: 36, type: 'smelting_vat', label: 'VAT-01' },
+      { x: 2120, y: 420, radius: 42, type: 'crane_column', label: 'TOWER-04' },
+      { x: 1525, y: 650, radius: 36, type: 'smelting_vat', label: 'VAT-02' },
+      { x: 1480, y: 1520, radius: 44, type: 'fuel_silo', label: 'SILO-A' },
+      { x: 1680, y: 1520, radius: 44, type: 'fuel_silo', label: 'SILO-B' },
+      { x: 550, y: 1050, radius: 38, type: 'crane_column', label: 'CRANE-01' },
+      { x: 1180, y: 1820, radius: 40, type: 'fuel_silo', label: 'SILO-C' }
     ],
     barrels: [
       // Clustered near fuel depot and crane tracks
@@ -142,59 +143,59 @@ const MAP_DEFINITIONS = {
       { x: MAP_WIDTH - 50, y: 0, w: 50, h: MAP_HEIGHT, type: 'boundary' },
 
       // --- ZONE 1 (WEST): High-Density Server Rack Aisles (Tight CQB) ---
-      { x: 150, y: 200, w: 60, h: 420, type: 'wall', subType: 'server' },
-      { x: 320, y: 200, w: 60, h: 420, type: 'wall', subType: 'server' },
-      { x: 490, y: 200, w: 60, h: 420, type: 'wall', subType: 'server' },
-      { x: 150, y: 720, w: 400, h: 55, type: 'barrier' },
-      { x: 150, y: 880, w: 60, h: 520, type: 'wall', subType: 'server' },
-      { x: 320, y: 980, w: 60, h: 520, type: 'wall', subType: 'server' },
-      { x: 490, y: 880, w: 60, h: 520, type: 'wall', subType: 'server' },
-      { x: 150, y: 1520, w: 320, h: 55, type: 'barrier' },
-      { x: 220, y: 1680, w: 60, h: 480, type: 'wall', subType: 'server' },
-      { x: 420, y: 1680, w: 60, h: 480, type: 'wall', subType: 'server' },
-      { x: 650, y: 200, w: 65, h: 900, type: 'wall' },   // Main vault dividing bulkhead
-      { x: 650, y: 1250, w: 65, h: 950, type: 'wall' },  // Lower vault dividing bulkhead
+      { x: 150, y: 200, w: 60, h: 420, type: 'server_bank', label: 'MAINFRAME ROW #01', ledColor: '#00ff88' },
+      { x: 320, y: 200, w: 60, h: 420, type: 'server_bank', label: 'MAINFRAME ROW #02', ledColor: '#00f0ff' },
+      { x: 490, y: 200, w: 60, h: 420, type: 'server_bank', label: 'NEURAL CLUSTER #01', ledColor: '#ff0055' },
+      { x: 150, y: 720, w: 400, h: 55, type: 'blast_door', label: 'VAULT LOCK A-12', orientation: 'h' },
+      { x: 150, y: 880, w: 60, h: 520, type: 'server_bank', label: 'DATABASE ARCHIVE 01', ledColor: '#ffb703' },
+      { x: 320, y: 980, w: 60, h: 520, type: 'server_bank', label: 'DATABASE ARCHIVE 02', ledColor: '#00f0ff' },
+      { x: 490, y: 880, w: 60, h: 520, type: 'server_bank', label: 'QUANTUM CRYPT #04', ledColor: '#bd00ff' },
+      { x: 150, y: 1520, w: 320, h: 55, type: 'blast_door', label: 'VAULT LOCK B-04', orientation: 'h' },
+      { x: 220, y: 1680, w: 60, h: 480, type: 'server_bank', label: 'TELEMETRY BUS #01', ledColor: '#00ff88' },
+      { x: 420, y: 1680, w: 60, h: 480, type: 'server_bank', label: 'TELEMETRY BUS #02', ledColor: '#00f0ff' },
+      { x: 650, y: 200, w: 65, h: 900, type: 'reinforced_bulkhead', label: 'SUB-LEVEL BULKHEAD NORTH' },
+      { x: 650, y: 1250, w: 65, h: 950, type: 'reinforced_bulkhead', label: 'SUB-LEVEL BULKHEAD SOUTH' },
 
       // --- ZONE 2 (NORTH-EAST): Cryo-Stasis Containment Lab ---
-      { x: 950, y: 180, w: 520, h: 60, type: 'wall' },
-      { x: 1600, y: 180, w: 60, h: 320, type: 'wall' },
-      { x: 1780, y: 180, w: 460, h: 60, type: 'wall' },
-      { x: 1050, y: 380, w: 240, h: 70, type: 'barrier' },
-      { x: 1400, y: 480, w: 70, h: 260, type: 'wall' },
-      { x: 1620, y: 520, w: 280, h: 65, type: 'barrier' },
-      { x: 2050, y: 350, w: 65, h: 380, type: 'wall' },
-      { x: 1820, y: 720, w: 420, h: 65, type: 'wall' },
+      { x: 950, y: 180, w: 520, h: 60, type: 'cryo_chamber', label: 'STASIS INCUBATOR ARRAY NORTH' },
+      { x: 1600, y: 180, w: 60, h: 320, type: 'reinforced_bulkhead', label: 'CRYO LAB INTERIOR WALL' },
+      { x: 1780, y: 180, w: 460, h: 60, type: 'cryo_chamber', label: 'CONTAINMENT VAULT ALPHA' },
+      { x: 1050, y: 380, w: 240, h: 70, type: 'cryo_chamber', label: 'VITALS MONITOR BANK' },
+      { x: 1400, y: 480, w: 70, h: 260, type: 'decon_station', label: 'DECON AIR-SHOWER #02' },
+      { x: 1620, y: 520, w: 280, h: 65, type: 'cryo_chamber', label: 'SPECIMEN FREEZER #09' },
+      { x: 2050, y: 350, w: 65, h: 380, type: 'reinforced_bulkhead', label: 'BIOSAFETY LEVEL 4 SEAL' },
+      { x: 1820, y: 720, w: 420, h: 65, type: 'blast_door', label: 'CRYO-BAY BLAST DOOR', orientation: 'h' },
 
       // --- ZONE 3 (CENTER-EAST): Armored Tactical Command Chamber ---
-      { x: 920, y: 850, w: 380, h: 60, type: 'wall' },
-      { x: 1240, y: 910, w: 60, h: 260, type: 'wall' },
-      { x: 920, y: 1280, w: 380, h: 60, type: 'wall' },
-      { x: 1480, y: 920, w: 360, h: 60, type: 'barrier' },
-      { x: 1780, y: 980, w: 60, h: 280, type: 'barrier' },
-      { x: 1480, y: 1380, w: 360, h: 60, type: 'barrier' },
-      { x: 2020, y: 920, w: 65, h: 420, type: 'wall' },
+      { x: 920, y: 850, w: 380, h: 60, type: 'command_console', label: 'TACTICAL RADAR TERMINAL' },
+      { x: 1240, y: 910, w: 60, h: 260, type: 'command_console', label: 'OPS DISPATCH DESK' },
+      { x: 920, y: 1280, w: 380, h: 60, type: 'command_console', label: 'DEFENSE MATRIX STATION' },
+      { x: 1480, y: 920, w: 360, h: 60, type: 'blast_door', label: 'COMMAND AIRLOCK NORTH', orientation: 'h' },
+      { x: 1780, y: 980, w: 60, h: 280, type: 'command_console', label: 'WAR-ROOM HOLO TABLE' },
+      { x: 1480, y: 1380, w: 360, h: 60, type: 'blast_door', label: 'COMMAND AIRLOCK SOUTH', orientation: 'h' },
+      { x: 2020, y: 920, w: 65, h: 420, type: 'reinforced_bulkhead', label: 'ARMORY ACCESS BULKHEAD' },
 
       // --- ZONE 4 (SOUTH): Decontamination Airlock & Security Corridors ---
-      { x: 880, y: 1520, w: 65, h: 460, type: 'wall' },
-      { x: 1080, y: 1600, w: 420, h: 65, type: 'wall' },
-      { x: 1650, y: 1550, w: 65, h: 420, type: 'wall' },
-      { x: 1200, y: 1820, w: 320, h: 65, type: 'barrier' },
-      { x: 1080, y: 2150, w: 460, h: 60, type: 'wall' },
-      { x: 1750, y: 1980, w: 360, h: 60, type: 'wall' },
-      { x: 1880, y: 1680, w: 60, h: 220, type: 'barrier' }
+      { x: 880, y: 1520, w: 65, h: 460, type: 'reinforced_bulkhead', label: 'AIRLOCK WEST WALL' },
+      { x: 1080, y: 1600, w: 420, h: 65, type: 'blast_door', label: 'DECON HEAVY GATELOCK', orientation: 'h' },
+      { x: 1650, y: 1550, w: 65, h: 420, type: 'reinforced_bulkhead', label: 'AIRLOCK EAST WALL' },
+      { x: 1200, y: 1820, w: 320, h: 65, type: 'decon_station', label: 'DISINFECTANT MIST UNIT' },
+      { x: 1080, y: 2150, w: 460, h: 60, type: 'reinforced_bulkhead', label: 'SUB-LEVEL EVAC CORRIDOR' },
+      { x: 1750, y: 1980, w: 360, h: 60, type: 'blast_door', label: 'REACTOR EVAC PORT', orientation: 'h' },
+      { x: 1880, y: 1680, w: 60, h: 220, type: 'decon_station', label: 'SCRUBBER UNIT #05' }
     ],
     pillars: [
       // Cryo-Stasis Cylinders (Asymmetric pod layout)
-      { x: 1375, y: 350, radius: 36 },
-      { x: 1350, y: 325, radius: 36 },
-      { x: 1500, y: 320, radius: 38 },
-      { x: 1850, y: 380, radius: 46 },
-      { x: 1960, y: 460, radius: 36 },
+      { x: 1375, y: 350, radius: 36, type: 'cryo_stasis_pod', label: 'STASIS #01' },
+      { x: 1350, y: 325, radius: 36, type: 'cryo_stasis_pod', label: 'STASIS #02' },
+      { x: 1500, y: 320, radius: 38, type: 'cryo_stasis_pod', label: 'STASIS #03' },
+      { x: 1850, y: 380, radius: 46, type: 'cryo_stasis_pod', label: 'STASIS #04' },
+      { x: 1960, y: 460, radius: 36, type: 'cryo_stasis_pod', label: 'STASIS #05' },
       // Command Hub Structural Reactor Columns
-      { x: 1080, y: 1080, radius: 44 },
-      { x: 1620, y: 1150, radius: 44 },
+      { x: 1080, y: 1080, radius: 44, type: 'bunker_reactor_pillar', label: 'REACTOR COIL 1' },
+      { x: 1620, y: 1150, radius: 44, type: 'bunker_reactor_pillar', label: 'REACTOR COIL 2' },
       // South Airlock Filter Pylons
-      { x: 1565, y: 1720, radius: 36 }
+      { x: 1565, y: 1720, radius: 36, type: 'decon_filter_pylon', label: 'HEPA TOWER' }
     ],
     barrels: [
       // Chemical agent & fuel canisters in side-alcoves
@@ -233,65 +234,65 @@ const MAP_DEFINITIONS = {
     width: MAP_WIDTH,
     height: MAP_HEIGHT,
     walls: [
-      // Outer Perimeter Boundaries
+      // Outer Perimeter Boundaries (Tenement City Walls with fire escapes and graffiti)
       { x: 0, y: 0, w: MAP_WIDTH, h: 50, type: 'boundary' },
       { x: 0, y: MAP_HEIGHT - 50, w: MAP_WIDTH, h: 50, type: 'boundary' },
       { x: 0, y: 0, w: 50, h: MAP_HEIGHT, type: 'boundary' },
       { x: MAP_WIDTH - 50, y: 0, w: 50, h: MAP_HEIGHT, type: 'boundary' },
 
       // --- ZONE 1 (NORTH-EAST): Tenement Alley Maze & Cyber-Ware Shops ---
-      { x: 1350, y: 150, w: 380, h: 80, type: 'wall' },
-      { x: 1880, y: 150, w: 320, h: 80, type: 'wall' },
-      { x: 1480, y: 320, w: 80, h: 360, type: 'wall' },
-      { x: 1680, y: 280, w: 260, h: 80, type: 'wall' },
-      { x: 2080, y: 300, w: 80, h: 420, type: 'wall' },
-      { x: 1680, y: 480, w: 280, h: 70, type: 'barrier' },
-      { x: 1350, y: 780, w: 420, h: 80, type: 'wall' },
-      { x: 1920, y: 780, w: 280, h: 80, type: 'wall' },
-      { x: 1820, y: 600, w: 90, h: 120, type: 'crate' },
+      { x: 1350, y: 150, w: 380, h: 80, type: 'ramen_stall', label: 'NEO-RAMEN // ラーメン屋', kanji: 'ラーメン', color: '#ff0055' },
+      { x: 1880, y: 150, w: 320, h: 80, type: 'cyber_car', carType: 'sports', color: '#bd00ff', label: 'CYBER-COUPE GT' },
+      { x: 1480, y: 320, w: 80, h: 360, type: 'transformer_box', label: 'STREET SUB-STATION 404', warning: 'HIGH VOLTAGE 50kV' },
+      { x: 1680, y: 280, w: 260, h: 80, type: 'vending_machine', label: 'NEO-COLA & STIMS', brand: 'NEO-COLA' },
+      { x: 2080, y: 300, w: 80, h: 420, type: 'neon_billboard', label: 'ARASAKA CORP // AD', color: '#ff0033' },
+      { x: 1680, y: 480, w: 280, h: 70, type: 'dumpster', label: 'ALLEY WASTE DUMPSTER #12' },
+      { x: 1350, y: 780, w: 420, h: 80, type: 'ramen_stall', label: 'CYBER GYOZA // 餃子', kanji: 'サイバー餃子', color: '#ffbe0b' },
+      { x: 1920, y: 780, w: 280, h: 80, type: 'cyber_car', carType: 'sedan', color: '#00f0ff', label: 'POLICE ENFORCER' },
+      { x: 1820, y: 600, w: 90, h: 120, type: 'dumpster', label: 'RECYCLE BIN #08' },
 
       // --- ZONE 2 (NORTH-WEST & MAIN BOULEVARD FLANK): Billboard Pylons & Dumpsters ---
-      { x: 180, y: 180, w: 80, h: 320, type: 'wall' },
-      { x: 380, y: 180, w: 240, h: 75, type: 'wall' },
-      { x: 550, y: 350, w: 180, h: 80, type: 'barrier' },
-      { x: 220, y: 580, w: 260, h: 75, type: 'wall' },
-      { x: 600, y: 550, w: 80, h: 260, type: 'wall' },
-      { x: 320, y: 820, w: 220, h: 85, type: 'barrier' },
-      { x: 720, y: 880, w: 180, h: 80, type: 'crate' },
+      { x: 180, y: 180, w: 80, h: 320, type: 'transformer_box', label: 'STREET POWER MATRIX', warning: '100kV' },
+      { x: 380, y: 180, w: 240, h: 75, type: 'cyber_car', carType: 'sports', color: '#ff3366', label: 'STREET RACER #7' },
+      { x: 550, y: 350, w: 180, h: 80, type: 'vending_machine', label: 'CYBER-STIM DISPENSER', brand: 'STIM-X' },
+      { x: 220, y: 580, w: 260, h: 75, type: 'dumpster', label: 'METRO TRASH DUMPSTER' },
+      { x: 600, y: 550, w: 80, h: 260, type: 'neon_billboard', label: 'KENJI OPTICS // ホロ広告', color: '#00f0ff' },
+      { x: 320, y: 820, w: 220, h: 85, type: 'cyber_car', carType: 'van', color: '#334466', label: 'SMUGGLER VAN' },
+      { x: 720, y: 880, w: 180, h: 80, type: 'dumpster', label: 'CORNER REFUSE CONTAINER' },
 
       // --- ZONE 3 (SOUTH-WEST): Night Market Shanty Stalls ---
-      { x: 180, y: 1250, w: 320, h: 75, type: 'wall' },
-      { x: 180, y: 1450, w: 80, h: 380, type: 'wall' },
-      { x: 360, y: 1420, w: 220, h: 80, type: 'barrier' },
-      { x: 680, y: 1280, w: 80, h: 360, type: 'wall' },
-      { x: 380, y: 1650, w: 180, h: 80, type: 'barrier' },
-      { x: 220, y: 1920, w: 320, h: 75, type: 'wall' },
-      { x: 620, y: 1820, w: 240, h: 80, type: 'barrier' },
-      { x: 420, y: 2100, w: 180, h: 80, type: 'crate' },
+      { x: 180, y: 1250, w: 320, h: 75, type: 'ramen_stall', label: 'NIGHT MARKET YAKITORI', kanji: '焼き鳥', color: '#ff4400' },
+      { x: 180, y: 1450, w: 80, h: 380, type: 'transformer_box', label: 'MARKET POWER GENERATOR' },
+      { x: 360, y: 1420, w: 220, h: 80, type: 'vending_machine', label: 'HOT BEVERAGE VENDOR', brand: 'NEO-TEA' },
+      { x: 680, y: 1280, w: 80, h: 360, type: 'neon_billboard', label: 'KABUKI DISTRICT // 看板', color: '#bd00ff' },
+      { x: 380, y: 1650, w: 180, h: 80, type: 'dumpster', label: 'MARKET ORGANIC RECEPTACLE' },
+      { x: 220, y: 1920, w: 320, h: 75, type: 'ramen_stall', label: 'SUSHI BAR // 寿司バー', kanji: '寿司', color: '#00ffaa' },
+      { x: 620, y: 1820, w: 240, h: 80, type: 'cyber_car', carType: 'sports', color: '#ffbe0b', label: 'VIP SEDAN 2099' },
+      { x: 420, y: 2100, w: 180, h: 80, type: 'dumpster', label: 'SERVICE ENTRANCE BIN' },
 
       // --- ZONE 4 (SOUTH-EAST): Transit Pylon Foundations & Concrete Depots ---
-      { x: 1150, y: 1480, w: 340, h: 80, type: 'wall' },
-      { x: 1600, y: 1350, w: 80, h: 360, type: 'wall' },
-      { x: 1800, y: 1250, w: 320, h: 80, type: 'wall' },
-      { x: 1280, y: 1720, w: 80, h: 280, type: 'wall' },
-      { x: 1480, y: 1850, w: 360, h: 80, type: 'barrier' },
-      { x: 1950, y: 1550, w: 80, h: 380, type: 'wall' },
-      { x: 1550, y: 2080, w: 320, h: 80, type: 'wall' },
-      { x: 1950, y: 2080, w: 260, h: 80, type: 'crate' },
+      { x: 1150, y: 1480, w: 340, h: 80, type: 'cyber_car', carType: 'truck', color: '#445566', label: 'METRO LOGISTICS CAB' },
+      { x: 1600, y: 1350, w: 80, h: 360, type: 'transformer_box', label: 'MAG-RAIL TRACTION SUB-STATION' },
+      { x: 1800, y: 1250, w: 320, h: 80, type: 'vending_machine', label: 'METRO STATION COMMISSARY', brand: 'METRO-STIM' },
+      { x: 1280, y: 1720, w: 80, h: 280, type: 'neon_billboard', label: 'SHIBUYA 2099 // 広告', color: '#ff00aa' },
+      { x: 1480, y: 1850, w: 360, h: 80, type: 'ramen_stall', label: 'MIDNIGHT NOODLE CABIN', kanji: '深夜麺', color: '#ff3300' },
+      { x: 1950, y: 1550, w: 80, h: 380, type: 'transformer_box', label: 'FEEDER JUNCTION 88' },
+      { x: 1550, y: 2080, w: 320, h: 80, type: 'cyber_car', carType: 'sports', color: '#00d4ff', label: 'NEON RUNNER SPEEDSTER' },
+      { x: 1950, y: 2080, w: 260, h: 80, type: 'dumpster', label: 'TERMINAL COMPACTOR' },
 
       // Diagonal street dividers
-      { x: 880, y: 450, w: 80, h: 240, type: 'barrier' },
-      { x: 1050, y: 1050, w: 220, h: 80, type: 'barrier' }
+      { x: 880, y: 450, w: 80, h: 240, type: 'neon_barrier', label: 'BOULEVARD TRAFFIC MEDIAN' },
+      { x: 1050, y: 1050, w: 220, h: 80, type: 'neon_barrier', label: 'METRO OVERPASS MEDIAN' }
     ],
     pillars: [
-      // Heavy Concrete Transit Pylons & Hologram Projector Columns (Asymmetrical)
-      { x: 820, y: 320, radius: 45 },
-      { x: 1250, y: 620, radius: 45 },
-      { x: 880, y: 1350, radius: 45 },
-      { x: 1450, y: 1150, radius: 50 },
-      { x: 1850, y: 1050, radius: 45 },
-      { x: 1765, y: 1650, radius: 36 },
-      { x: 1120, y: 1880, radius: 40 }
+      // Heavy Concrete Transit Pylons & Hologram Projector Columns (Wrapped in neon billboards)
+      { x: 820, y: 320, radius: 45, type: 'neon_transit_pylon', label: 'PYLON 01', adColor: '#ff0055' },
+      { x: 1250, y: 620, radius: 45, type: 'neon_transit_pylon', label: 'PYLON 02', adColor: '#00f0ff' },
+      { x: 880, y: 1350, radius: 45, type: 'neon_transit_pylon', label: 'PYLON 03', adColor: '#bd00ff' },
+      { x: 1450, y: 1150, radius: 50, type: 'neon_transit_pylon', label: 'CENTRAL METRO HUB', adColor: '#ffbe0b' },
+      { x: 1850, y: 1050, radius: 45, type: 'neon_transit_pylon', label: 'PYLON 05', adColor: '#00ff88' },
+      { x: 1765, y: 1650, radius: 36, type: 'neon_transit_pylon', label: 'PYLON 06', adColor: '#ff00aa' },
+      { x: 1120, y: 1880, radius: 40, type: 'neon_transit_pylon', label: 'PYLON 07', adColor: '#00d4ff' }
     ],
     barrels: [
       // Street trash fires & explosive fuel canisters
@@ -332,62 +333,62 @@ const MAP_DEFINITIONS = {
     width: MAP_WIDTH,
     height: MAP_HEIGHT,
     walls: [
-      // Outer Perimeter Boundaries
+      // Outer Perimeter Boundaries (Thermal ceramic blast containment)
       { x: 0, y: 0, w: MAP_WIDTH, h: 50, type: 'boundary' },
       { x: 0, y: MAP_HEIGHT - 50, w: MAP_WIDTH, h: 50, type: 'boundary' },
       { x: 0, y: 0, w: 50, h: MAP_HEIGHT, type: 'boundary' },
       { x: MAP_WIDTH - 50, y: 0, w: 50, h: MAP_HEIGHT, type: 'boundary' },
 
       // --- ZONE 1 (NORTH-WEST): Shattered Containment Dome & Heat Exchangers ---
-      { x: 180, y: 200, w: 380, h: 65, type: 'wall' },
-      { x: 680, y: 200, w: 65, h: 360, type: 'wall' },
-      { x: 220, y: 450, w: 280, h: 75, type: 'barrier' },
-      { x: 180, y: 620, w: 65, h: 420, type: 'wall' },
-      { x: 380, y: 720, w: 320, h: 70, type: 'barrier' },
-      { x: 750, y: 650, w: 75, h: 340, type: 'wall' },
-      { x: 380, y: 1100, w: 260, h: 80, type: 'container', color: '#54201a' },
-      { x: 780, y: 1100, w: 240, h: 75, type: 'barrier' },
+      { x: 180, y: 200, w: 380, h: 65, type: 'heat_shield', label: 'CERAMIC THERMAL DEFLECTOR 01' },
+      { x: 680, y: 200, w: 65, h: 360, type: 'coolant_pipe', label: 'SUPERHEATED STEAM MANIFOLD' },
+      { x: 220, y: 450, w: 280, h: 75, type: 'slag_barrier', label: 'SCORCHED MOLTEN REBAR WALL' },
+      { x: 180, y: 620, w: 65, h: 420, type: 'heat_shield', label: 'RADIATION BAFFLE WEST' },
+      { x: 380, y: 720, w: 320, h: 70, type: 'slag_barrier', label: 'BREACH DEFENSE PARAPET' },
+      { x: 750, y: 650, w: 75, h: 340, type: 'coolant_pipe', label: 'PRIMARY COOLANT CONDUIT #1' },
+      { x: 380, y: 1100, w: 260, h: 80, type: 'waste_containment', label: 'SPENT FUEL CASK HOLD' },
+      { x: 780, y: 1100, w: 240, h: 75, type: 'slag_barrier', label: 'SLAG OVERFLOW DAM' },
 
       // --- ZONE 2 (NORTH & CRACK BRIDGE FLANK): Broken Cooling Galleries ---
-      { x: 920, y: 180, w: 460, h: 65, type: 'wall' },
-      { x: 1480, y: 180, w: 65, h: 320, type: 'wall' },
-      { x: 1050, y: 380, w: 280, h: 70, type: 'barrier' },
-      { x: 1680, y: 220, w: 360, h: 65, type: 'wall' },
-      { x: 1420, y: 580, w: 80, h: 280, type: 'barrier' },
-      { x: 1650, y: 450, w: 260, h: 80, type: 'container', color: '#1a4a3a' },
+      { x: 920, y: 180, w: 460, h: 65, type: 'heat_shield', label: 'CONTAINMENT SHELL SEGMENT' },
+      { x: 1480, y: 180, w: 65, h: 320, type: 'coolant_pipe', label: 'HEAVY SODIUM CONDUIT #4' },
+      { x: 1050, y: 380, w: 280, h: 70, type: 'slag_barrier', label: 'MELTED BASALT RUBBLE WALL' },
+      { x: 1680, y: 220, w: 360, h: 65, type: 'heat_shield', label: 'TURBINE RADIATION BULKHEAD' },
+      { x: 1420, y: 580, w: 80, h: 280, type: 'coolant_pipe', label: 'AUXILIARY COOLING INTAKE' },
+      { x: 1650, y: 450, w: 260, h: 80, type: 'waste_containment', label: 'RAD-SHIELDED BUNKER #2' },
 
       // --- ZONE 3 (SOUTH-EAST): Overheated Turbine Banks & Generator Blocks ---
-      { x: 1350, y: 1150, w: 320, h: 75, type: 'wall' },
-      { x: 1780, y: 950, w: 75, h: 420, type: 'wall' },
-      { x: 1980, y: 1150, w: 240, h: 75, type: 'container', color: '#54201a' },
-      { x: 1480, y: 1420, w: 380, h: 70, type: 'barrier' },
-      { x: 1280, y: 1580, w: 75, h: 380, type: 'wall' },
-      { x: 1480, y: 1720, w: 280, h: 75, type: 'barrier' },
-      { x: 1880, y: 1550, w: 75, h: 420, type: 'wall' },
-      { x: 1450, y: 2050, w: 420, h: 65, type: 'wall' },
-      { x: 1980, y: 1850, w: 240, h: 80, type: 'crate' },
+      { x: 1350, y: 1150, w: 320, h: 75, type: 'turbine_block', label: 'MAIN STEAM TURBINE UNIT #1' },
+      { x: 1780, y: 950, w: 75, h: 420, type: 'turbine_block', label: 'MAGNETIC INDUCTION ROTOR' },
+      { x: 1980, y: 1150, w: 240, h: 75, type: 'waste_containment', label: 'RADIOACTIVE FILTER BANK' },
+      { x: 1480, y: 1420, w: 380, h: 70, type: 'slag_barrier', label: 'MOLTEN CORE SLAG BARRIER' },
+      { x: 1280, y: 1580, w: 75, h: 380, type: 'coolant_pipe', label: 'DRAINAGE VALVE STATION' },
+      { x: 1480, y: 1720, w: 280, h: 75, type: 'turbine_block', label: 'HIGH-VOLTAGE BUSBAR TRANSFORMER' },
+      { x: 1880, y: 1550, w: 75, h: 420, type: 'turbine_block', label: 'ELECTROMAGNETIC ARRESTOR' },
+      { x: 1450, y: 2050, w: 420, h: 65, type: 'heat_shield', label: 'SUB-FLOOR THERMAL BAFFLE' },
+      { x: 1980, y: 1850, w: 240, h: 80, type: 'waste_containment', label: 'RAD-WASTE STORAGE PALLET' },
 
       // --- ZONE 4 (SOUTH-WEST TRENCH FLANK): Slag Barrier Bastions ---
-      { x: 180, y: 1450, w: 75, h: 380, type: 'wall' },
-      { x: 380, y: 1450, w: 260, h: 75, type: 'barrier' },
-      { x: 280, y: 1750, w: 320, h: 75, type: 'wall' },
-      { x: 720, y: 1650, w: 75, h: 360, type: 'wall' },
-      { x: 420, y: 2020, w: 380, h: 65, type: 'wall' },
-      { x: 880, y: 1920, w: 240, h: 75, type: 'barrier' },
+      { x: 180, y: 1450, w: 75, h: 380, type: 'slag_barrier', label: 'VOLCANIC DIKE RETAINER' },
+      { x: 380, y: 1450, w: 260, h: 75, type: 'heat_shield', label: 'FLAME DEFLECTOR TRAY' },
+      { x: 280, y: 1750, w: 320, h: 75, type: 'slag_barrier', label: 'CRACKED BASALT BASTION' },
+      { x: 720, y: 1650, w: 75, h: 360, type: 'coolant_pipe', label: 'EMERGENCY STEAM DISCHARGE' },
+      { x: 420, y: 2020, w: 380, h: 65, type: 'heat_shield', label: 'SOUTH QUENCH TANK BARRIER' },
+      { x: 880, y: 1920, w: 240, h: 75, type: 'slag_barrier', label: 'SLAG RETENTION REVETMENT' },
 
       // Jagged catwalk barriers overlooking the breach
-      { x: 980, y: 820, w: 160, h: 75, type: 'barrier' },
-      { x: 1180, y: 1250, w: 160, h: 75, type: 'barrier' }
+      { x: 980, y: 820, w: 160, h: 75, type: 'slag_barrier', label: 'CORE PIT BRIDGEHEAD' },
+      { x: 1180, y: 1250, w: 160, h: 75, type: 'slag_barrier', label: 'CATWALK ANCHOR BLOCK' }
     ],
     pillars: [
-      // Cracked Cooling Towers & Massive Tungsten Reactor Rods (Asymmetrical)
-      { x: 585, y: 480, radius: 36 },   // Giant breached cooling tower
-      { x: 1250, y: 535, radius: 36 },  // Primary coolant pylon
-      { x: 1995, y: 450, radius: 36 },  // Sub-reactor rod
-      { x: 885, y: 1260, radius: 36 },  // Island rock bastion
-      { x: 1585, y: 880, radius: 36 },  // Catwalk anchor tower
-      { x: 1620, y: 1580, radius: 36 }, // High-voltage coil
-      { x: 980, y: 1750, radius: 44 }   // Slag drain stack
+      // Cracked Cooling Towers & Massive Tungsten Reactor Rods
+      { x: 585, y: 480, radius: 36, type: 'reactor_core_rod', label: 'ROD CLUSTER A' },
+      { x: 1250, y: 535, radius: 36, type: 'reactor_core_rod', label: 'COOLANT TOWER-01' },
+      { x: 1995, y: 450, radius: 36, type: 'reactor_core_rod', label: 'ROD CLUSTER B' },
+      { x: 885, y: 1260, radius: 36, type: 'plasma_stabilizer', label: 'PLASMA COIL #3' },
+      { x: 1585, y: 880, radius: 36, type: 'plasma_stabilizer', label: 'PLASMA COIL #4' },
+      { x: 1620, y: 1580, radius: 36, type: 'reactor_core_rod', label: 'MAIN TRANSFORMER' },
+      { x: 980, y: 1750, radius: 44, type: 'reactor_core_rod', label: 'VENTILATION STACK' }
     ],
     barrels: [
       // Dense clusters of leaking radioactive fuel cells near cracks
@@ -428,56 +429,56 @@ const MAP_DEFINITIONS = {
     width: MAP_WIDTH,
     height: MAP_HEIGHT,
     walls: [
-      // Outer boundaries
+      // Outer boundaries (Deep Space Station Hull with vacuum viewport glass)
       { x: 0, y: 0, w: MAP_WIDTH, h: 50, type: 'boundary' },
       { x: 0, y: MAP_HEIGHT - 50, w: MAP_WIDTH, h: 50, type: 'boundary' },
       { x: 0, y: 0, w: 50, h: MAP_HEIGHT, type: 'boundary' },
       { x: MAP_WIDTH - 50, y: 0, w: 50, h: MAP_HEIGHT, type: 'boundary' },
 
       // ZONE 1 (NORTH-WEST): Airlock Pressurized Terminal
-      { x: 160, y: 220, w: 340, h: 60, type: 'wall' },
-      { x: 160, y: 220, w: 60, h: 380, type: 'wall' },
-      { x: 320, y: 420, w: 260, h: 65, type: 'barrier' },
-      { x: 680, y: 180, w: 65, h: 360, type: 'wall' },
-      { x: 500, y: 680, w: 320, h: 60, type: 'wall' },
+      { x: 160, y: 220, w: 340, h: 60, type: 'orbital_bulkhead', label: 'MODULE 01 AEROSPACE HULL' },
+      { x: 160, y: 220, w: 60, h: 380, type: 'orbital_bulkhead', label: 'DOCKING CLAMP BULKHEAD' },
+      { x: 320, y: 420, w: 260, h: 65, type: 'airlock_hatch', label: 'PRESSURE AIRLOCK PORT #01' },
+      { x: 680, y: 180, w: 65, h: 360, type: 'orbital_bulkhead', label: 'DECOMPRESSION WALL WEST' },
+      { x: 500, y: 680, w: 320, h: 60, type: 'science_station', label: 'ORBITAL FLIGHT CONTROL CONSOLE' },
 
       // ZONE 2 (NORTH-EAST): Solar Array Capacitor Banks
-      { x: 1350, y: 180, w: 460, h: 60, type: 'wall' },
-      { x: 1920, y: 180, w: 60, h: 380, type: 'wall' },
-      { x: 1480, y: 380, w: 280, h: 70, type: 'container', color: '#1a3a54' },
-      { x: 1820, y: 450, w: 240, h: 60, type: 'barrier' },
-      { x: 1350, y: 650, w: 70, h: 280, type: 'wall' },
-      { x: 1550, y: 820, w: 380, h: 60, type: 'wall' },
+      { x: 1350, y: 180, w: 460, h: 60, type: 'solar_capacitor', label: 'PHOTOVOLTAIC INVERTER BANK 1' },
+      { x: 1920, y: 180, w: 60, h: 380, type: 'orbital_bulkhead', label: 'SOLAR BUS CONDUCTOR WALL' },
+      { x: 1480, y: 380, w: 280, h: 70, type: 'solar_capacitor', label: 'HIGH-CAPACITY BATTERY CELL A' },
+      { x: 1820, y: 450, w: 240, h: 60, type: 'airlock_hatch', label: 'EVA SUIT MAINTENANCE GATE' },
+      { x: 1350, y: 650, w: 70, h: 280, type: 'science_station', label: 'SOLAR ARRAY TELEMETRY DESK' },
+      { x: 1550, y: 820, w: 380, h: 60, type: 'solar_capacitor', label: 'PHOTOVOLTAIC INVERTER BANK 2' },
 
       // ZONE 3 (MIDFIELD & VOID BRIDGES): Cantilevered Catwalks
-      { x: 920, y: 480, w: 240, h: 65, type: 'barrier' },
-      { x: 780, y: 920, w: 60, h: 380, type: 'wall' },
-      { x: 1220, y: 920, w: 60, h: 380, type: 'wall' },
-      { x: 920, y: 1320, w: 240, h: 65, type: 'barrier' },
+      { x: 920, y: 480, w: 240, h: 65, type: 'magnetic_barrier', label: 'CHASM CATWALK SAFETY RAIL' },
+      { x: 780, y: 920, w: 60, h: 380, type: 'orbital_bulkhead', label: 'VOID CONNECTOR TUBE NORTH' },
+      { x: 1220, y: 920, w: 60, h: 380, type: 'orbital_bulkhead', label: 'VOID CONNECTOR TUBE SOUTH' },
+      { x: 920, y: 1320, w: 240, h: 65, type: 'magnetic_barrier', label: 'MAG-LIFT CROSSWALK GUARD' },
 
       // ZONE 4 (SOUTH-WEST): Main Thruster Exhaust Plazas
-      { x: 200, y: 1250, w: 380, h: 65, type: 'wall' },
-      { x: 200, y: 1450, w: 65, h: 420, type: 'wall' },
-      { x: 380, y: 1520, w: 260, h: 70, type: 'barrier' },
-      { x: 220, y: 1950, w: 360, h: 60, type: 'wall' },
-      { x: 680, y: 1650, w: 65, h: 380, type: 'wall' },
+      { x: 200, y: 1250, w: 380, h: 65, type: 'thruster_housing', label: 'RCS VECTOR MANIFOLD #01' },
+      { x: 200, y: 1450, w: 65, h: 420, type: 'orbital_bulkhead', label: 'ION DRIVE COWL WALL' },
+      { x: 380, y: 1520, w: 260, h: 70, type: 'thruster_housing', label: 'FUEL GIMBAL ACTUATOR' },
+      { x: 220, y: 1950, w: 360, h: 60, type: 'orbital_bulkhead', label: 'EXHAUST DEFLECTOR PYLON' },
+      { x: 680, y: 1650, w: 65, h: 380, type: 'airlock_hatch', label: 'THRUSTER ENGINE SERVICE AIRLOCK' },
 
       // ZONE 5 (SOUTH-EAST): Tactical Telemetry & Relay Core
-      { x: 1420, y: 1350, w: 380, h: 65, type: 'wall' },
-      { x: 1920, y: 1250, w: 65, h: 450, type: 'wall' },
-      { x: 1480, y: 1650, w: 280, h: 70, type: 'barrier' },
-      { x: 1350, y: 1950, w: 420, h: 60, type: 'wall' },
-      { x: 1820, y: 1850, w: 260, h: 65, type: 'wall' }
+      { x: 1420, y: 1350, w: 380, h: 65, type: 'science_station', label: 'DEEP-SPACE ANTENNA TELEMETRY' },
+      { x: 1920, y: 1250, w: 65, h: 450, type: 'orbital_bulkhead', label: 'RADOME SHIELDED BULKHEAD' },
+      { x: 1480, y: 1650, w: 280, h: 70, type: 'airlock_hatch', label: 'OBSERVATORY ACCESS DECK' },
+      { x: 1350, y: 1950, w: 420, h: 60, type: 'solar_capacitor', label: 'RESERVE POWER ACCUMULATOR' },
+      { x: 1820, y: 1850, w: 260, h: 65, type: 'science_station', label: 'STELLAR SPECTROMETRY CONSOLE' }
     ],
     pillars: [
       // Magnetic Dock Pylons & Gravity Anchor Coils
-      { x: 570, y: 330, radius: 36 },
-      { x: 1815, y: 320, radius: 32 },
-      { x: 1070, y: 720, radius: 42 },
-      { x: 1070, y: 1120, radius: 42 },
-      { x: 480, y: 1750, radius: 50 },
-      { x: 1655, y: 1805, radius: 36 },
-      { x: 2050, y: 950, radius: 40 }
+      { x: 570, y: 330, radius: 36, type: 'gravity_coil', label: 'GRAV COIL #1' },
+      { x: 1815, y: 320, radius: 32, type: 'solar_node', label: 'SOLAR NODE A' },
+      { x: 1070, y: 720, radius: 42, type: 'magnetic_pylon', label: 'DOCK PYLON NORTH' },
+      { x: 1070, y: 1120, radius: 42, type: 'magnetic_pylon', label: 'DOCK PYLON SOUTH' },
+      { x: 480, y: 1750, radius: 50, type: 'thruster_nozzle', label: 'THRUSTER BELL' },
+      { x: 1655, y: 1805, radius: 36, type: 'gravity_coil', label: 'GRAV COIL #2' },
+      { x: 2050, y: 950, radius: 40, type: 'solar_node', label: 'SOLAR NODE B' }
     ],
     barrels: [
       { x: 380, y: 320 }, { x: 415, y: 320 },
@@ -495,4 +496,3 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
   window.MAP_DEFINITIONS = MAP_DEFINITIONS;
 }
-

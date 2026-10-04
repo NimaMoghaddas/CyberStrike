@@ -643,15 +643,18 @@ function spawnServerEnemy(room) {
 
   const wave = room.waveManager.wave;
   if (wave === 1) {
-    if (roll < 0.45) {
+    if (roll < 0.35) {
       type = 'normal';
-    } else if (roll < 0.70) {
+    } else if (roll < 0.55) {
       type = 'fast';
       radius = 16; maxHp = 45; speed = 255; damage = 14; scoreValue = 125; color = '#00f0ff'; attackCooldown = 0.45; attackRange = 32;
-    } else if (roll < 0.88) {
+    } else if (roll < 0.72) {
       type = 'splitter';
       generation = 0;
       radius = 26; maxHp = 120; speed = 120; damage = 14; scoreValue = 200; color = '#00ff88'; attackCooldown = 0.75; attackRange = 40;
+    } else if (roll < 0.88) {
+      type = 'toxic';
+      radius = 24; maxHp = 110; speed = 130; damage = 22; scoreValue = 220; color = '#39ff14'; attackCooldown = 0.9; attackRange = 52;
     } else {
       type = 'bomber';
       radius = 18; maxHp = 60; speed = 210; damage = 50; scoreValue = 200; color = '#ff7700'; attackCooldown = 0.5; attackRange = 36;
@@ -1357,8 +1360,13 @@ io.on('connection', (socket) => {
     });
 
     // Broadcast to other squad members in room
-    socket.to(room.id).emit('player_joined', {
-      player: newPlayer
+    const joinRecipients = new Set([
+      ...Object.keys(room.players || {}),
+      ...Object.keys(room.activePlayers || {})
+    ]);
+    joinRecipients.delete(socket.id);
+    joinRecipients.forEach(targetId => {
+      io.to(targetId).emit('player_joined', { player: newPlayer });
     });
 
     io.to(room.id).emit('kill_feed_msg', {
@@ -1391,7 +1399,7 @@ io.on('connection', (socket) => {
     p.lastUpdate = Date.now();
   });
 
-  // Shoot Event
+  // Shoot Event (Synchronized across all squad members)
   socket.on('player_shoot', (data) => {
     const room = getRoomForSocket(socket);
     if (!room) return;
@@ -1399,8 +1407,9 @@ io.on('connection', (socket) => {
 
     const bulletColor = data.color || (p ? p.color : '#00f0ff');
     const playerTeam = (p && p.team) || data.team || (room.players[socket.id] ? room.players[socket.id].team : null);
+    const weaponType = data.weaponType || (p ? p.weapon : 'rifle') || 'rifle';
 
-    socket.to(room.id).emit('remote_shoot', {
+    const shootPayload = {
       shooterId: socket.id,
       team: playerTeam,
       x: data.x,
@@ -1409,7 +1418,7 @@ io.on('connection', (socket) => {
       isCritical: !!data.isCritical,
       damage: data.damage || 28,
       color: bulletColor,
-      weaponType: data.weaponType || p.weapon || 'rifle',
+      weaponType: weaponType,
       speed: data.speed,
       range: data.range,
       radius: data.radius,
@@ -1417,6 +1426,19 @@ io.on('connection', (socket) => {
       explosive: !!data.explosive,
       splashDamage: data.splashDamage,
       blastRadius: data.blastRadius
+    };
+
+    // Broadcast to ALL other players in this squad room
+    // Note: Must dispatch to each peer socket directly because for the room leader/host,
+    // room.id === socket.id, which causes socket.to(room.id) to be dropped by Socket.IO as self-excluding!
+    const recipientIds = new Set([
+      ...Object.keys(room.players || {}),
+      ...Object.keys(room.activePlayers || {})
+    ]);
+    recipientIds.delete(socket.id);
+
+    recipientIds.forEach(targetId => {
+      io.to(targetId).emit('remote_shoot', shootPayload);
     });
   });
 
@@ -1902,8 +1924,9 @@ setInterval(() => {
               angle: enemy.angle,
               speed: 460,
               damage: 16,
-              color: '#39ff14',
-              ignoreWalls: false
+              color: '#00ff88',
+              ignoreWalls: false,
+              leavesPool: false
             });
           }
         } else {
@@ -1912,6 +1935,36 @@ setInterval(() => {
             enemy.spitTimer = 5.0; // Shoot every 5 seconds unconditionally!
             enemy.spitWindupTimer = 0.35;
             io.to(room.id).emit('enemy_windup', { enemyId: enemy.id, duration: 0.35 });
+          }
+        }
+      }
+
+      // TOXIC SLIMER (Leaves a 3-second acid puddle on the ground)
+      if (enemy.type === 'toxic') {
+        if (enemy.spitTimer === undefined) enemy.spitTimer = 1.0 + Math.random() * 3.0;
+        if (enemy.spitWindupTimer > 0) {
+          enemy.spitWindupTimer -= DT;
+          if (enemy.spitWindupTimer <= 0) {
+            const mouthX = enemy.x + Math.cos(enemy.angle) * (enemy.radius + 8);
+            const mouthY = enemy.y + Math.sin(enemy.angle) * (enemy.radius + 8);
+            io.to(room.id).emit('enemy_spit', {
+              enemyId: enemy.id,
+              x: mouthX,
+              y: mouthY,
+              angle: enemy.angle,
+              speed: 400,
+              damage: 20,
+              color: '#39ff14',
+              ignoreWalls: false,
+              leavesPool: true
+            });
+          }
+        } else {
+          enemy.spitTimer -= DT;
+          if (enemy.spitTimer <= 0) {
+            enemy.spitTimer = 3.8;
+            enemy.spitWindupTimer = 0.45;
+            io.to(room.id).emit('enemy_windup', { enemyId: enemy.id, duration: 0.45 });
           }
         }
       }

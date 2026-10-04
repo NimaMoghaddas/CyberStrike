@@ -2222,75 +2222,196 @@ html, body {
   color: #cbd5e1;
 }
 
-/* Maps Grid */
-.maps-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 12px;
-}
-
-.map-card {
-  background: rgba(12, 18, 32, 0.85);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 8px;
-  padding: 14px 16px;
+/* Active Map Quick Switch Banner */
+.active-map-banner {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  text-align: left;
+  padding: 8px 12px;
+  margin-top: 10px;
+  margin-bottom: 12px;
+  background: rgba(0, 240, 255, 0.06);
+  border: 1px solid rgba(0, 240, 255, 0.3);
+  border-radius: 6px;
   cursor: pointer;
-  transition: all 0.22s ease;
-  position: relative;
-  overflow: hidden;
+  transition: all 0.2s ease;
 }
 
-.map-card:hover {
-  transform: translateY(-2px);
-  border-color: rgba(255, 255, 255, 0.3);
-  background: rgba(18, 28, 48, 0.9);
+.active-map-banner:hover {
+  background: rgba(0, 240, 255, 0.14);
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 16px rgba(0, 240, 255, 0.25);
+  transform: translateY(-1px);
 }
 
-.map-card.selected {
-  border-color: var(--map-accent, var(--accent-cyan));
-  box-shadow: 0 0 16px var(--map-glow, rgba(0, 240, 255, 0.35));
-  background: rgba(14, 25, 45, 0.95);
-}
-
-.map-card.selected::before {
-  content: 'TARGET SECTOR';
-  position: absolute;
-  top: 6px;
-  right: 8px;
-  font-family: var(--font-display);
-  font-size: 9px;
-  font-weight: 700;
-  color: var(--map-accent, var(--accent-cyan));
-  letter-spacing: 1px;
-}
-
-.map-card-header {
+.map-banner-left {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
+.map-banner-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #64748b;
+}
+
+.map-banner-val {
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  color: var(--accent-cyan);
+  transition: color 0.2s ease;
+}
+
+.map-banner-change {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  color: #94a3b8;
+  letter-spacing: 0.8px;
+  transition: color 0.2s ease;
+}
+
+.active-map-banner:hover .map-banner-change {
+  color: #fff;
+}
+
+.tab-mini-badge {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: rgba(0, 240, 255, 0.12);
+  color: var(--accent-cyan);
+  border: 1px solid rgba(0, 240, 255, 0.3);
+  margin-left: 6px;
+  white-space: nowrap;
+}
+
+/* Maps Grid */
+.maps-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.map-card {
+  background: rgba(10, 16, 28, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+  opacity: 0.75;
+}
+
+.map-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.38);
+  background: rgba(18, 28, 50, 0.95);
+  opacity: 1;
+}
+
+.map-card.selected {
+  opacity: 1 !important;
+  border: 2px solid var(--map-accent, #00f0ff) !important;
+  background: rgba(14, 28, 50, 0.98) !important;
+  box-shadow: 0 0 24px var(--map-glow, rgba(0, 240, 255, 0.45)), inset 0 0 16px rgba(0, 240, 255, 0.12) !important;
+  transform: translateY(-2px);
+}
+
+.map-card.selected::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 5px;
+  height: 100%;
+  background: var(--map-accent, #00f0ff);
+  box-shadow: 0 0 12px var(--map-accent, #00f0ff);
+}
+
+.map-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .map-icon {
-  font-size: 16px;
+  font-size: 20px;
+  filter: drop-shadow(0 0 8px rgba(0, 240, 255, 0.3));
+}
+
+.map-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .map-card-title {
   font-family: var(--font-display);
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 800;
   letter-spacing: 1px;
+  color: #cbd5e1;
+  transition: color 0.2s ease;
+}
+
+.map-card:hover .map-card-title {
   color: #fff;
 }
 
+.map-card.selected .map-card-title {
+  color: var(--map-accent, #00f0ff);
+  text-shadow: 0 0 10px var(--map-accent, #00f0ff);
+}
+
 .map-card-sub {
-  font-family: var(--font-display);
+  font-family: var(--font-mono);
   font-size: 9px;
-  color: var(--text-muted);
+  color: #94a3b8;
+  letter-spacing: 0.8px;
+}
+
+.map-card-badge {
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 800;
   letter-spacing: 1px;
+  padding: 5px 12px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.map-card:hover .map-card-badge {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.map-card.selected .map-card-badge,
+.map-card-badge.active {
+  background: var(--map-accent, #00f0ff) !important;
+  color: #06090f !important;
+  border-color: var(--map-accent, #00f0ff) !important;
+  box-shadow: 0 0 14px var(--map-accent, #00f0ff) !important;
+  font-weight: 900;
 }
 
 .map-card-lore {
@@ -3281,6 +3402,130 @@ html, body {
   border-radius: 4px;
 }
 
+/* ==========================================================================
+   CONSOLIDATED TACTICAL PROTOCOLS PANEL (VISIBILITY + WEAPONS + THREAT)
+   ========================================================================== */
+.tactical-protocols-panel {
+  display: flex;
+  gap: 10px;
+  background: rgba(4, 9, 20, 0.85);
+  border: 1px solid rgba(0, 240, 255, 0.22);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5), inset 0 0 15px rgba(0, 240, 255, 0.04);
+}
+
+.protocol-column {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: rgba(11, 19, 34, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 8px 10px;
+  transition: all 0.2s ease;
+}
+
+.protocol-column:hover {
+  border-color: rgba(0, 240, 255, 0.3);
+  background: rgba(14, 25, 45, 0.75);
+}
+
+.protocol-col-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-height: 20px;
+}
+
+.protocol-col-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1.1px;
+  color: #94a3b8;
+  text-transform: uppercase;
+}
+
+.protocol-col-title .protocol-icon {
+  font-size: 12px;
+  filter: drop-shadow(0 0 4px rgba(0, 240, 255, 0.4));
+}
+
+.mp-badge-chip {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  color: #c084fc;
+  background: rgba(192, 132, 252, 0.15);
+  border: 1px solid rgba(192, 132, 252, 0.35);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.protocol-btn-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.protocol-opt-btn {
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #cbd5e1;
+  font-family: var(--font-display);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.protocol-opt-btn:hover {
+  border-color: var(--accent-cyan);
+  color: #fff;
+  background: rgba(0, 240, 255, 0.1);
+}
+
+.protocol-opt-btn.active {
+  background: rgba(0, 240, 255, 0.18);
+  border-color: var(--accent-cyan);
+  color: var(--accent-cyan);
+  box-shadow: 0 0 10px rgba(0, 240, 255, 0.35);
+  font-weight: 800;
+}
+
+.protocol-opt-btn .btn-ic {
+  font-size: 11px;
+  line-height: 1;
+}
+
+.protocol-opt-btn .btn-txt {
+  line-height: 1;
+}
+
+@media (max-width: 860px) {
+  .tactical-protocols-panel {
+    flex-direction: column;
+    gap: 8px;
+  }
+}
+
+/* Legacy fallback classes */
 .lighting-switch-bar {
   display: flex;
   align-items: center;
