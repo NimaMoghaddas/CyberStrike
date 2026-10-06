@@ -688,6 +688,146 @@ class SoundSystem {
       osc.stop(t + idx * 0.05 + 0.34);
     });
   }
+  // --- Sound: Cryogenic Sub-Zero Frost Shockwave ---
+  playFrostWave() {
+    if (!this.initialized || this.muted) return;
+    this.resume();
+    const t = this.ctx.currentTime;
+    const dur = 0.55;
+
+    // Resonant deep cold rumble
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(180, t);
+    osc.frequency.exponentialRampToValueAtTime(45, t + dur);
+
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(800, t);
+    filter.frequency.exponentialRampToValueAtTime(120, t + dur);
+
+    gain.gain.setValueAtTime(0.35, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.masterGain);
+    osc.start(t);
+    osc.stop(t + dur + 0.01);
+  }
+
+  // --- Sound: Frost Freeze Impact on Player ---
+  playFrostHit() {
+    if (!this.initialized || this.muted) return;
+    this.resume();
+    const t = this.ctx.currentTime;
+    const dur = 0.32;
+
+    // Crystalline ice shatter
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(1400, t);
+    osc.frequency.exponentialRampToValueAtTime(480, t + dur);
+
+    gain.gain.setValueAtTime(0.28, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+    osc.start(t);
+    osc.stop(t + dur);
+  }
+
+  // --- Sound: Ghost Phase Cloak / Decloak ---
+  playGhostPhase() {
+    if (!this.initialized || this.muted) return;
+    this.resume();
+    const t = this.ctx.currentTime;
+    const dur = 0.42;
+
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(260, t);
+    osc.frequency.linearRampToValueAtTime(740, t + dur * 0.5);
+    osc.frequency.exponentialRampToValueAtTime(120, t + dur);
+
+    gain.gain.setValueAtTime(0.22, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+    osc.start(t);
+    osc.stop(t + dur);
+  }
+
+  // --- Sound: Arachnid Web Shoot ---
+  playWebShoot() {
+    if (!this.initialized || this.muted) return;
+    this.resume();
+    const t = this.ctx.currentTime;
+    const dur = 0.22;
+
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(820, t);
+    osc.frequency.exponentialRampToValueAtTime(240, t + dur);
+
+    gain.gain.setValueAtTime(0.3, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+    osc.start(t);
+    osc.stop(t + dur);
+  }
+
+  // --- Sound: Sticky Web Entanglement ---
+  playWebHit() {
+    if (!this.initialized || this.muted) return;
+    this.resume();
+    const t = this.ctx.currentTime;
+    const dur = 0.25;
+
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(320, t);
+    osc.frequency.exponentialRampToValueAtTime(90, t + dur);
+
+    gain.gain.setValueAtTime(0.25, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+    osc.start(t);
+    osc.stop(t + dur);
+  }
+
+  // --- Sound: Web Snapped / Broken ---
+  playWebBreak() {
+    if (!this.initialized || this.muted) return;
+    this.resume();
+    const t = this.ctx.currentTime;
+    const dur = 0.18;
+
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(680, t);
+    osc.frequency.exponentialRampToValueAtTime(1100, t + dur);
+
+    gain.gain.setValueAtTime(0.2, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+    osc.start(t);
+    osc.stop(t + dur);
+  }
 }
 
 window.soundSystem = new SoundSystem();

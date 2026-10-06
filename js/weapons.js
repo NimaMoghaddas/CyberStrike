@@ -106,7 +106,7 @@ const WEAPON_DEFINITIONS = {
     screenShake: 7.5,
     color: '#b026ff',
     glowColor: '#d946ef',
-    bulletRadius: 5,
+    bulletRadius: 8,
     sound: 'railgun',
     crosshairStyle: 'railgun',
     tag: 'PIERCING'

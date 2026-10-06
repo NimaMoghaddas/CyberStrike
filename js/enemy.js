@@ -338,6 +338,8 @@ class AcidPool {
 }
 window.AcidPool = AcidPool;
 
+
+
 class Enemy {
   constructor(x, y, type = 'normal', id = null, generation = 0) {
     if (typeof id === 'number') {
@@ -400,12 +402,29 @@ class Enemy {
       this.maxHp = 60;
       this.hp = this.maxHp;
       this.speed = 210;
-      this.damage = 50;
+      this.damage = 0; // ZERO melee contact damage - damage is purely from detonation blast
       this.scoreValue = 200;
       this.color = '#ff7700';
       this.attackRange = 36;
       this.attackCooldown = 0.5;
       this.fuseTimer = 0;
+    } else if (type === 'ghost') {
+      // NEW ENEMY: PHANTOM GHOST (Periodically phases into intangibility & invisibility)
+      this.radius = 20;
+      this.maxHp = 80;
+      this.hp = this.maxHp;
+      this.speed = 175;
+      this.damage = 26;
+      this.scoreValue = 280;
+      this.color = '#a855f7';
+      this.attackRange = 36;
+      this.attackCooldown = 0.75;
+      this.phaseState = 'visible';
+      this.phaseTimer = 3.2 + Math.random() * 1.0;
+      this.phaseTransition = 0;
+      this.phaseAlpha = 1.0;
+      this.isPhased = false;
+      this.ghostTrails = [];
     } else if (type === 'splitter') {
       const gen = this.generation || 0;
       if (gen === 0) {
@@ -437,7 +456,7 @@ class Enemy {
         };
         this.color = '#39ff14';
       } else { // gen >= 2
-        this.radius = 11;
+        this.radius = 13;
         this.maxHp = 22;
         this.speed = 190;
         this.damage = 6;
@@ -732,22 +751,87 @@ class Enemy {
       }
     }
 
-    // Kamikaze Bomber AI: Rapid fuse and detonation when touching player
-    if (this.type === 'bomber' && player && player.alive) {
-      if (distToPlayer <= 48) {
-        this.fuseTimer = (this.fuseTimer || 0) + dt;
-        if (this.fuseTimer >= 0.38) {
-          this.die();
-          return;
+    // PHANTOM GHOST AI: Cycles into phase invisibility & intangibility
+    if (this.type === 'ghost') {
+      if (this.phaseState === 'visible') {
+        this.phaseTimer -= dt;
+        this.phaseAlpha = 1.0;
+        this.isPhased = false;
+        if (this.phaseTimer <= 0) {
+          this.phaseState = 'cloaking';
+          this.phaseTransition = 0.5;
+          if (window.soundSystem && window.soundSystem.playGhostPhase) {
+            window.soundSystem.playGhostPhase();
+          }
+        }
+      } else if (this.phaseState === 'cloaking') {
+        this.phaseTransition -= dt;
+        this.phaseAlpha = Math.max(0.12, this.phaseTransition / 0.5);
+        if (window.particleSystem && Math.random() < 0.4) {
+          window.particleSystem.emit(this.x, this.y, 2, {
+            speed: 40,
+            color: '#c084fc',
+            life: 0.25,
+            size: 2.2
+          });
+        }
+        if (this.phaseTransition <= 0) {
+          this.phaseState = 'cloaked';
+          this.phaseTimer = 3.0; // 3 seconds of ghost intangibility
+          this.isPhased = true;
+          this.phaseAlpha = 0.14;
+        }
+      } else if (this.phaseState === 'cloaked') {
+        this.phaseTimer -= dt;
+        this.isPhased = true;
+        // Subtle shimmering translucency while stalking
+        this.phaseAlpha = 0.12 + Math.sin(this.animTimer * 5) * 0.05;
+        // Slightly faster glide speed while in phantom form
+        moveVx *= 1.25;
+        moveVy *= 1.25;
+
+        if (this.phaseTimer <= 0) {
+          this.phaseState = 'uncloaking';
+          this.phaseTransition = 0.4;
+          if (window.soundSystem && window.soundSystem.playGhostPhase) {
+            window.soundSystem.playGhostPhase();
+          }
+        }
+      } else if (this.phaseState === 'uncloaking') {
+        this.phaseTransition -= dt;
+        this.phaseAlpha = 1.0 - (this.phaseTransition / 0.4) * 0.86;
+        if (this.phaseTransition <= 0) {
+          this.phaseState = 'visible';
+          this.phaseTimer = 3.5;
+          this.isPhased = false;
+          this.phaseAlpha = 1.0;
+          if (window.particleSystem) {
+            window.particleSystem.emit(this.x, this.y, 16, {
+              speed: 140,
+              color: '#c084fc',
+              life: 0.35,
+              size: 3
+            });
+          }
         }
       }
     }
 
-    // 4. Melee Attack Check on Player (Reliable reach when reaching/touching player)
-    const currentDist = Math.hypot(this.x - player.x, this.y - player.y);
-    const attackReach = this.radius + player.radius + 12;
-    if (currentDist <= attackReach && this.attackTimer <= 0 && player.alive) {
-      this.attack(player, game);
+    // Kamikaze Bomber AI: Explodes directly on contact with player, ZERO melee contact damage!
+    if (this.type === 'bomber' && player && player.alive) {
+      if (distToPlayer <= this.radius + player.radius + 6) {
+        this.die(game);
+        return;
+      }
+    }
+
+    // 4. Melee Attack Check on Player (Bombers NEVER deal melee damage - damage comes 100% from detonation)
+    if (this.type !== 'bomber' && player.alive) {
+      const currentDist = Math.hypot(this.x - player.x, this.y - player.y);
+      const attackReach = this.radius + player.radius + 12;
+      if (currentDist <= attackReach && this.attackTimer <= 0) {
+        this.attack(player, game);
+      }
     }
   }
 
@@ -765,6 +849,18 @@ class Enemy {
   }
 
   takeDamage(amount, hitX, hitY, bulletAngle = 0, isCritical = false, weaponType = 'rifle') {
+    // Phased ghost is completely intangible to bullets and damage!
+    if (this.type === 'ghost' && this.isPhased) {
+      if (window.particleSystem) {
+        window.particleSystem.emit(hitX || this.x, hitY || this.y, 4, {
+          speed: 40,
+          color: '#c084fc',
+          life: 0.2
+        });
+      }
+      return;
+    }
+
     // Shield Enforcer: 75% front shield deflection unless hit with railgun or explosive cannon
     if (this.type === 'shielded' && weaponType !== 'railgun' && weaponType !== 'cannon') {
       let relAngle = bulletAngle - (this.angle + Math.PI);
@@ -888,18 +984,18 @@ class Enemy {
         window.soundSystem.playExplosion();
       }
       if (isBomber) {
-        const game = window.gameInstance;
+        const gameRef = game || window.gameEngine || window.gameInstance;
         const blastRadius = 160;
-        // 1. Damage player
-        if (game && game.player && game.player.alive) {
-          const d = Math.hypot(game.player.x - this.x, game.player.y - this.y);
+        // 1. Damage player strictly from explosion
+        if (gameRef && gameRef.player && gameRef.player.alive) {
+          const d = Math.hypot(gameRef.player.x - this.x, gameRef.player.y - this.y);
           if (d < blastRadius) {
-            const dmg = Math.round(55 * (1 - d / blastRadius));
-            game.player.takeDamage(dmg, game, 'EXPLOSIVE');
+            const dmg = Math.round(35 * (1 - d / blastRadius));
+            gameRef.player.takeDamage(dmg, gameRef, 'EXPLOSIVE');
           }
         }
         // 2. Damage SURROUNDING ENEMIES (Explosive chain reaction!)
-        if (game && game.enemies) {
+        if (gameRef && gameRef.enemies) {
           for (let i = 0; i < game.enemies.length; i++) {
             const other = game.enemies[i];
             if (other === this || !other.alive) continue;
@@ -954,6 +1050,11 @@ class Enemy {
     ctx.fill();
     ctx.restore();
 
+    // Ghost phase alpha transparency
+    if (this.type === 'ghost' && this.phaseAlpha !== undefined) {
+      ctx.globalAlpha = Math.max(0.08, this.phaseAlpha);
+    }
+
     // Specific Rendering for Each Enemy Archetype
     if (this.type === 'fast') {
       this.drawFastHunter(ctx, isHit);
@@ -969,12 +1070,14 @@ class Enemy {
       this.drawSplitter(ctx, isHit);
     } else if (this.type === 'toxic') {
       this.drawToxicSlimer(ctx, isHit);
+    } else if (this.type === 'ghost') {
+      this.drawGhost(ctx, isHit);
     } else {
       this.drawNormalCyborg(ctx, isHit);
     }
 
-    // Health Bar (above enemy head, if damaged)
-    if (this.hp < this.maxHp) {
+    // Health Bar (above enemy head, if damaged; hidden while ghost is phased)
+    if (this.hp < this.maxHp && !(this.type === 'ghost' && this.isPhased)) {
       ctx.restore(); // restore rotation for billboard health bar
       ctx.save();
       ctx.translate(this.x, this.y - this.radius - 12);
@@ -2750,6 +2853,130 @@ class Enemy {
 
     ctx.restore();
   }
+  // =========================================================================
+  // 9. PHANTOM GHOST // ETHEREAL PHASE SPECTER WITH HOVERING VOID WISPS
+  // =========================================================================
+  drawGhost(ctx, isHit) {
+    const t = this.animTimer || 0;
+    const R = this.radius; // 20
+    const pulse = Math.sin(t * 3.5) * 0.5 + 0.5;
+    const hoverY = Math.sin(t * 4.0) * 2.5;
+
+    // Palette: Ethereal Phantom Violet, Digital Indigo, and Ghostly Cyan-Purple
+    const cDarkVoid = isHit ? '#ffffff' : '#1e1035';
+    const cMidPhantom = isHit ? '#ffffff' : '#4c1d95';
+    const cVioletGlow = isHit ? '#ffffff' : '#a855f7';
+    const cElectricPurple = isHit ? '#ffffff' : '#c084fc';
+    const cGhostWhite = isHit ? '#ffffff' : '#f3e8ff';
+
+    ctx.save();
+    ctx.translate(0, hoverY);
+
+    // 1. 4 Undulating Spectral Tail Wisps (Ethereal Phantom Ribbons)
+    for (let w = 0; w < 4; w++) {
+      const wPhase = t * 6.5 + w * 1.5;
+      const tailX0 = -R * 0.5;
+      const tailY0 = (w - 1.5) * 5;
+
+      const wave1 = Math.sin(wPhase) * 6;
+      const wave2 = Math.cos(wPhase * 1.2) * 8;
+
+      ctx.save();
+      ctx.strokeStyle = cVioletGlow;
+      ctx.lineWidth = 2.2 * (1 - w * 0.15);
+      ctx.shadowColor = cVioletGlow;
+      ctx.shadowBlur = 10;
+      ctx.globalAlpha = 0.65;
+      ctx.beginPath();
+      ctx.moveTo(tailX0, tailY0);
+      ctx.bezierCurveTo(
+        tailX0 - R * 0.7, tailY0 + wave1,
+        tailX0 - R * 1.4, tailY0 - wave2,
+        tailX0 - R * 2.1, tailY0 + wave1 * 0.8
+      );
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // 2. Translucent Spectral Shroud & Glitch Ring
+    ctx.save();
+    const shroudGrad = ctx.createRadialGradient(0, 0, R * 0.3, 0, 0, R * 1.4);
+    shroudGrad.addColorStop(0, 'rgba(192, 132, 252, 0.45)');
+    shroudGrad.addColorStop(0.55, 'rgba(168, 85, 247, 0.25)');
+    shroudGrad.addColorStop(1, 'rgba(76, 29, 149, 0)');
+    ctx.fillStyle = shroudGrad;
+    ctx.beginPath();
+    ctx.arc(0, 0, R * 1.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // 3. Floating Biomech Hooded Cowl / Shroud
+    ctx.save();
+    ctx.fillStyle = cDarkVoid;
+    ctx.strokeStyle = cElectricPurple;
+    ctx.lineWidth = 1.8;
+    ctx.shadowColor = cVioletGlow;
+    ctx.shadowBlur = 12;
+
+    ctx.beginPath();
+    ctx.moveTo(R * 0.9, 0);
+    ctx.quadraticCurveTo(R * 0.4, -R * 0.85, -R * 0.6, -R * 0.75);
+    ctx.lineTo(-R * 0.8, -R * 0.2);
+    ctx.lineTo(-R * 0.5, 0);
+    ctx.lineTo(-R * 0.8, R * 0.2);
+    ctx.lineTo(-R * 0.6, R * 0.75);
+    ctx.quadraticCurveTo(R * 0.4, R * 0.85, R * 0.9, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+
+    // 4. Floating Holographic Robotic Skull / Visor Core
+    ctx.save();
+    ctx.fillStyle = cMidPhantom;
+    ctx.strokeStyle = cVioletGlow;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(R * 0.15, 0, R * 0.45, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Piercing Twin Hollow Violet Eyes with Lens Flare
+    const eyeOffsetX = R * 0.32;
+    for (let s = -1; s <= 1; s += 2) {
+      const ey = s * 4.5;
+      ctx.fillStyle = '#ffffff';
+      ctx.shadowColor = cElectricPurple;
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      ctx.ellipse(eyeOffsetX, ey, 2.8, 1.8, s * 0.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // 5. 2 Counter-Rotating Void Crystals
+    for (let c = 0; c < 2; c++) {
+      const cSign = c === 0 ? 1 : -1;
+      const cAng = t * 3.5 * cSign + c * Math.PI;
+      const cx = Math.cos(cAng) * (R * 1.15);
+      const cy = Math.sin(cAng) * (R * 1.15);
+
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.fillStyle = cGhostWhite;
+      ctx.shadowColor = cElectricPurple;
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      ctx.arc(0, 0, 2.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }
+
+  // =========================================================================
+  // 11. ARACHNID WEB SPINNER // SILKWEAVER CYBER-MECH WITH ARTICULATED LEGS
 }
 
 window.Enemy = Enemy;

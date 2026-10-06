@@ -1713,34 +1713,37 @@ class GameEngine {
     const roll = Math.random();
 
     if (this.wave === 1) {
-      if (roll < 0.35) type = 'normal';
-      else if (roll < 0.55) type = 'fast';
-      else if (roll < 0.75) type = 'splitter';
+      if (roll < 0.32) type = 'normal';
+      else if (roll < 0.54) type = 'fast';
+      else if (roll < 0.74) type = 'splitter';
       else if (roll < 0.88) type = 'toxic'; // Bio-Slimer toxic spitter
       else type = 'bomber';
     } else if (this.wave === 2) {
-      if (roll < 0.25) type = 'normal';
-      else if (roll < 0.42) type = 'fast';
-      else if (roll < 0.60) type = 'splitter';
-      else if (roll < 0.74) type = 'toxic'; // Bio-Slimer toxic spitter
-      else if (roll < 0.87) type = 'bomber';
-      else type = 'sniper';
+      if (roll < 0.24) type = 'normal';
+      else if (roll < 0.44) type = 'fast';
+      else if (roll < 0.62) type = 'splitter';
+      else if (roll < 0.76) type = 'toxic';
+      else if (roll < 0.88) type = 'bomber';
+      else if (roll < 0.95) type = 'sniper';
+      else type = 'ghost'; // Spectral ghost
     } else if (this.wave === 3) {
-      if (roll < 0.18) type = 'normal';
-      else if (roll < 0.34) type = 'fast';
+      if (roll < 0.16) type = 'normal';
+      else if (roll < 0.32) type = 'fast';
       else if (roll < 0.48) type = 'splitter';
-      else if (roll < 0.62) type = 'toxic'; // Bio-Slimer toxic spitter
-      else if (roll < 0.75) type = 'bomber';
-      else if (roll < 0.88) type = 'sniper';
-      else type = 'tank';
+      else if (roll < 0.61) type = 'toxic';
+      else if (roll < 0.74) type = 'bomber';
+      else if (roll < 0.86) type = 'sniper';
+      else if (roll < 0.94) type = 'tank';
+      else type = 'ghost';
     } else { // Wave 4+
-      if (roll < 0.14) type = 'normal';
-      else if (roll < 0.28) type = 'fast';
-      else if (roll < 0.42) type = 'splitter';
-      else if (roll < 0.56) type = 'toxic'; // Bio-Slimer toxic spitter
-      else if (roll < 0.70) type = 'bomber';
-      else if (roll < 0.84) type = 'sniper';
-      else type = 'tank';
+      if (roll < 0.10) type = 'normal';
+      else if (roll < 0.24) type = 'fast';
+      else if (roll < 0.38) type = 'splitter';
+      else if (roll < 0.52) type = 'toxic';
+      else if (roll < 0.66) type = 'bomber';
+      else if (roll < 0.78) type = 'sniper';
+      else if (roll < 0.90) type = 'tank';
+      else type = 'ghost';
     }
 
     // Find safe spawn location: minimum 550px from player, walkable floor
@@ -1898,6 +1901,8 @@ class GameEngine {
         }
       }
     }
+
+
 
     // 4. Update Enemies & Combat
     // In singleplayer mode, run local enemy AI and waves
@@ -2367,6 +2372,8 @@ class GameEngine {
         pool.draw(this.ctx);
       }
     }
+
+
 
     // 2. Draw Enemies
     for (const enemy of this.enemies) {

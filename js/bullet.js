@@ -24,7 +24,10 @@ class Bullet {
 
     this.vx = Math.cos(angle) * this.speed;
     this.vy = Math.sin(angle) * this.speed;
-    this.radius = options.radius || 4;
+    this.radius = options.radius || (this.weaponType === 'railgun' ? 8 : 4);
+    if (this.weaponType === 'railgun') {
+      this.radius = Math.max(this.radius, 8);
+    }
     this.maxDistance = options.range || 1400;
     this.distanceTraveled = 0;
     this.active = true;
@@ -47,6 +50,45 @@ class Bullet {
     this.pulseAnim = Math.random() * Math.PI * 2;
   }
 
+  // Swept line-segment vs circle Continuous Collision Detection (CCD)
+  // Tests if the line segment from (x0, y0) to (x1, y1) intersects a circle at (cx, cy) with radius totalRadius.
+  // Returns { hit: true, t: entryParam, hitX, hitY } or null.
+  checkSegmentCircle(x0, y0, x1, y1, cx, cy, totalRadius) {
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    const lenSq = dx * dx + dy * dy;
+
+    if (lenSq < 0.00001) {
+      const dSq = (x0 - cx) ** 2 + (y0 - cy) ** 2;
+      if (dSq <= totalRadius * totalRadius) {
+        return { hit: true, t: 0, hitX: x0, hitY: y0 };
+      }
+      return null;
+    }
+
+    const wx = cx - x0;
+    const wy = cy - y0;
+    const proj = wx * dx + wy * dy;
+    const tClamped = Math.max(0, Math.min(1, proj / lenSq));
+    const closestX = x0 + tClamped * dx;
+    const closestY = y0 + tClamped * dy;
+    const distSq = (closestX - cx) ** 2 + (closestY - cy) ** 2;
+
+    if (distSq <= totalRadius * totalRadius) {
+      // Find exact entry parameter along [0, 1]
+      const segLen = Math.sqrt(lenSq);
+      const halfChord = Math.sqrt(Math.max(0, totalRadius * totalRadius - distSq));
+      const tEntry = Math.max(0, Math.min(1, (proj / segLen - halfChord) / segLen));
+      return {
+        hit: true,
+        t: tEntry,
+        hitX: x0 + tEntry * dx,
+        hitY: y0 + tEntry * dy
+      };
+    }
+    return null;
+  }
+
   update(dt, map, enemies, barrels, game) {
     if (!this.active) return;
 
@@ -58,30 +100,279 @@ class Bullet {
       this.trail.pop();
     }
 
+    const prevX = this.x;
+    const prevY = this.y;
+    const prevDist = this.distanceTraveled;
+
     const stepX = this.vx * dt;
     const stepY = this.vy * dt;
     const stepDist = Math.hypot(stepX, stepY);
 
-    this.x += stepX;
-    this.y += stepY;
-    this.distanceTraveled += stepDist;
+    if (stepDist < 0.0001) return;
 
-    // Range expiry
-    if (this.distanceTraveled >= this.maxDistance) {
-      if (this.explosive) {
-        this.detonate(map, enemies, barrels, game);
-      } else {
-        this.active = false;
-      }
-      return;
+    let nextX = prevX + stepX;
+    let nextY = prevY + stepY;
+    let effectiveDist = stepDist;
+    let isRangeExpired = false;
+
+    // Range expiry check
+    if (prevDist + stepDist >= this.maxDistance) {
+      const remainingDist = Math.max(0, this.maxDistance - prevDist);
+      const frac = remainingDist / stepDist;
+      nextX = prevX + stepX * frac;
+      nextY = prevY + stepY * frac;
+      effectiveDist = remainingDist;
+      isRangeExpired = true;
     }
 
-    // 1. Collision with Map Obstacles (Walls, Pillars) - with 24px muzzle grace distance
-    if (this.distanceTraveled > 24 && map.isColliding(this.x, this.y, this.radius)) {
+    // 1. Continuous Collision Detection with Map Obstacles (Walls, Pillars)
+    const numSubSteps = Math.max(1, Math.ceil(effectiveDist / 12));
+    let hitWall = false;
+    let wallHitT = 1.0;
+    let wallHitPoint = null;
+
+    if (map) {
+      for (let s = 1; s <= numSubSteps; s++) {
+        const tSample = s / numSubSteps;
+        const sX = prevX + (nextX - prevX) * tSample;
+        const sY = prevY + (nextY - prevY) * tSample;
+        const sDist = prevDist + effectiveDist * tSample;
+        if (sDist > 24 && map.isColliding(sX, sY, this.radius)) {
+          hitWall = true;
+          wallHitT = tSample;
+          wallHitPoint = { x: sX, y: sY };
+          break;
+        }
+      }
+    }
+
+    // If wall hit, the projectile cannot advance beyond the wall
+    if (hitWall && wallHitPoint) {
+      nextX = wallHitPoint.x;
+      nextY = wallHitPoint.y;
+    }
+
+    // 2. Candidate Hits Collection along the flight path
+    const candidateHits = [];
+
+    // Barrels
+    for (const barrel of barrels) {
+      if (barrel.exploded) continue;
+      const bRad = this.radius + barrel.radius;
+      const col = this.checkSegmentCircle(prevX, prevY, nextX, nextY, barrel.x, barrel.y, bRad);
+      if (col && col.t <= wallHitT) {
+        candidateHits.push({
+          type: 'barrel',
+          entity: barrel,
+          t: col.t,
+          hitX: col.hitX,
+          hitY: col.hitY
+        });
+      }
+    }
+
+    // Enemies (PvE)
+    // Generous beam tolerance for railgun and high-speed energy weapons to prevent any tunneling
+    const beamExtra = this.weaponType === 'railgun' ? 6 : 2;
+    for (const enemy of enemies) {
+      if (!enemy.alive) continue;
+      // Ghost phase intangibility: Phased ghost enemies are intangible to bullets!
+      if (enemy.type === 'ghost' && enemy.isPhased) continue;
+      if (this.penetrating && this.hitTargets.has(enemy.id)) continue;
+      const eRad = this.radius + enemy.radius + beamExtra;
+      const col = this.checkSegmentCircle(prevX, prevY, nextX, nextY, enemy.x, enemy.y, eRad);
+      if (col && col.t <= wallHitT) {
+        candidateHits.push({
+          type: 'enemy',
+          entity: enemy,
+          t: col.t,
+          hitX: col.hitX,
+          hitY: col.hitY
+        });
+      }
+    }
+
+    // PvP / Other Players
+    if (game && game.network) {
+      const isMyBullet = !this.shooterId || this.shooterId === game.localPlayerId;
+      const isTeamsMode = game.network.lobbyMode === 'teams';
+
+      if (isMyBullet) {
+        const myTeam = (game.player && game.player.team) ? game.player.team : this.shooterTeam;
+        for (const rId in game.network.remotePlayers) {
+          const rp = game.network.remotePlayers[rId];
+          if (!rp.alive || (rp.invulnerableTimer && rp.invulnerableTimer > 0)) continue;
+          if (isTeamsMode && myTeam && rp.team && myTeam === rp.team) continue;
+          if (this.penetrating && this.hitTargets.has(rId)) continue;
+
+          const pRad = this.radius + rp.radius + (this.weaponType === 'railgun' ? 4 : 1);
+          const col = this.checkSegmentCircle(prevX, prevY, nextX, nextY, rp.x, rp.y, pRad);
+          if (col && col.t <= wallHitT) {
+            candidateHits.push({
+              type: 'remotePlayer',
+              entity: rp,
+              id: rId,
+              t: col.t,
+              hitX: col.hitX,
+              hitY: col.hitY
+            });
+          }
+        }
+      } else {
+        const shooterRp = game.network.remotePlayers[this.shooterId];
+        const shooterTeam = this.shooterTeam || (shooterRp ? shooterRp.team : null);
+        const myTeam = game.player ? game.player.team : null;
+        const isTeammateBullet = isTeamsMode && shooterTeam && myTeam && shooterTeam === myTeam;
+
+        if (!isTeammateBullet && game.player && game.player.alive && game.player.invulnerableTime <= 0) {
+          const plRad = this.radius + game.player.radius;
+          const col = this.checkSegmentCircle(prevX, prevY, nextX, nextY, game.player.x, game.player.y, plRad);
+          if (col && col.t <= wallHitT) {
+            candidateHits.push({
+              type: 'localPlayer',
+              entity: game.player,
+              t: col.t,
+              hitX: col.hitX,
+              hitY: col.hitY
+            });
+          }
+        }
+      }
+    }
+
+    // Sort all collision events along trajectory by flight progress
+    candidateHits.sort((a, b) => a.t - b.t);
+
+    // 3. Process Hits
+    if (candidateHits.length > 0) {
+      if (this.explosive) {
+        const firstHit = candidateHits[0];
+        this.x = firstHit.hitX;
+        this.y = firstHit.hitY;
+        this.detonate(map, enemies, barrels, game);
+        return;
+      }
+
+      if (!this.penetrating) {
+        const hit = candidateHits[0];
+        this.x = hit.hitX;
+        this.y = hit.hitY;
+        this.active = false;
+
+        if (hit.type === 'enemy') {
+          hit.entity.takeDamage(this.damage, hit.hitX, hit.hitY, this.angle, this.isCritical, this.weaponType);
+          game.recordHit();
+          if (game && game.network && (!this.shooterId || this.shooterId === game.localPlayerId)) {
+            game.network.reportEnemyHit(hit.entity.id, this.damage, this.isCritical, hit.hitX, hit.hitY);
+          }
+        } else if (hit.type === 'barrel') {
+          hit.entity.hp -= this.damage;
+          window.particleSystem.emit(hit.hitX, hit.hitY, 10, {
+            angle: this.angle + Math.PI,
+            spread: 0.8,
+            speed: 220,
+            color: '#ff5500',
+            life: 0.2
+          });
+          window.soundSystem.playWallHit();
+          if (game && game.network) {
+            game.network.reportBarrelHit(hit.entity.id, this.damage);
+          }
+          if (hit.entity.hp <= 0 && (!game || !game.network || !game.network.connected)) {
+            map.triggerBarrelExplosion(hit.entity, game);
+          }
+        } else if (hit.type === 'remotePlayer') {
+          game.recordHit();
+          game.network.reportPlayerHit(hit.id, this.damage, this.isCritical, hit.hitX, hit.hitY);
+          window.particleSystem.emitBlood(hit.hitX, hit.hitY, this.angle, 14);
+          window.soundSystem.playPlayerHurt();
+        } else if (hit.type === 'localPlayer') {
+          window.particleSystem.emitBlood(hit.hitX, hit.hitY, this.angle, 14);
+        }
+        return;
+      }
+
+      // Penetrating Projectile Ballistics (e.g., Supersonic Railgun)
+      for (const hit of candidateHits) {
+        if (hit.type === 'enemy') {
+          const enemy = hit.entity;
+          if (this.hitTargets.has(enemy.id)) continue;
+          this.hitTargets.add(enemy.id);
+          this.penetrations++;
+
+          // Deal damage at exact impact coordinates
+          enemy.takeDamage(this.damage, hit.hitX, hit.hitY, this.angle, this.isCritical, this.weaponType);
+          game.recordHit();
+
+          // High-energy ionization burst at entry point
+          window.particleSystem.emit(hit.hitX, hit.hitY, 14, {
+            angle: this.angle,
+            spread: 1.2,
+            speed: 280,
+            color: '#d946ef',
+            life: 0.22
+          });
+
+          if (game && game.network && (!this.shooterId || this.shooterId === game.localPlayerId)) {
+            game.network.reportEnemyHit(enemy.id, this.damage, this.isCritical, hit.hitX, hit.hitY);
+          }
+
+          if (this.penetrations >= this.maxPenetrations) {
+            this.active = false;
+            this.x = hit.hitX;
+            this.y = hit.hitY;
+            return;
+          }
+        } else if (hit.type === 'barrel') {
+          const barrel = hit.entity;
+          barrel.hp -= this.damage;
+          window.particleSystem.emit(hit.hitX, hit.hitY, 10, {
+            angle: this.angle + Math.PI,
+            spread: 0.8,
+            speed: 220,
+            color: '#ff5500',
+            life: 0.2
+          });
+          window.soundSystem.playWallHit();
+          if (game && game.network) {
+            game.network.reportBarrelHit(barrel.id, this.damage);
+          }
+          if (barrel.hp <= 0 && (!game || !game.network || !game.network.connected)) {
+            map.triggerBarrelExplosion(barrel, game);
+          }
+        } else if (hit.type === 'remotePlayer') {
+          if (this.hitTargets.has(hit.id)) continue;
+          this.hitTargets.add(hit.id);
+          this.penetrations++;
+          game.recordHit();
+          game.network.reportPlayerHit(hit.id, this.damage, this.isCritical, hit.hitX, hit.hitY);
+          window.particleSystem.emitBlood(hit.hitX, hit.hitY, this.angle, 14);
+          window.soundSystem.playPlayerHurt();
+
+          if (this.penetrations >= this.maxPenetrations) {
+            this.active = false;
+            this.x = hit.hitX;
+            this.y = hit.hitY;
+            return;
+          }
+        } else if (hit.type === 'localPlayer') {
+          this.active = false;
+          this.x = hit.hitX;
+          this.y = hit.hitY;
+          window.particleSystem.emitBlood(hit.hitX, hit.hitY, this.angle, 14);
+          return;
+        }
+      }
+    }
+
+    // 4. Map Wall Impact
+    if (hitWall && wallHitPoint) {
+      this.active = false;
+      this.x = wallHitPoint.x;
+      this.y = wallHitPoint.y;
       if (this.explosive) {
         this.detonate(map, enemies, barrels, game);
       } else {
-        this.active = false;
         window.particleSystem.emit(this.x, this.y, 8, {
           angle: this.angle + Math.PI,
           spread: 0.6,
@@ -94,163 +385,22 @@ class Bullet {
       return;
     }
 
-    // 2. Collision with Explosive Barrels
-    for (const barrel of barrels) {
-      if (barrel.exploded) continue;
-      const bDistSq = (this.x - barrel.x) ** 2 + (this.y - barrel.y) ** 2;
-      if (bDistSq < (this.radius + barrel.radius) ** 2) {
-        if (this.explosive) {
-          this.detonate(map, enemies, barrels, game);
-          return;
-        }
-
-        barrel.hp -= this.damage;
-        window.particleSystem.emit(this.x, this.y, 10, {
-          angle: this.angle + Math.PI,
-          spread: 0.8,
-          speed: 220,
-          color: '#ff5500',
-          life: 0.2
-        });
-        window.soundSystem.playWallHit();
-
-        if (game && game.network) {
-          game.network.reportBarrelHit(barrel.id, this.damage);
-        }
-
-        if (barrel.hp <= 0 && (!game || !game.network || !game.network.connected)) {
-          map.triggerBarrelExplosion(barrel, game);
-        }
-
-        if (!this.penetrating) {
-          this.active = false;
-          return;
-        }
-      }
-    }
-
-    // 3. Collision with Enemies (PvE)
-    for (const enemy of enemies) {
-      if (!enemy.alive) continue;
-      const distSq = (this.x - enemy.x) ** 2 + (this.y - enemy.y) ** 2;
-      if (distSq < (this.radius + enemy.radius) ** 2) {
-        if (this.explosive) {
-          this.detonate(map, enemies, barrels, game);
-          return;
-        }
-
-        if (this.penetrating) {
-          if (!this.hitTargets.has(enemy.id)) {
-            this.hitTargets.add(enemy.id);
-            this.penetrations++;
-
-            // Damage enemy
-            enemy.takeDamage(this.damage, this.x, this.y, this.angle, this.isCritical, this.weaponType);
-            game.recordHit();
-
-            // Ionization burst particles
-            window.particleSystem.emit(this.x, this.y, 12, {
-              angle: this.angle,
-              spread: 1.2,
-              speed: 280,
-              color: '#d946ef',
-              life: 0.22
-            });
-
-            if (game && game.network && (!this.shooterId || this.shooterId === game.localPlayerId)) {
-              game.network.reportEnemyHit(enemy.id, this.damage, this.isCritical, this.x, this.y);
-            }
-
-            if (this.penetrations >= this.maxPenetrations) {
-              this.active = false;
-              return;
-            }
-          }
-        } else {
-          this.active = false;
-          
-          // Damage enemy
-          enemy.takeDamage(this.damage, this.x, this.y, this.angle, this.isCritical, this.weaponType);
-          game.recordHit();
-
-          // Network report if local player's bullet
-          if (game && game.network && (!this.shooterId || this.shooterId === game.localPlayerId)) {
-            game.network.reportEnemyHit(enemy.id, this.damage, this.isCritical, this.x, this.y);
-          }
-          return;
-        }
-      }
-    }
-
-    // 4. Collision with Other Players (PvP / Friendly Fire)
-    if (game && game.network) {
-      const isMyBullet = !this.shooterId || this.shooterId === game.localPlayerId;
-      const isTeamsMode = game.network.lobbyMode === 'teams';
-
-      if (isMyBullet) {
-        const myTeam = (game.player && game.player.team) ? game.player.team : this.shooterTeam;
-        for (const rId in game.network.remotePlayers) {
-          const rp = game.network.remotePlayers[rId];
-          if (!rp.alive || (rp.invulnerableTimer && rp.invulnerableTimer > 0)) continue;
-
-          // Friendly Fire Protection: Bullet passes right through teammate without collision!
-          if (isTeamsMode && myTeam && rp.team && myTeam === rp.team) {
-            continue;
-          }
-
-          const distSq = (this.x - rp.x) ** 2 + (this.y - rp.y) ** 2;
-          if (distSq < (this.radius + rp.radius) ** 2) {
-            if (this.explosive) {
-              this.detonate(map, enemies, barrels, game);
-              return;
-            }
-
-            if (this.penetrating) {
-              if (!this.hitTargets.has(rId)) {
-                this.hitTargets.add(rId);
-                this.penetrations++;
-                game.recordHit();
-                game.network.reportPlayerHit(rId, this.damage, this.isCritical, this.x, this.y);
-                window.particleSystem.emitBlood(this.x, this.y, this.angle, 14);
-                window.soundSystem.playPlayerHurt();
-                if (this.penetrations >= this.maxPenetrations) {
-                  this.active = false;
-                  return;
-                }
-              }
-            } else {
-              this.active = false;
-              game.recordHit();
-              game.network.reportPlayerHit(rId, this.damage, this.isCritical, this.x, this.y);
-              window.particleSystem.emitBlood(this.x, this.y, this.angle, 14);
-              window.soundSystem.playPlayerHurt();
-              return;
-            }
-          }
-        }
+    // 5. Range Expiry
+    if (isRangeExpired) {
+      this.x = nextX;
+      this.y = nextY;
+      if (this.explosive) {
+        this.detonate(map, enemies, barrels, game);
       } else {
-        // Bullet was fired by a remote player: check if it hits local player
-        const shooterRp = game.network.remotePlayers[this.shooterId];
-        const shooterTeam = this.shooterTeam || (shooterRp ? shooterRp.team : null);
-        const myTeam = game.player ? game.player.team : null;
-
-        // Teammate bullets pass completely through local player without stopping!
-        const isTeammateBullet = isTeamsMode && shooterTeam && myTeam && shooterTeam === myTeam;
-
-        if (!isTeammateBullet && game.player && game.player.alive && game.player.invulnerableTime <= 0) {
-          const distSq = (this.x - game.player.x) ** 2 + (this.y - game.player.y) ** 2;
-          if (distSq < (this.radius + game.player.radius) ** 2) {
-            if (this.explosive) {
-              this.detonate(map, enemies, barrels, game);
-              return;
-            }
-            this.active = false;
-            window.particleSystem.emitBlood(this.x, this.y, this.angle, 14);
-            return;
-          }
-        }
+        this.active = false;
       }
+      return;
     }
+
+    // Advance bullet position
+    this.x = nextX;
+    this.y = nextY;
+    this.distanceTraveled += effectiveDist;
   }
 
   // --- Area-of-Effect Explosive Detonation ---
@@ -328,8 +478,12 @@ class Bullet {
 
       if (!isTeammateBlast) {
         const d = Math.hypot(this.x - game.player.x, this.y - game.player.y);
-        if (d <= this.blastRadius * 0.75 + game.player.radius) {
-          const splash = Math.round(this.splashDamage * 0.5);
+        const playerBlastRad = this.blastRadius * 0.75 + game.player.radius;
+        if (d <= playerBlastRad) {
+          const falloff = Math.max(0.18, 1 - (d / playerBlastRad));
+          // Self-inflicted explosive damage reduced significantly (max ~15-18 dmg at point blank instead of 48)
+          const damageRatio = isMyBullet ? 0.16 : 0.45;
+          const splash = Math.max(3, Math.round(this.splashDamage * damageRatio * falloff));
           game.player.takeDamage(splash);
         }
       }

@@ -614,6 +614,9 @@ class Player {
     // 1. Aim Direction (Mouse in World Coordinates)
     const aimWorldX = input.mouse.x + game.camera.x;
     const aimWorldY = input.mouse.y + game.camera.y;
+    this.aimWorldX = aimWorldX;
+    this.aimWorldY = aimWorldY;
+    this.aimDist = Math.hypot(aimWorldX - this.x, aimWorldY - this.y);
     this.angle = Math.atan2(aimWorldY - this.y, aimWorldX - this.x);
 
     // 2. Dash Cooldown & Timer
@@ -667,6 +670,8 @@ class Player {
         }
       }
     }
+
+
 
     // Update Expressive Hero Animation Timers
     this.animTimer = (this.animTimer || 0) + dt;
@@ -730,14 +735,21 @@ class Player {
 
       this.isMoving = moveX !== 0 || moveY !== 0;
 
+      // Check Dash Input (Space)
+      if (input.keys['Space'] && this.dashCooldownTimer <= 0 && this.isMoving) {
+        this.startDash(Math.atan2(this.vy, this.vx));
+      }
+
+      const maxSpd = this.baseSpeed;
+
       // Accelerate / Friction
       if (this.isMoving) {
         this.vx += moveX * this.accel * dt;
         this.vy += moveY * this.accel * dt;
         const currentSpd = Math.hypot(this.vx, this.vy);
-        if (currentSpd > this.baseSpeed) {
-          this.vx = (this.vx / currentSpd) * this.baseSpeed;
-          this.vy = (this.vy / currentSpd) * this.baseSpeed;
+        if (currentSpd > maxSpd) {
+          this.vx = (this.vx / currentSpd) * maxSpd;
+          this.vy = (this.vy / currentSpd) * maxSpd;
         }
         this.walkCycle += dt * 14;
       } else {
@@ -748,11 +760,6 @@ class Player {
           this.vx = (this.vx / currentSpd) * newSpd;
           this.vy = (this.vy / currentSpd) * newSpd;
         }
-      }
-
-      // Check Dash Input (Space)
-      if (input.keys['Space'] && this.dashCooldownTimer <= 0 && this.isMoving) {
-        this.startDash(Math.atan2(this.vy, this.vx));
       }
 
       // Axis-Decoupled Movement with wall sliding (prevents corner traps and sticky geometry)
@@ -903,10 +910,21 @@ class Player {
     const muzzleX = this.x + Math.cos(this.angle) * gunForward - Math.sin(this.angle) * gunRight;
     const muzzleY = this.y + Math.sin(this.angle) * gunForward + Math.cos(this.angle) * gunRight;
 
+    // Direct fire trajectory towards world aim point to eliminate muzzle parallax error
+    let baseFireAngle = this.angle;
+    if (game && game.input && game.input.mouse) {
+      const aimWorldX = game.input.mouse.x + (game.camera ? game.camera.x : 0);
+      const aimWorldY = game.input.mouse.y + (game.camera ? game.camera.y : 0);
+      const toAimDist = Math.hypot(aimWorldX - muzzleX, aimWorldY - muzzleY);
+      if (toAimDist > 25) {
+        baseFireAngle = Math.atan2(aimWorldY - muzzleY, aimWorldX - muzzleX);
+      }
+    }
+
     const pellets = w.pellets || 1;
     for (let p = 0; p < pellets; p++) {
       const spread = (Math.random() - 0.5) * (w.spread || 0.04) * 2;
-      const fireAngle = this.angle + spread;
+      const fireAngle = baseFireAngle + spread;
 
       // In multiplayer, weapon styling is kept, but each operative fires bullets matching their own chosen color!
       const isMultiplayer = game && game.gameMode === 'multiplayer';
@@ -1056,18 +1074,54 @@ class Player {
       ctx.restore();
     }
 
+
+
     // 4. Laser Sight Projector (Color tailored to active weapon)
     ctx.save();
     ctx.strokeStyle = activeW.color;
-    ctx.globalAlpha = 0.55;
-    ctx.lineWidth = activeW.id === 'railgun' ? 1.5 : 1;
-    ctx.setLineDash(activeW.id === 'railgun' ? [6, 2] : [4, 4]);
+    ctx.globalAlpha = activeW.id === 'railgun' ? 0.75 : 0.5;
+    ctx.lineWidth = activeW.id === 'railgun' ? 1.8 : 1;
+    ctx.setLineDash(activeW.id === 'railgun' ? [8, 3] : [4, 4]);
     ctx.beginPath();
     const laserStart = activeW.id === 'railgun' ? 50 : 38;
-    const laserLength = activeW.id === 'railgun' ? 620 : (activeW.id === 'shotgun' ? 240 : 420);
+    const laserLength = activeW.id === 'railgun' ? 1400 : (activeW.id === 'shotgun' ? 240 : 420);
+
+    // Calculate sight angle in local player space towards crosshair aim point
+    let localAimAngle = 0;
+    const aimDist = this.aimDist || 300;
+    if (aimDist > 30) {
+      localAimAngle = Math.atan2(-8, aimDist - laserStart);
+    }
+    const targetSightX = laserStart + Math.cos(localAimAngle) * laserLength;
+    const targetSightY = 8 + Math.sin(localAimAngle) * laserLength;
+
     ctx.moveTo(laserStart, 8);
-    ctx.lineTo(laserLength, 8);
+    ctx.lineTo(targetSightX, targetSightY);
     ctx.stroke();
+
+    // Secondary subtle bloom line and precision pip for railgun laser sight
+    if (activeW.id === 'railgun') {
+      ctx.lineWidth = 4;
+      ctx.globalAlpha = 0.2;
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(laserStart, 8);
+      ctx.lineTo(targetSightX, targetSightY);
+      ctx.stroke();
+
+      // Precision laser target dot at the crosshair position
+      if (aimDist > 35) {
+        ctx.save();
+        ctx.fillStyle = activeW.color;
+        ctx.shadowColor = activeW.glowColor || activeW.color;
+        ctx.shadowBlur = 10;
+        ctx.globalAlpha = 0.85;
+        ctx.beginPath();
+        ctx.arc(aimDist, 0, 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
     ctx.restore();
 
     // 5. Muzzle Flash Flare

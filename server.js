@@ -488,7 +488,7 @@ function triggerServerBomberExplosion(room, x, y, killerSocketId, killerPlayer) 
   for (const p of alivePlayers) {
     const dist = Math.hypot(p.x - x, p.y - y);
     if (dist < blastRadius && p.invulnerableTimer <= 0) {
-      const dmg = Math.round(75 * (1 - dist / blastRadius));
+      const dmg = Math.round(35 * (1 - dist / blastRadius));
       p.hp -= dmg;
       p.invulnerableTimer = 0.25;
       if (p.hp <= 0) {
@@ -643,12 +643,12 @@ function spawnServerEnemy(room) {
 
   const wave = room.waveManager.wave;
   if (wave === 1) {
-    if (roll < 0.35) {
+    if (roll < 0.32) {
       type = 'normal';
-    } else if (roll < 0.55) {
+    } else if (roll < 0.54) {
       type = 'fast';
       radius = 16; maxHp = 45; speed = 255; damage = 14; scoreValue = 125; color = '#00f0ff'; attackCooldown = 0.45; attackRange = 32;
-    } else if (roll < 0.72) {
+    } else if (roll < 0.74) {
       type = 'splitter';
       generation = 0;
       radius = 26; maxHp = 120; speed = 120; damage = 14; scoreValue = 200; color = '#00ff88'; attackCooldown = 0.75; attackRange = 40;
@@ -657,64 +657,82 @@ function spawnServerEnemy(room) {
       radius = 24; maxHp = 110; speed = 130; damage = 22; scoreValue = 220; color = '#39ff14'; attackCooldown = 0.9; attackRange = 52;
     } else {
       type = 'bomber';
-      radius = 18; maxHp = 60; speed = 210; damage = 50; scoreValue = 200; color = '#ff7700'; attackCooldown = 0.5; attackRange = 36;
+      radius = 18; maxHp = 60; speed = 210; damage = 0; scoreValue = 200; color = '#ff7700'; attackCooldown = 0.5; attackRange = 36;
     }
   } else if (wave === 2) {
-    if (roll < 0.30) {
+    if (roll < 0.24) {
       type = 'normal';
-    } else if (roll < 0.55) {
+    } else if (roll < 0.44) {
       type = 'fast';
       radius = 16; maxHp = 45; speed = 255; damage = 14; scoreValue = 125; color = '#00f0ff'; attackCooldown = 0.45; attackRange = 32;
-    } else if (roll < 0.75) {
+    } else if (roll < 0.62) {
       type = 'splitter';
       generation = 0;
       radius = 26; maxHp = 120; speed = 120; damage = 14; scoreValue = 200; color = '#00ff88'; attackCooldown = 0.75; attackRange = 40;
+    } else if (roll < 0.76) {
+      type = 'toxic';
+      radius = 24; maxHp = 110; speed = 130; damage = 22; scoreValue = 220; color = '#39ff14'; attackCooldown = 0.9; attackRange = 52;
     } else if (roll < 0.88) {
       type = 'bomber';
-      radius = 18; maxHp = 60; speed = 210; damage = 50; scoreValue = 200; color = '#ff7700'; attackCooldown = 0.5; attackRange = 36;
-    } else {
+      radius = 18; maxHp = 60; speed = 210; damage = 0; scoreValue = 200; color = '#ff7700'; attackCooldown = 0.5; attackRange = 36;
+    } else if (roll < 0.95) {
       type = 'sniper';
       radius = 20; maxHp = 75; speed = 115; damage = 28; scoreValue = 300; color = '#b026ff'; attackCooldown = 1.0; attackRange = 40;
+    } else {
+      type = 'ghost';
+      radius = 18; maxHp = 70; speed = 190; damage = 22; scoreValue = 260; color = '#a855f7'; attackCooldown = 0.8; attackRange = 36;
     }
   } else if (wave === 3) {
-    if (roll < 0.25) {
+    if (roll < 0.16) {
       type = 'normal';
-    } else if (roll < 0.45) {
+    } else if (roll < 0.32) {
       type = 'fast';
       radius = 16; maxHp = 45; speed = 255; damage = 14; scoreValue = 125; color = '#00f0ff'; attackCooldown = 0.45; attackRange = 32;
-    } else if (roll < 0.65) {
+    } else if (roll < 0.48) {
       type = 'splitter';
       generation = 0;
       radius = 26; maxHp = 120; speed = 120; damage = 14; scoreValue = 200; color = '#00ff88'; attackCooldown = 0.75; attackRange = 40;
-    } else if (roll < 0.80) {
-      type = 'bomber';
-      radius = 18; maxHp = 60; speed = 210; damage = 50; scoreValue = 200; color = '#ff7700'; attackCooldown = 0.5; attackRange = 36;
-    } else if (roll < 0.90) {
-      type = 'sniper';
-      radius = 20; maxHp = 75; speed = 115; damage = 28; scoreValue = 300; color = '#b026ff'; attackCooldown = 1.0; attackRange = 40;
-    } else {
-      type = 'tank';
-      radius = 24; maxHp = 180; speed = 95; damage = 30; scoreValue = 350; color = '#ff3366'; attackCooldown = 1.1; attackRange = 36;
-    }
-  } else {
-    if (roll < 0.20) {
-      type = 'normal';
-    } else if (roll < 0.40) {
-      type = 'fast';
-      radius = 16; maxHp = 45; speed = 255; damage = 14; scoreValue = 125; color = '#00f0ff'; attackCooldown = 0.45; attackRange = 32;
-    } else if (roll < 0.60) {
-      type = 'splitter';
-      generation = 0;
-      radius = 26; maxHp = 120; speed = 120; damage = 14; scoreValue = 200; color = '#00ff88'; attackCooldown = 0.75; attackRange = 40;
+    } else if (roll < 0.61) {
+      type = 'toxic';
+      radius = 24; maxHp = 110; speed = 130; damage = 22; scoreValue = 220; color = '#39ff14'; attackCooldown = 0.9; attackRange = 52;
     } else if (roll < 0.74) {
       type = 'bomber';
-      radius = 18; maxHp = 60; speed = 210; damage = 50; scoreValue = 200; color = '#ff7700'; attackCooldown = 0.5; attackRange = 36;
-    } else if (roll < 0.88) {
+      radius = 18; maxHp = 60; speed = 210; damage = 0; scoreValue = 200; color = '#ff7700'; attackCooldown = 0.5; attackRange = 36;
+    } else if (roll < 0.86) {
       type = 'sniper';
       radius = 20; maxHp = 75; speed = 115; damage = 28; scoreValue = 300; color = '#b026ff'; attackCooldown = 1.0; attackRange = 40;
-    } else {
+    } else if (roll < 0.94) {
       type = 'tank';
       radius = 24; maxHp = 180; speed = 95; damage = 30; scoreValue = 350; color = '#ff3366'; attackCooldown = 1.1; attackRange = 36;
+    } else {
+      type = 'ghost';
+      radius = 18; maxHp = 70; speed = 190; damage = 22; scoreValue = 260; color = '#a855f7'; attackCooldown = 0.8; attackRange = 36;
+    }
+  } else {
+    if (roll < 0.10) {
+      type = 'normal';
+    } else if (roll < 0.24) {
+      type = 'fast';
+      radius = 16; maxHp = 45; speed = 255; damage = 14; scoreValue = 125; color = '#00f0ff'; attackCooldown = 0.45; attackRange = 32;
+    } else if (roll < 0.38) {
+      type = 'splitter';
+      generation = 0;
+      radius = 26; maxHp = 120; speed = 120; damage = 14; scoreValue = 200; color = '#00ff88'; attackCooldown = 0.75; attackRange = 40;
+    } else if (roll < 0.52) {
+      type = 'toxic';
+      radius = 24; maxHp = 110; speed = 130; damage = 22; scoreValue = 220; color = '#39ff14'; attackCooldown = 0.9; attackRange = 52;
+    } else if (roll < 0.66) {
+      type = 'bomber';
+      radius = 18; maxHp = 60; speed = 210; damage = 0; scoreValue = 200; color = '#ff7700'; attackCooldown = 0.5; attackRange = 36;
+    } else if (roll < 0.78) {
+      type = 'sniper';
+      radius = 20; maxHp = 75; speed = 115; damage = 28; scoreValue = 300; color = '#b026ff'; attackCooldown = 1.0; attackRange = 40;
+    } else if (roll < 0.90) {
+      type = 'tank';
+      radius = 24; maxHp = 180; speed = 95; damage = 30; scoreValue = 350; color = '#ff3366'; attackCooldown = 1.1; attackRange = 36;
+    } else {
+      type = 'ghost';
+      radius = 18; maxHp = 70; speed = 190; damage = 22; scoreValue = 260; color = '#a855f7'; attackCooldown = 0.8; attackRange = 36;
     }
   }
 
