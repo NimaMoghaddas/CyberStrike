@@ -130,6 +130,9 @@ class NetworkSystem {
         if (this.game && this.game.selectedSkinColor && this.lobbyMode !== 'teams') {
           this.socket.emit('lobby_select_color', { color: this.game.selectedSkinColor });
         }
+        if (this.game && this.game.selectedMapId) {
+          this.socket.emit('lobby_set_map', { mapId: this.game.selectedMapId });
+        }
       });
 
       // 1.1. Lobby Errors & Notifications
@@ -144,6 +147,7 @@ class NetworkSystem {
         if (data.mapId && this.game && this.game.map) {
           this.game.selectedMapId = data.mapId;
           this.game.map.setMap(data.mapId);
+          this.game.updateMapSelectionUI();
         }
         if (this.game) {
           this.game.gameMode = 'multiplayer';
@@ -199,8 +203,15 @@ class NetworkSystem {
         }
         const teamOverModal = document.getElementById('team-match-over-screen');
         if (teamOverModal) teamOverModal.classList.add('hidden');
+        const mpLeaveModal = document.getElementById('multiplayer-leave-modal');
+        if (mpLeaveModal) mpLeaveModal.classList.add('hidden');
 
-        if (this.game && this.game.gameState !== 'playing') {
+        // Thoroughly clear ground decals, old medkits, dropped weapons, and particles
+        if (this.game && this.game.clearGroundAndEntities) {
+          this.game.clearGroundAndEntities();
+        }
+
+        if (this.game) {
           this.game.startGame();
         }
       });
@@ -245,9 +256,7 @@ class NetworkSystem {
         if (data.mapId && this.game && this.game.map) {
           this.game.selectedMapId = data.mapId;
           this.game.map.setMap(data.mapId);
-          document.querySelectorAll('.map-card').forEach(c => {
-            c.classList.toggle('selected', c.getAttribute('data-map') === data.mapId);
-          });
+          this.game.updateMapSelectionUI();
         }
       });
 
@@ -651,6 +660,7 @@ class NetworkSystem {
   // --- Remote Shoot Handler ---
   handleRemoteShoot(data) {
     if (!data || data.shooterId === this.myId) return;
+    console.log('[REMOTE SHOOT RECEIVED] shooterId:', data.shooterId, 'myId:', this.myId);
     const rp = this.remotePlayers[data.shooterId];
     const weaponType = data.weaponType || 'rifle';
     if (rp) {
@@ -1125,6 +1135,19 @@ class NetworkSystem {
         mapId: mapId,
         weapon: weapon
       });
+    }
+  }
+
+  // --- Leave Active Match to Lobby ---
+  leaveBattlefield() {
+    if (this.socket && this.connected) {
+      this.socket.emit('leave_game');
+    }
+    this.gameStarted = false;
+    this.remotePlayers = {};
+    if (this.game) {
+      this.game.clearGroundAndEntities();
+      this.game.showScreen('start-screen');
     }
   }
 
@@ -1621,12 +1644,14 @@ class NetworkSystem {
     this.lockedColors = data.lockedColors || [];
     this.lobbyPlayers = data.players || [];
 
-    if (data.mapId && this.game && this.game.map && this.game.selectedMapId !== data.mapId) {
-      this.game.selectedMapId = data.mapId;
-      this.game.map.setMap(data.mapId);
-      document.querySelectorAll('.map-card').forEach(c => {
-        c.classList.toggle('selected', c.getAttribute('data-map') === data.mapId);
-      });
+    if (data.mapId && this.game && this.game.map) {
+      if (this.game.gameMode === 'multiplayer' && !this.isHost) {
+        if (this.game.selectedMapId !== data.mapId) {
+          this.game.selectedMapId = data.mapId;
+          this.game.map.setMap(data.mapId);
+        }
+      }
+      this.game.updateMapSelectionUI();
     }
 
     if (data.lightingMode && this.game && this.game.setLightingMode) {

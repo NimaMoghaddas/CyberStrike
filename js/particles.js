@@ -11,6 +11,13 @@ class ParticleSystem {
     this.shockwaves = [];
   }
 
+  clearAll() {
+    this.particles = [];
+    this.shellCasings = [];
+    this.damageNumbers = [];
+    this.shockwaves = [];
+  }
+
   // --- Dynamic Particle Spawn ---
   emit(x, y, count, options = {}) {
     for (let i = 0; i < count; i++) {

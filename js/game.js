@@ -57,6 +57,7 @@ class GameEngine {
     this.shotsFired = 0;
     this.shotsHit = 0;
     this.gameState = 'start'; // 'start' | 'playing' | 'gameover'
+    this.isPaused = false; // Singleplayer Tactical Pause state
 
     // Input State
     this.input = {
@@ -945,7 +946,8 @@ class GameEngine {
   }
 
   showScreen(screenId) {
-    const screens = ['start-screen', 'game-over-screen', 'team-match-over-screen'];
+    this.isPaused = false;
+    const screens = ['start-screen', 'game-over-screen', 'team-match-over-screen', 'singleplayer-pause-screen', 'multiplayer-leave-modal'];
     screens.forEach(id => {
       const el = document.getElementById(id);
       if (el) {
@@ -964,6 +966,122 @@ class GameEngine {
       this.updateMapSelectionUI();
       if (this.network && this.network.renderLobbyUI) {
         this.network.renderLobbyUI();
+      }
+    }
+  }
+
+  // --- Complete Battlefield Cleanup (Zero leftover items on restart or new match) ---
+  clearGroundAndEntities() {
+    this.medkits = [];
+    this.medkitTimer = 0;
+    this.weaponDrops = [];
+    this.weaponDropTimer = 0;
+    this.bullets = [];
+    this.enemyProjectiles = [];
+    this.acidPools = [];
+    this.enemies = [];
+
+    // Clear persistent blood decals, scorches, and blast marks on canvas
+    if (this.map && this.map.clearDecals) {
+      this.map.clearDecals();
+    }
+
+    // Reset barrels, walls, and interactive structures to pristine state
+    if (this.map && this.map.setMap) {
+      this.map.setMap(this.selectedMapId || 'sector_09');
+    }
+
+    // Clear all dynamic FX, blood particles, shell casings, floating damage numbers
+    if (window.particleSystem) {
+      if (typeof window.particleSystem.clearAll === 'function') {
+        window.particleSystem.clearAll();
+      } else {
+        window.particleSystem.particles = [];
+        window.particleSystem.shellCasings = [];
+        window.particleSystem.damageNumbers = [];
+        window.particleSystem.shockwaves = [];
+      }
+    }
+  }
+
+  // --- Singleplayer Pause Menu Methods ---
+  pauseSingleplayer() {
+    if (this.gameState !== 'playing' || this.gameMode !== 'singleplayer') return;
+    this.isPaused = true;
+
+    // Release mouse & keyboard inputs so character stops firing and running
+    this.input.mouse.down = false;
+    this.crosshair.classList.remove('firing');
+    for (const k in this.input.keys) {
+      this.input.keys[k] = false;
+    }
+
+    // Populate live pause modal stats
+    const waveEl = document.getElementById('pause-stat-wave');
+    if (waveEl) waveEl.textContent = this.wave || 1;
+    const scoreEl = document.getElementById('pause-stat-score');
+    if (scoreEl) scoreEl.textContent = String(this.score || 0).padStart(5, '0');
+    const killsEl = document.getElementById('pause-stat-kills');
+    if (killsEl) killsEl.textContent = this.kills || 0;
+    const hpEl = document.getElementById('pause-stat-hp');
+    if (hpEl) hpEl.textContent = `${Math.max(0, Math.round(this.player ? this.player.hp : 100))}%`;
+
+    const pauseModal = document.getElementById('singleplayer-pause-screen');
+    if (pauseModal) pauseModal.classList.remove('hidden');
+  }
+
+  resumeSingleplayer() {
+    this.isPaused = false;
+    const pauseModal = document.getElementById('singleplayer-pause-screen');
+    if (pauseModal) pauseModal.classList.add('hidden');
+  }
+
+  // --- Multiplayer Leave Modal Methods ---
+  openMultiplayerLeaveModal() {
+    if (this.gameState !== 'playing' || this.gameMode !== 'multiplayer') return;
+
+    // Release inputs
+    this.input.mouse.down = false;
+    this.crosshair.classList.remove('firing');
+    for (const k in this.input.keys) {
+      this.input.keys[k] = false;
+    }
+
+    const modal = document.getElementById('multiplayer-leave-modal');
+    if (modal) modal.classList.remove('hidden');
+  }
+
+  closeMultiplayerLeaveModal() {
+    const modal = document.getElementById('multiplayer-leave-modal');
+    if (modal) modal.classList.add('hidden');
+  }
+
+  confirmMultiplayerLeave() {
+    this.closeMultiplayerLeaveModal();
+    if (this.network) {
+      this.network.leaveBattlefield();
+    } else {
+      this.clearGroundAndEntities();
+      this.showScreen('start-screen');
+    }
+  }
+
+  // --- Global ESC Key Dispatcher ---
+  handleEscKey() {
+    if (this.gameState !== 'playing') return;
+
+    if (this.gameMode === 'singleplayer') {
+      if (this.isPaused) {
+        this.resumeSingleplayer();
+      } else {
+        this.pauseSingleplayer();
+      }
+    } else if (this.gameMode === 'multiplayer') {
+      const modal = document.getElementById('multiplayer-leave-modal');
+      if (modal && !modal.classList.contains('hidden')) {
+        this.closeMultiplayerLeaveModal();
+      } else {
+        this.openMultiplayerLeaveModal();
       }
     }
   }
@@ -1208,6 +1326,30 @@ class GameEngine {
     window.addEventListener('keydown', (e) => {
       this.input.keys[e.code] = true;
 
+      // Escape Key: Pause in Singleplayer or Prompt Leave Confirmation in Multiplayer
+      if (e.code === 'Escape') {
+        e.preventDefault();
+        this.handleEscKey();
+        return;
+      }
+
+      // Quick hotkeys in Pause Menu
+      if (this.isPaused && this.gameMode === 'singleplayer') {
+        if (e.code === 'KeyR') {
+          e.preventDefault();
+          this.resumeSingleplayer();
+          this.restartGame();
+          return;
+        }
+        if (e.code === 'KeyQ') {
+          e.preventDefault();
+          this.resumeSingleplayer();
+          this.clearGroundAndEntities();
+          this.showScreen('start-screen');
+          return;
+        }
+      }
+
       // Weapon Selection Hotkeys (1 to 5) - only allowed in Standard Arsenal mode!
       if (this.weaponMode !== 'ground') {
         if (e.code === 'Digit1' || e.code === 'Numpad1') this.player.equipWeapon('rifle');
@@ -1296,7 +1438,63 @@ class GameEngine {
     const gameOverLobbyBtn = document.getElementById('game-over-lobby-btn');
     if (gameOverLobbyBtn) {
       gameOverLobbyBtn.addEventListener('click', () => {
+        this.clearGroundAndEntities();
         this.showScreen('start-screen');
+      });
+    }
+
+    // In-game Pause & Leave HUD Buttons
+    const pauseGameBtn = document.getElementById('pause-game-btn');
+    if (pauseGameBtn) {
+      pauseGameBtn.addEventListener('click', () => {
+        this.pauseSingleplayer();
+      });
+    }
+
+    const leaveGameBtn = document.getElementById('leave-game-btn');
+    if (leaveGameBtn) {
+      leaveGameBtn.addEventListener('click', () => {
+        this.openMultiplayerLeaveModal();
+      });
+    }
+
+    // Singleplayer Pause Menu Modal Buttons (Play, Restart, Exit)
+    const pauseResumeBtn = document.getElementById('pause-btn-resume');
+    if (pauseResumeBtn) {
+      pauseResumeBtn.addEventListener('click', () => {
+        this.resumeSingleplayer();
+      });
+    }
+
+    const pauseRestartBtn = document.getElementById('pause-btn-restart');
+    if (pauseRestartBtn) {
+      pauseRestartBtn.addEventListener('click', () => {
+        this.resumeSingleplayer();
+        this.restartGame();
+      });
+    }
+
+    const pauseExitBtn = document.getElementById('pause-btn-exit');
+    if (pauseExitBtn) {
+      pauseExitBtn.addEventListener('click', () => {
+        this.resumeSingleplayer();
+        this.clearGroundAndEntities();
+        this.showScreen('start-screen');
+      });
+    }
+
+    // Multiplayer Leave Confirmation Modal Buttons
+    const mpLeaveConfirmBtn = document.getElementById('mp-leave-confirm-btn');
+    if (mpLeaveConfirmBtn) {
+      mpLeaveConfirmBtn.addEventListener('click', () => {
+        this.confirmMultiplayerLeave();
+      });
+    }
+
+    const mpLeaveCancelBtn = document.getElementById('mp-leave-cancel-btn');
+    if (mpLeaveCancelBtn) {
+      mpLeaveCancelBtn.addEventListener('click', () => {
+        this.closeMultiplayerLeaveModal();
       });
     }
 
@@ -1364,6 +1562,12 @@ class GameEngine {
 
   startGame() {
     document.getElementById('start-screen').classList.add('hidden');
+    const pauseModal = document.getElementById('singleplayer-pause-screen');
+    if (pauseModal) pauseModal.classList.add('hidden');
+    const mpLeaveModal = document.getElementById('multiplayer-leave-modal');
+    if (mpLeaveModal) mpLeaveModal.classList.add('hidden');
+
+    this.isPaused = false;
     this.gameState = 'playing';
 
     // Auto-detect and ensure multiplayer mode if in party or connected with other players
@@ -1383,7 +1587,9 @@ class GameEngine {
     this.player.setColor(activeColor);
     this.player.color = activeColor;
     this.player.equipWeapon(this.selectedWeaponId);
-    this.map.setMap(this.selectedMapId);
+
+    // Thoroughly wipe all battlefield ground items so nothing remains from previous games
+    this.clearGroundAndEntities();
 
     // Position player safely at first spawn point of the chosen map
     const spawn = (this.map.spawns && this.map.spawns.length > 0) ? this.map.spawns[0] : (this.map.spawnPoint || { x: 1200, y: 1200 });
@@ -1395,26 +1601,7 @@ class GameEngine {
     this.player.vy = 0;
     this.map.resolveCircleCollision(this.player);
 
-    this.medkits = [];
-    this.medkitTimer = 0;
-    this.weaponDrops = [];
-    this.weaponDropTimer = 0;
-    this.acidPools = [];
-
-    // Clear persistent blood decals and old particles on start
-    if (this.map && this.map.clearDecals) {
-      this.map.clearDecals();
-    }
-    if (window.particleSystem) {
-      window.particleSystem.particles = [];
-      window.particleSystem.damageNumbers = [];
-    }
-
     if (this.gameMode === 'multiplayer') {
-      this.enemies = [];
-      this.enemyProjectiles = [];
-      this.acidPools = [];
-      this.bullets = [];
       if (this.network) {
         this.network.deployToBattlefield();
       }
@@ -1445,8 +1632,14 @@ class GameEngine {
   }
 
   restartGame() {
+    this.resumeSingleplayer();
     document.getElementById('game-over-screen').classList.add('hidden');
+    const teamMatchScreen = document.getElementById('team-match-over-screen');
+    if (teamMatchScreen) teamMatchScreen.classList.add('hidden');
     this.isRespawning = false;
+
+    // Thoroughly wipe all battlefield ground items (medkits, weapons, blood, barrels, particles)
+    this.clearGroundAndEntities();
 
     const spawn = (this.map.spawns && this.map.spawns.length > 0) ? this.map.spawns[0] : (this.map.spawnPoint || { x: 1200, y: 1200 });
     const startX = spawn.x;
@@ -1464,25 +1657,12 @@ class GameEngine {
     this.player.setColor(this.selectedSkinColor || '#00f0ff');
     this.player.equipWeapon(this.selectedWeaponId);
 
-    this.bullets = [];
-    this.enemyProjectiles = [];
-    this.acidPools = [];
-    this.enemies = [];
     this.score = 0;
     this.kills = 0;
     this.shotsFired = 0;
     this.shotsHit = 0;
     this.wave = 1;
     this.gameState = 'playing';
-
-    // Clear persistent blood decals and particles on Try Again / Restart
-    if (this.map && this.map.clearDecals) {
-      this.map.clearDecals();
-    }
-    if (window.particleSystem) {
-      window.particleSystem.particles = [];
-      window.particleSystem.damageNumbers = [];
-    }
 
     this.initArsenalUI();
     this.updateAmmoUI();
@@ -1492,6 +1672,10 @@ class GameEngine {
       this.network.deployToBattlefield();
     } else {
       this.spawnLocalMedkit();
+      if (this.weaponMode === 'ground') {
+        const types = ['rifle', 'shotgun', 'smg', 'railgun', 'cannon'];
+        types.forEach(t => this.spawnLocalWeaponDrop(t));
+      }
       this.startWave(1);
     }
     this.updateHUD();
@@ -1622,7 +1806,7 @@ class GameEngine {
 
   // --- Main Update Loop ---
   update(dt) {
-    if (this.gameState !== 'playing') return;
+    if (this.gameState !== 'playing' || this.isPaused) return;
 
     // 1. Update Player (only if alive)
     if (this.player.alive) {
@@ -1862,6 +2046,20 @@ class GameEngine {
     document.getElementById('score-display').textContent = this.score.toString().padStart(5, '0');
     document.getElementById('kills-display').textContent = this.kills;
     document.getElementById('enemies-left').textContent = this.enemies.length + this.enemiesToSpawn;
+
+    // Toggle In-game Pause Button (Singleplayer) vs Leave Button (Multiplayer)
+    const pauseBtn = document.getElementById('pause-game-btn');
+    const leaveBtn = document.getElementById('leave-game-btn');
+    const escHint = document.getElementById('hint-esc-key');
+    if (this.gameMode === 'multiplayer') {
+      if (pauseBtn) pauseBtn.classList.add('hidden');
+      if (leaveBtn) leaveBtn.classList.remove('hidden');
+      if (escHint) escHint.textContent = '[ESC] LEAVE';
+    } else {
+      if (pauseBtn) pauseBtn.classList.remove('hidden');
+      if (leaveBtn) leaveBtn.classList.add('hidden');
+      if (escHint) escHint.textContent = '[ESC] PAUSE';
+    }
 
     // Crosshair Reload Spinner Toggle
     if (this.player.isReloading) {

@@ -975,7 +975,9 @@ io.on('connection', (socket) => {
     if (oldRoom) {
       delete oldRoom.players[socket.id];
       delete oldRoom.activePlayers[socket.id];
-      socket.leave(oldRoom.id);
+      if (oldRoom.id !== socket.id) {
+        socket.leave(oldRoom.id);
+      }
       if (Object.keys(oldRoom.players).length === 0) {
         delete rooms[oldRoom.id];
       } else if (oldRoom.hostId === socket.id) {
@@ -1219,18 +1221,32 @@ io.on('connection', (socket) => {
     room.teamStats = {
       alpha: { kills: 0, score: 0 },
       beta: { kills: 0, score: 0 },
-      targetKills: 10,
+      targetKills: 20,
       matchFinished: false,
       winner: null
     };
+
+    // Clean ground & reset all battlefield items so nothing is carried over from previous matches
+    room.medkits = {};
+    room.nextMedkitId = 1;
+    room.medkitTimer = 0;
+    room.weaponDrops = {};
+    room.nextWeaponDropId = 1;
+    room.weaponDropTimer = 0;
+    room.bullets = [];
+    room.enemyProjectiles = [];
+    room.acidPools = [];
+    room.barrels = getInitialBarrelsForMap(room.mapId);
+
     if (room.pvpOnly) {
       room.enemies = {};
       room.waveManager.enemiesToSpawn = 0;
       room.waveManager.totalEnemiesInWave = 0;
+    } else {
+      room.enemies = {};
+      startWave(room, 1);
     }
     if (room.weaponMode === 'ground') {
-      room.weaponDrops = {};
-      room.nextWeaponDropId = 1;
       WEAPON_TYPES.forEach(type => {
         spawnServerWeaponDrop(room, type);
       });
@@ -1242,8 +1258,22 @@ io.on('connection', (socket) => {
       lightingMode: room.lightingMode || 'tactical',
       weaponMode: room.weaponMode || 'standard',
       pvpOnly: !!room.pvpOnly,
-      targetKills: 10
+      targetKills: 20
     });
+    broadcastLobbySync(room.id);
+  });
+
+  // Player Leaves Active Match back to Lobby
+  socket.on('leave_game', () => {
+    const room = getRoomForSocket(socket);
+    if (!room) return;
+    if (room.activePlayers[socket.id]) {
+      delete room.activePlayers[socket.id];
+    }
+    if (room.players[socket.id]) {
+      room.players[socket.id].ready = false;
+    }
+    io.to(room.id).emit('player_left', { id: socket.id });
     broadcastLobbySync(room.id);
   });
 
@@ -1437,8 +1467,15 @@ io.on('connection', (socket) => {
     ]);
     recipientIds.delete(socket.id);
 
+    console.log(`[SERVER SHOOT] from socket ${socket.id} (room ${room.id}) to recipients:`, Array.from(recipientIds));
+
     recipientIds.forEach(targetId => {
-      io.to(targetId).emit('remote_shoot', shootPayload);
+      const targetSocket = io.sockets.sockets.get(targetId);
+      if (targetSocket) {
+        targetSocket.emit('remote_shoot', shootPayload);
+      } else {
+        io.to(targetId).emit('remote_shoot', shootPayload);
+      }
     });
   });
 

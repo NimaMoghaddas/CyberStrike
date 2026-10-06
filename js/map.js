@@ -38,13 +38,21 @@ class GameMap {
     this.mapId = mapId;
     this.id = mapId;
     this.initMap();
+    if (this.decalCanvas) {
+      this.decalCanvas.width = this.width;
+      this.decalCanvas.height = this.height;
+    }
+    if (this.floorCanvas) {
+      this.floorCanvas.width = this.width;
+      this.floorCanvas.height = this.height;
+    }
     this.renderFloor();
     this.clearDecals();
   }
 
   clearDecals() {
-    if (this.decalCtx) {
-      this.decalCtx.clearRect(0, 0, this.width, this.height);
+    if (this.decalCtx && this.decalCanvas) {
+      this.decalCtx.clearRect(0, 0, this.decalCanvas.width, this.decalCanvas.height);
     }
   }
 
