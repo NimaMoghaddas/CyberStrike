@@ -106,7 +106,7 @@ const WEAPON_DEFINITIONS = {
     screenShake: 7.5,
     color: '#b026ff',
     glowColor: '#d946ef',
-    bulletRadius: 8,
+    bulletRadius: 5,
     sound: 'railgun',
     crosshairStyle: 'railgun',
     tag: 'PIERCING'
@@ -139,13 +139,103 @@ const WEAPON_DEFINITIONS = {
     sound: 'cannon',
     crosshairStyle: 'cannon',
     tag: 'AOE BLAST'
+  },
+  hydra: {
+    id: 'hydra',
+    slot: 6,
+    key: '6',
+    name: 'HYDRA-9 SWARM MISSILES',
+    shortName: 'HYDRA-9',
+    category: 'GUIDED ARTILLERY',
+    icon: '🚀',
+    description: 'Fires high-velocity micro-missiles with calibrated trajectory guidance.',
+    magSize: 12,
+    fireRate: 0.22,
+    reloadDuration: 1.85,
+    damage: 46,
+    splashDamage: 0,
+    blastRadius: 0,
+    explosive: false,
+    homing: true,
+    speed: 780,
+    range: 1350,
+    spread: 0.08,
+    pellets: 1,
+    recoil: 8,
+    screenShake: 3.5,
+    color: '#ff007f',
+    glowColor: '#ff0055',
+    bulletRadius: 5.5,
+    sound: 'hydra',
+    crosshairStyle: 'default',
+    tag: 'GUIDED SWARM'
+  },
+  tesla: {
+    id: 'tesla',
+    slot: 7,
+    key: '7',
+    name: 'TESLA-ARC LIGHTNING',
+    shortName: 'TESLA-ARC',
+    category: 'CHAIN VOLTAGE',
+    icon: '⚡⚡⚡',
+    description: 'High-voltage lightning arcs jumping between multiple hostiles with stun.',
+    magSize: 20,
+    fireRate: 0.26,
+    reloadDuration: 1.55,
+    damage: 54,
+    chainDamage: 40,
+    chainTargets: 3,
+    chainRange: 220,
+    speed: 1800,
+    range: 1050,
+    spread: 0.02,
+    pellets: 1,
+    recoil: 6,
+    screenShake: 3.5,
+    color: '#00f0ff',
+    glowColor: '#38bdf8',
+    bulletRadius: 5.5,
+    sound: 'tesla',
+    crosshairStyle: 'default',
+    tag: 'CHAIN x4'
+  },
+  vortex: {
+    id: 'vortex',
+    slot: 8,
+    key: '8',
+    name: 'SINGULARITY VORTEX',
+    shortName: 'VORTEX',
+    category: 'GRAVITY CANNON',
+    icon: '🌀',
+    description: 'Launches a black hole orb that vacuums hostiles inward before gravitational implosion.',
+    magSize: 3,
+    fireRate: 1.15,
+    reloadDuration: 2.3,
+    damage: 50,
+    splashDamage: 135,
+    blastRadius: 165,
+    pullRadius: 300,
+    isVortex: true,
+    explosive: true,
+    speed: 260,
+    range: 880,
+    spread: 0.01,
+    pellets: 1,
+    recoil: 16,
+    screenShake: 9.0,
+    color: '#a855f7',
+    glowColor: '#c084fc',
+    bulletRadius: 10,
+    sound: 'vortex',
+    crosshairStyle: 'cannon',
+    tag: 'GRAVITY PULL'
   }
 };
 
 class WeaponInventory {
   constructor() {
     this.weapons = {};
-    this.weaponOrder = ['rifle', 'shotgun', 'smg', 'railgun', 'cannon'];
+    this.weaponOrder = ['rifle', 'shotgun', 'smg', 'railgun', 'cannon', 'hydra', 'tesla', 'vortex'];
     this.currentId = 'rifle';
     this.previousId = 'shotgun';
 
@@ -577,6 +667,84 @@ class WeaponDrop {
         ctx.shadowColor = '#ff2a5f';
         ctx.shadowBlur = 4;
         ctx.fillRect(-10, 7.8, 8, 1.4);
+        ctx.shadowBlur = 0;
+        break;
+      }
+
+      case 'hydra': {
+        // --- HYDRA-9 SWARM MISSILE POD ---
+        ctx.fillStyle = '#1e0517';
+        ctx.strokeStyle = '#ff007f';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(-16, -7, 28, 14, 3);
+        else ctx.rect(-16, -7, 28, 14);
+        ctx.fill();
+        ctx.stroke();
+
+        // Dual rocket tubes
+        ctx.fillStyle = '#0a0006';
+        ctx.beginPath();
+        ctx.arc(8, -3, 3, 0, Math.PI * 2);
+        ctx.arc(8, 3, 3, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Neon tips
+        ctx.fillStyle = '#ff007f';
+        ctx.shadowColor = '#ff007f';
+        ctx.shadowBlur = 8;
+        ctx.fillRect(-10, -1.5, 14, 3);
+        ctx.shadowBlur = 0;
+        break;
+      }
+
+      case 'tesla': {
+        // --- TESLA-ARC LIGHTNING CANNON ---
+        ctx.fillStyle = '#061325';
+        ctx.strokeStyle = '#00f0ff';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(-18, -5, 24, 10, 2);
+        else ctx.rect(-18, -5, 24, 10);
+        ctx.fill();
+        ctx.stroke();
+
+        // Dual Arc Emitter Prongs
+        ctx.fillStyle = '#38bdf8';
+        ctx.fillRect(6, -6, 10, 2.5);
+        ctx.fillRect(6, 3.5, 10, 2.5);
+
+        // Core glow & spark
+        ctx.fillStyle = '#00f0ff';
+        ctx.shadowColor = '#00f0ff';
+        ctx.shadowBlur = 10;
+        ctx.fillRect(-4, -2, 10, 4);
+        ctx.shadowBlur = 0;
+        break;
+      }
+
+      case 'vortex': {
+        // --- SINGULARITY VORTEX CANNON ---
+        ctx.fillStyle = '#1a0b2e';
+        ctx.strokeStyle = '#a855f7';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(-16, -6, 26, 12, 3);
+        else ctx.rect(-16, -6, 26, 12);
+        ctx.fill();
+        ctx.stroke();
+
+        // Rotating Gravitational Singularity Core
+        const vG = ctx.createRadialGradient(2, 0, 0, 2, 0, 7);
+        vG.addColorStop(0, '#ffffff');
+        vG.addColorStop(0.4, '#c084fc');
+        vG.addColorStop(1, '#581c87');
+        ctx.fillStyle = vG;
+        ctx.shadowColor = '#a855f7';
+        ctx.shadowBlur = 12;
+        ctx.beginPath();
+        ctx.arc(2, 0, 5, 0, Math.PI * 2);
+        ctx.fill();
         ctx.shadowBlur = 0;
         break;
       }

@@ -193,6 +193,10 @@ class NetworkSystem {
         if (data && data.pvpOnly !== undefined && this.game && this.game.setPvPMode) {
           this.game.setPvPMode(data.pvpOnly ? 'pvp_only' : 'enemies', false);
         }
+        if (data && data.pvpOnly && this.game && this.game.player) {
+          this.game.player.maxHp = 200;
+          this.game.player.hp = 200;
+        }
         const teamHud = document.getElementById('team-scoreboard-hud');
         if (teamHud) {
           if (data && data.mode === 'teams') {
@@ -211,9 +215,70 @@ class NetworkSystem {
           this.game.clearGroundAndEntities();
         }
 
+        // Complete stats reset for all local and remote operatives
+        if (this.game) {
+          this.game.score = 0;
+          this.game.kills = 0;
+          this.game.deaths = 0;
+          this.game.shotsFired = 0;
+          this.game.shotsHit = 0;
+          this.game.wave = 1;
+        }
+        for (const id in this.remotePlayers) {
+          if (this.remotePlayers[id]) {
+            this.remotePlayers[id].score = 0;
+            this.remotePlayers[id].kills = 0;
+            this.remotePlayers[id].deaths = 0;
+          }
+        }
+        this.updateTeamScoreboardHUD({
+          alpha: { kills: 0, score: 0 },
+          beta: { kills: 0, score: 0 },
+          targetKills: 10
+        });
+        this.updateScoreboard();
+
         if (this.game) {
           this.game.startGame();
         }
+      });
+
+      // 1.32. Synchronized Match Reset Event
+      this.socket.on('match_reset', (data) => {
+        if (this.game) {
+          this.game.score = 0;
+          this.game.kills = 0;
+          this.game.deaths = 0;
+          this.game.shotsFired = 0;
+          this.game.shotsHit = 0;
+          this.game.wave = 1;
+          if (this.game.clearGroundAndEntities) {
+            this.game.clearGroundAndEntities();
+          }
+          if (this.game.updateHUD) {
+            this.game.updateHUD();
+          }
+          if (this.game.updateLiveRoster) {
+            this.game.updateLiveRoster();
+          }
+        }
+        for (const id in this.remotePlayers) {
+          if (this.remotePlayers[id]) {
+            this.remotePlayers[id].score = 0;
+            this.remotePlayers[id].kills = 0;
+            this.remotePlayers[id].deaths = 0;
+          }
+        }
+        if (data && data.teamStats) {
+          this.updateTeamScoreboardHUD(data.teamStats);
+        } else {
+          this.updateTeamScoreboardHUD({
+            alpha: { kills: 0, score: 0 },
+            beta: { kills: 0, score: 0 },
+            targetKills: 10
+          });
+        }
+        this.updateScoreboard();
       });
 
       // 1.35. Squad Visibility / Lighting Sync
@@ -269,13 +334,24 @@ class NetworkSystem {
         this.game.player.name = p.name;
         this.game.player.invulnerableTime = p.invulnerableTimer || 2.5;
         this.game.player.alive = true;
+        this.game.player.maxHp = p.maxHp || (this.game.pvpOnly ? 200 : 100);
         this.game.player.hp = p.hp;
         this.game.localPlayerId = this.myId;
+        // Reset local combat stats on match entry
+        this.game.score = p.score || 0;
+        this.game.kills = p.kills || 0;
+        this.game.deaths = p.deaths || 0;
+        this.game.shotsFired = 0;
+        this.game.shotsHit = 0;
+        this.game.wave = 1;
         if (p.skinId && this.game.player.setSkin) {
           this.game.player.setSkin(p.skinId);
         }
         if (data.mapId && this.game.map) {
           this.game.map.setMap(data.mapId);
+        }
+        if (this.game.updateHUD) {
+          this.game.updateHUD();
         }
       });
 
@@ -334,8 +410,9 @@ class NetworkSystem {
         }
       });
 
-      // 8. PvE Wave Events
+      // 8. PvE Wave Events (Bypassed entirely in PvP mode)
       this.socket.on('wave_start', (data) => {
+        if (this.game && this.game.pvpOnly) return;
         this.game.wave = data.wave;
         const banner = document.getElementById('wave-banner');
         if (banner) {
@@ -348,6 +425,7 @@ class NetworkSystem {
       });
 
       this.socket.on('wave_cleared', (data) => {
+        if (this.game && this.game.pvpOnly) return;
         const clearBanner = document.getElementById('wave-clear-banner');
         // Reduced steady HP scaling
         const maxHpBonus = data.maxHpBonus || Math.round(10 + (((data.wave || 1) - 1) * 6));
@@ -450,7 +528,13 @@ class NetworkSystem {
       this.socket.on('player_respawned', (data) => {
         if (data.id === this.myId) {
           this.game.isRespawning = false;
+          if (this.game.pvpOnly) {
+            this.game.player.maxHp = 200;
+          }
           this.game.player.respawn(data.x, data.y);
+          if (this.game.pvpOnly) {
+            this.game.player.hp = 200;
+          }
           this.hideRespawnOverlay();
           this.game.updateHUD();
           this.game.updateAmmoUI();
@@ -459,7 +543,8 @@ class NetworkSystem {
           const rp = this.remotePlayers[data.id];
           rp.x = data.x;
           rp.y = data.y;
-          rp.hp = data.hp;
+          rp.hp = data.hp || (this.game.pvpOnly ? 200 : 100);
+          rp.maxHp = this.game.pvpOnly ? 200 : (rp.maxHp || 100);
           rp.alive = true;
           rp.invulnerableTimer = data.invulnerableTimer || 2.5;
         }
@@ -556,7 +641,8 @@ class NetworkSystem {
         isMoving: p.isMoving,
         walkCycle: Number(p.walkCycle.toFixed(2)),
         recoilOffset: Number(p.recoilOffset.toFixed(1)),
-        weapon: p.currentWeaponId
+        weapon: p.currentWeaponId,
+        hasChrono: !!(p.hasPowerup && p.hasPowerup('chrono') && !this.game.pvpOnly)
       });
     }
 
@@ -705,9 +791,10 @@ class NetworkSystem {
     if (snapshot.players) {
       snapshot.players.forEach(pData => {
         if (pData.id === this.myId) {
-          // Update our authoritative score, kills, deaths from server
-          this.game.score = Math.max(this.game.score, pData.score);
-          this.game.kills = Math.max(this.game.kills, pData.kills);
+          // Authoritative score, kills, deaths directly synchronized from server
+          this.game.score = (typeof pData.score === 'number') ? pData.score : 0;
+          this.game.kills = (typeof pData.kills === 'number') ? pData.kills : 0;
+          this.game.deaths = (typeof pData.deaths === 'number') ? pData.deaths : 0;
           return;
         }
 
@@ -1097,6 +1184,15 @@ class NetworkSystem {
 
   // --- Join Game Request from Start Screen ---
   deployToBattlefield() {
+    if (this.game) {
+      this.game.score = 0;
+      this.game.kills = 0;
+      this.game.deaths = 0;
+      this.game.shotsFired = 0;
+      this.game.shotsHit = 0;
+      this.game.wave = 1;
+    }
+
     const nameInput = document.getElementById('operative-callsign-input');
     if (nameInput && nameInput.value.trim().length > 0) {
       this.callsign = nameInput.value.trim().toUpperCase();
@@ -1142,13 +1238,28 @@ class NetworkSystem {
   leaveBattlefield() {
     if (this.socket && this.connected) {
       this.socket.emit('leave_game');
+      this.socket.emit('reset_match');
     }
     this.gameStarted = false;
     this.remotePlayers = {};
     if (this.game) {
+      this.game.score = 0;
+      this.game.kills = 0;
+      this.game.deaths = 0;
+      this.game.shotsFired = 0;
+      this.game.shotsHit = 0;
+      this.game.wave = 1;
       this.game.clearGroundAndEntities();
       this.game.showScreen('start-screen');
+      this.game.updateHUD();
+      this.game.updateLiveRoster();
     }
+    this.updateTeamScoreboardHUD({
+      alpha: { kills: 0, score: 0 },
+      beta: { kills: 0, score: 0 },
+      targetKills: 10
+    });
+    this.updateScoreboard();
   }
 
   // --- Report Self Death (Weapon splash or suicidal blast) ---
@@ -1537,7 +1648,33 @@ class NetworkSystem {
         const teamMatchScreen = document.getElementById('team-match-over-screen');
         if (teamMatchScreen) teamMatchScreen.classList.add('hidden');
         if (this.game) {
+          this.game.score = 0;
+          this.game.kills = 0;
+          this.game.deaths = 0;
+          this.game.shotsFired = 0;
+          this.game.shotsHit = 0;
+          this.game.wave = 1;
+          this.game.clearGroundAndEntities();
           this.game.showScreen('start-screen');
+          this.game.updateHUD();
+          this.game.updateLiveRoster();
+        }
+        for (const id in this.remotePlayers) {
+          if (this.remotePlayers[id]) {
+            this.remotePlayers[id].score = 0;
+            this.remotePlayers[id].kills = 0;
+            this.remotePlayers[id].deaths = 0;
+          }
+        }
+        this.updateTeamScoreboardHUD({
+          alpha: { kills: 0, score: 0 },
+          beta: { kills: 0, score: 0 },
+          targetKills: 10
+        });
+        this.updateScoreboard();
+        if (this.socket && this.connected) {
+          this.socket.emit('leave_game');
+          this.socket.emit('reset_match');
         }
       });
     }
@@ -1995,9 +2132,13 @@ class NetworkSystem {
     const betaKills = document.getElementById('hud-beta-kills');
     const betaScore = document.getElementById('hud-beta-score');
 
-    if (alphaKills) alphaKills.textContent = `${alpha.kills} / 20`;
+    const targetKills = teamStats.targetKills || 10;
+    const targetPill = hud.querySelector('.team-hud-target-pill');
+    if (targetPill) targetPill.textContent = `TARGET: ${targetKills} KILLS`;
+
+    if (alphaKills) alphaKills.textContent = `${alpha.kills} / ${targetKills}`;
     if (alphaScore) alphaScore.textContent = Number(alpha.score || 0).toLocaleString();
-    if (betaKills) betaKills.textContent = `${beta.kills} / 20`;
+    if (betaKills) betaKills.textContent = `${beta.kills} / ${targetKills}`;
     if (betaScore) betaScore.textContent = Number(beta.score || 0).toLocaleString();
 
     const alphaDot = document.getElementById('hud-alpha-dot');

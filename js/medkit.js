@@ -38,8 +38,9 @@ class Medkit {
     if (this.collected) return;
     this.collected = true;
 
-    // Restore 20% of total health (e.g., 20% of max HP)
-    const healAmount = Math.max(1, Math.round(player.maxHp * 0.20));
+    // Restore health: In PvP mode, restore exactly 50 HP (25% of 200 HP). Otherwise 50 HP / 20% max HP.
+    const isPvP = (game && (game.pvpOnly || (game.network && game.network.pvpOnly)));
+    const healAmount = isPvP ? (this.heal || 50) : (this.heal || Math.max(1, Math.round(player.maxHp * 0.20)));
     const oldHp = player.hp;
     player.hp = Math.min(player.maxHp, player.hp + healAmount);
     const healedAmount = Math.round(player.hp - oldHp);

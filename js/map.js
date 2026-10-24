@@ -14,6 +14,8 @@ class GameMap {
     // Obstacle lists
     this.walls = []; // Rectangular solid obstacles {x, y, w, h, type}
     this.pillars = []; // Cylindrical reactor pillars {x, y, radius}
+    this.portals = []; // Active tactical phase gates {id, x, y, targetX, targetY, color}
+    this.boostPads = []; // Directional kinetic slingshots {x, y, dirX, dirY, speed, color}
     this.barrels = []; // Red explosive barrels {x, y, radius, hp, maxHp, exploded}
     this.spawnPoint = { x: 1200, y: 1200 };
 
@@ -69,6 +71,8 @@ class GameMap {
       this.accentColor = def.accentColor || '#00f0ff';
       this.walls = JSON.parse(JSON.stringify(def.walls || []));
       this.pillars = JSON.parse(JSON.stringify(def.pillars || []));
+      this.portals = JSON.parse(JSON.stringify(def.portals || []));
+      this.boostPads = (def.boostPads || []).map(b => ({ ...b, _activeTimer: 0, _cooldown: 0 }));
       this.barrels = (def.barrels || []).map((loc, idx) => ({
         id: idx + 1,
         x: loc.x,
@@ -111,6 +115,8 @@ class GameMap {
       this.renderFloorReactor(ctx, def);
     } else if (theme === 'orbital') {
       this.renderFloorOrbital(ctx, def);
+    } else if (theme === 'quantum' || this.mapId === 'chronos_collider') {
+      this.renderFloorQuantumCollider(ctx, def);
     } else {
       this.renderFloorIndustrial(ctx, def);
     }
@@ -686,6 +692,219 @@ class GameMap {
   }
 
   // =========================================================================
+  // 6. CHRONOS-COLLIDER // HADRON WARP VAULT & TACHYON LAB FLOOR
+  // Giant circular synchrotron collider ring, quantum hexagonal field mesh,
+  // magnetic deflection coils, sub-floor glowing particle tracks, hazard zones.
+  // =========================================================================
+  renderFloorQuantumCollider(ctx, def) {
+    const W = this.width;
+    const H = this.height;
+    const centerX = W / 2;
+    const centerY = H / 2;
+
+    // 1. Deep obsidian-carbon quantum void base
+    ctx.fillStyle = '#02050d';
+    ctx.fillRect(0, 0, W, H);
+
+    // 2. Quantum Hexagonal Field Lattice
+    ctx.save();
+    ctx.strokeStyle = 'rgba(0, 255, 204, 0.05)';
+    ctx.lineWidth = 1;
+    const hexRadius = 45;
+    const hexW = hexRadius * Math.sqrt(3);
+    const hexH = hexRadius * 1.5;
+    for (let hy = 100; hy < H - 100; hy += hexH) {
+      const offsetX = ((Math.round(hy / hexH) % 2) === 0) ? 0 : hexW / 2;
+      for (let hx = 100 + offsetX; hx < W - 100; hx += hexW) {
+        this.drawHexagonTile(ctx, hx, hy, hexRadius);
+      }
+    }
+    ctx.restore();
+
+    // 3. Four Quadrant Zone Flooring Patterns
+    ctx.save();
+    // Zone 1 (NW): Superconducting Cryo Lab (Frosty cyan grid lines)
+    ctx.strokeStyle = 'rgba(0, 255, 204, 0.08)';
+    ctx.lineWidth = 1.5;
+    for (let gx = 100; gx <= 1000; gx += 80) {
+      ctx.beginPath(); ctx.moveTo(gx, 100); ctx.lineTo(gx, 1000); ctx.stroke();
+    }
+    for (let gy = 100; gy <= 1000; gy += 80) {
+      ctx.beginPath(); ctx.moveTo(100, gy); ctx.lineTo(1000, gy); ctx.stroke();
+    }
+
+    // Zone 2 (NE): High-Flux Laser Optical Bay (Red/magenta cross-hatch)
+    ctx.strokeStyle = 'rgba(255, 0, 85, 0.08)';
+    for (let gx = 1400; gx <= 2300; gx += 80) {
+      ctx.beginPath(); ctx.moveTo(gx, 100); ctx.lineTo(gx, 1000); ctx.stroke();
+    }
+    for (let gy = 100; gy <= 1000; gy += 80) {
+      ctx.beginPath(); ctx.moveTo(1400, gy); ctx.lineTo(2300, gy); ctx.stroke();
+    }
+
+    // Zone 3 (SW): Quantum Telemetry Hub (Violet concentric arcs)
+    ctx.strokeStyle = 'rgba(189, 0, 255, 0.08)';
+    for (let r = 120; r <= 800; r += 90) {
+      ctx.beginPath();
+      ctx.arc(350, 2050, r, -Math.PI / 2, 0);
+      ctx.stroke();
+    }
+
+    // Zone 4 (SE): Graviton Resonance Bay (Gold/amber electromagnetic wave grid)
+    ctx.strokeStyle = 'rgba(255, 183, 3, 0.08)';
+    for (let gx = 1400; gx <= 2300; gx += 80) {
+      ctx.beginPath(); ctx.moveTo(gx, 1400); ctx.lineTo(gx, 2300); ctx.stroke();
+    }
+    for (let gy = 1400; gy <= 2300; gy += 80) {
+      ctx.beginPath(); ctx.moveTo(1400, gy); ctx.lineTo(2300, gy); ctx.stroke();
+    }
+    ctx.restore();
+
+    // 4. Giant Synchrotron Particle Accelerator Track (Circular Ring)
+    ctx.save();
+    const ringRadius = 820;
+    const ringWidth = 90;
+
+    // Outer and Inner Conduit Trenches
+    ctx.strokeStyle = '#071626';
+    ctx.lineWidth = ringWidth;
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, ringRadius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Trench Sidewall Rims
+    ctx.strokeStyle = '#0e2b44';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, ringRadius - ringWidth / 2, 0, Math.PI * 2);
+    ctx.arc(centerX, centerY, ringRadius + ringWidth / 2, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Glowing Particle Accelerator Beams (Dual counter-rotating conduits beneath floor glass)
+    // Primary Cyan Beam Track
+    ctx.strokeStyle = 'rgba(0, 255, 204, 0.6)';
+    ctx.lineWidth = 5;
+    ctx.shadowColor = '#00ffcc';
+    ctx.shadowBlur = 14;
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, ringRadius - 20, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Secondary Magenta Antimatter Track
+    ctx.strokeStyle = 'rgba(189, 0, 255, 0.55)';
+    ctx.lineWidth = 5;
+    ctx.shadowColor = '#bd00ff';
+    ctx.shadowBlur = 14;
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, ringRadius + 20, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // 8 Magnetic Deflection Prism Stations around the accelerator ring
+    for (let i = 0; i < 8; i++) {
+      const angle = (Math.PI / 4) * i;
+      const px = centerX + Math.cos(angle) * ringRadius;
+      const py = centerY + Math.sin(angle) * ringRadius;
+
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.rotate(angle + Math.PI / 2);
+
+      // Magnetic deflector block
+      ctx.fillStyle = '#0a1a2b';
+      ctx.fillRect(-28, -ringWidth / 2 - 8, 56, ringWidth + 16);
+      ctx.strokeStyle = '#00ffcc';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(-28, -ringWidth / 2 - 8, 56, ringWidth + 16);
+
+      // Copper electromagnetic coil bands
+      ctx.fillStyle = '#b87333';
+      ctx.fillRect(-22, -ringWidth / 2, 8, ringWidth);
+      ctx.fillRect(14, -ringWidth / 2, 8, ringWidth);
+
+      // Polarity indicator
+      ctx.fillStyle = (i % 2 === 0) ? '#00ffcc' : '#ff0055';
+      ctx.font = 'bold 11px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText((i % 2 === 0) ? 'N [+]' : 'S [-]', 0, 4);
+
+      ctx.restore();
+    }
+
+    // 5. Four Radial Injection Beam Lines leading into Center
+    const injectAngles = [Math.PI * 0.75, Math.PI * 0.25, Math.PI * 1.25, Math.PI * 1.75];
+    const injectColors = ['#00ffcc', '#ff0055', '#bd00ff', '#ffb703'];
+    for (let k = 0; k < 4; k++) {
+      const ang = injectAngles[k];
+      const col = injectColors[k];
+      const startX = centerX + Math.cos(ang) * (ringRadius + 250);
+      const startY = centerY + Math.sin(ang) * (ringRadius + 250);
+      const endX = centerX + Math.cos(ang) * 260;
+      const endY = centerY + Math.sin(ang) * 260;
+
+      ctx.strokeStyle = '#061320';
+      ctx.lineWidth = 24;
+      ctx.beginPath();
+      ctx.moveTo(startX, startY); ctx.lineTo(endX, endY);
+      ctx.stroke();
+
+      ctx.strokeStyle = col;
+      ctx.lineWidth = 3;
+      ctx.shadowColor = col;
+      ctx.shadowBlur = 10;
+      ctx.beginPath();
+      ctx.moveTo(startX, startY); ctx.lineTo(endX, endY);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    }
+
+    // 6. Central Singularity Floor Arena (Octagonal Platform)
+    ctx.fillStyle = '#040b18';
+    ctx.beginPath();
+    const octRadius = 300;
+    for (let i = 0; i < 8; i++) {
+      const a = (Math.PI / 4) * i;
+      const ox = centerX + Math.cos(a) * octRadius;
+      const oy = centerY + Math.sin(a) * octRadius;
+      if (i === 0) ctx.moveTo(ox, oy);
+      else ctx.lineTo(ox, oy);
+    }
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.strokeStyle = '#00ffcc';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    // Central Hazard Stripes around Singularity Core
+    this.drawHazardBorder(ctx, centerX - 180, centerY - 180, 360, 360, '#ffb703', 12);
+
+    // Busbar links between Central Platform and the 4 Collimator Pylons
+    const pylons = [
+      { x: 1020, y: 1020 }, { x: 1380, y: 1020 },
+      { x: 1020, y: 1380 }, { x: 1380, y: 1380 }
+    ];
+    ctx.strokeStyle = 'rgba(0, 255, 204, 0.45)';
+    ctx.lineWidth = 4;
+    for (const p of pylons) {
+      ctx.beginPath();
+      ctx.moveTo(centerX, centerY);
+      ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+
+    // 7. Tactical Floor Stencils & Markings
+    this.drawFloorStencil(ctx, 380, 260, 'TACHYON INJECTOR // BAY 01', '#00ffcc', 16);
+    this.drawFloorStencil(ctx, 1420, 260, 'OPTICAL LASER CAVITY // BAY 02', '#ff0055', 16);
+    this.drawFloorStencil(ctx, 380, 2150, 'QUANTUM TELEMETRY // BAY 03', '#bd00ff', 16);
+    this.drawFloorStencil(ctx, 1420, 2150, 'GRAVITON RESONANCE // BAY 04', '#ffb703', 16);
+    this.drawFloorStencil(ctx, centerX - 150, centerY - 210, 'SINGULARITY CORE // 1.21 TeV', '#00ffcc', 17);
+    this.drawFloorStencil(ctx, centerX - 130, centerY + 225, 'DANGER: TACHYON FLUX OVERLOAD', '#ffb703', 15);
+  }
+
+  // =========================================================================
   // GRAPHICAL HELPER UTILITIES FOR THEMATIC FLOORS
   // =========================================================================
   drawHazardBorder(ctx, x, y, w, h, color = '#ffb703', size = 16) {
@@ -1159,6 +1378,144 @@ class GameMap {
     }
   }
 
+  // --- Master Map Physics & Interactive Entities Update ---
+  update(dt, player, enemies, game) {
+    if (!dt || dt <= 0) return;
+
+    // 1. Decrement Cooldowns
+    if (player && player._portalCooldown > 0) {
+      player._portalCooldown -= dt;
+    }
+    if (enemies && enemies.length > 0) {
+      for (const enemy of enemies) {
+        if (enemy && enemy._portalCooldown > 0) {
+          enemy._portalCooldown -= dt;
+        }
+      }
+    }
+
+    // 2. Interactive Directional Kinetic Boost Pads
+    if (this.boostPads && this.boostPads.length > 0) {
+      for (const pad of this.boostPads) {
+        if (pad._activeTimer > 0) pad._activeTimer -= dt;
+        if (pad._cooldown > 0) pad._cooldown -= dt;
+
+        const pr = pad.radius || 38;
+
+        // Player boost interaction
+        if (player && player.alive) {
+          const pDist = Math.hypot(player.x - pad.x, player.y - pad.y);
+          if (pDist <= pr + (player.radius || 20) && (!pad._cooldown || pad._cooldown <= 0)) {
+            pad._activeTimer = 0.35;
+            pad._cooldown = 0.45;
+            const boostSpeed = pad.speed || 860;
+            player.isDashing = true;
+            player.dashTimer = 0.32;
+            player.dashSpeed = boostSpeed;
+            player.dashAngle = Math.atan2(pad.dirY, pad.dirX);
+            player.vx = pad.dirX * boostSpeed;
+            player.vy = pad.dirY * boostSpeed;
+
+            // Directional kinetic energy particles
+            if (window.particleSystem) {
+              window.particleSystem.emit(pad.x, pad.y, 24, {
+                color: pad.color || '#00ffcc',
+                speed: 340,
+                angle: Math.atan2(pad.dirY, pad.dirX),
+                spread: 0.7,
+                life: 0.35
+              });
+            }
+            if (window.soundSystem && window.soundSystem.playBoostPad) {
+              window.soundSystem.playBoostPad();
+            }
+            if (game && game.addScreenShake) {
+              game.addScreenShake(5);
+            }
+          }
+        }
+
+        // Enemy boost interaction (enemies also get propelled forward!)
+        if (enemies && enemies.length > 0) {
+          for (const enemy of enemies) {
+            if (!enemy.alive) continue;
+            const eDist = Math.hypot(enemy.x - pad.x, enemy.y - pad.y);
+            if (eDist <= pr + (enemy.radius || 20) && (!pad._cooldown || pad._cooldown <= 0)) {
+              pad._activeTimer = 0.25;
+              enemy.x += pad.dirX * 50;
+              enemy.y += pad.dirY * 50;
+              this.resolveCircleCollision(enemy);
+            }
+          }
+        }
+      }
+    }
+
+    // 3. Interactive Quantum Phase Gates (Instantaneous Teleportation)
+    if (this.portals && this.portals.length > 0) {
+      for (const portal of this.portals) {
+        portal._pulseTimer = (portal._pulseTimer || 0) + dt * 3.5;
+        const pRadius = portal.radius || 42;
+
+        // Player Teleportation
+        if (player && player.alive && (!player._portalCooldown || player._portalCooldown <= 0)) {
+          const pDist = Math.hypot(player.x - portal.x, player.y - portal.y);
+          if (pDist <= pRadius + (player.radius || 20)) {
+            player._portalCooldown = 1.35;
+            const srcX = player.x;
+            const srcY = player.y;
+            player.x = portal.targetX;
+            player.y = portal.targetY;
+            this.resolveCircleCollision(player);
+
+            // Audio & Visual Warp FX
+            if (window.soundSystem && window.soundSystem.playTeleport) {
+              window.soundSystem.playTeleport();
+            }
+            if (window.particleSystem) {
+              window.particleSystem.emitShockwave(srcX, srcY, 75, portal.color || '#00ffcc');
+              window.particleSystem.emitShockwave(player.x, player.y, 85, portal.color || '#00ffcc');
+              window.particleSystem.emit(srcX, srcY, 28, {
+                color: portal.color || '#00ffcc',
+                speed: 260,
+                life: 0.45
+              });
+              window.particleSystem.emit(player.x, player.y, 28, {
+                color: portal.color || '#00ffcc',
+                speed: 260,
+                life: 0.45
+              });
+            }
+            if (game && game.addScreenShake) {
+              game.addScreenShake(7);
+            }
+          }
+        }
+
+        // Enemy Teleportation (Stalkers & cyborgs can flank through gates!)
+        if (enemies && enemies.length > 0) {
+          for (const enemy of enemies) {
+            if (!enemy.alive || (enemy._portalCooldown && enemy._portalCooldown > 0)) continue;
+            const eDist = Math.hypot(enemy.x - portal.x, enemy.y - portal.y);
+            if (eDist <= pRadius + (enemy.radius || 20)) {
+              enemy._portalCooldown = 1.6;
+              const ex = enemy.x;
+              const ey = enemy.y;
+              enemy.x = portal.targetX;
+              enemy.y = portal.targetY;
+              this.resolveCircleCollision(enemy);
+
+              if (window.particleSystem) {
+                window.particleSystem.emitShockwave(ex, ey, 55, portal.color || '#bd00ff');
+                window.particleSystem.emitShockwave(enemy.x, enemy.y, 55, portal.color || '#bd00ff');
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
   // --- Render Environment ---
   draw(ctx, camera) {
     // 1. Pre-rendered Floor
@@ -1169,6 +1526,17 @@ class GameMap {
 
     const now = Date.now();
     const mapId = this.mapId || 'sector_09';
+
+    // 2.2. Interactive Directional Kinetic Boost Pads
+    this.drawBoostPads(ctx, camera, now);
+
+    // 2.4. Interactive Quantum Phase Gates
+    this.drawPortals(ctx, camera, now);
+
+    // 2.6. Central Singularity Core (Active Tachyon Vortex for chronos_collider)
+    if (mapId === 'chronos_collider') {
+      this.drawSingularityCore(ctx, camera, now);
+    }
 
     // 3. Render Solid Obstacles (Thematic real-world objects)
     for (const wall of this.walls) {
@@ -1286,6 +1654,28 @@ class GameMap {
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
       ctx.lineWidth = 1;
       ctx.strokeRect(x + 2, y + 2, w - 4, h - 4);
+    } else if (mapId === 'chronos_collider') {
+      // Heavy Particle Synchrotron Magnetic Containment Bulkhead
+      ctx.fillStyle = '#020712';
+      ctx.fillRect(x, y, w, h);
+      ctx.strokeStyle = '#00ffcc';
+      ctx.lineWidth = 2.5;
+      ctx.strokeRect(x, y, w, h);
+      // Inner violet magnetic field trace
+      ctx.strokeStyle = 'rgba(189, 0, 255, 0.45)';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(x + 4, y + 4, w - 8, h - 8);
+      // Gold quantum grounding terminals along perimeter
+      ctx.fillStyle = '#ffb703';
+      if (w > h) {
+        for (let rx = x + 40; rx < x + w - 40; rx += 80) {
+          ctx.fillRect(rx, y + h / 2 - 2, 8, 4);
+        }
+      } else {
+        for (let ry = y + 40; ry < y + h - 40; ry += 80) {
+          ctx.fillRect(x + w / 2 - 2, ry, 4, 8);
+        }
+      }
     } else {
       // Sector 09: Industrial Docks heavy steel retaining wall
       ctx.fillStyle = '#101622';
@@ -1349,6 +1739,17 @@ class GameMap {
     if (type === 'science_station') return this.drawScienceStation(ctx, wall, now);
     if (type === 'magnetic_barrier') return this.drawMagneticBarrier(ctx, wall, now);
     if (type === 'thruster_housing') return this.drawThrusterHousing(ctx, wall, now);
+
+    // Chronos Collider / Quantum Nexus Obstacles
+    if (type === 'magnetic_beam_guide') return this.drawMagneticBeamGuide(ctx, wall, now);
+    if (type === 'cryo_manifold') return this.drawCryoManifold(ctx, wall, now);
+    if (type === 'quantum_holo_deck') return this.drawQuantumHoloDeck(ctx, wall, now);
+    if (type === 'warp_deflector') return this.drawWarpDeflector(ctx, wall, now);
+    if (type === 'tachyon_injector') return this.drawTachyonInjector(ctx, wall, now);
+    if (type === 'laser_focus_array') return this.drawLaserFocusArray(ctx, wall, now);
+    if (type === 'antimatter_pod') return this.drawAntimatterPod(ctx, wall, now);
+    if (type === 'quantum_capacitor') return this.drawQuantumCapacitor(ctx, wall, now);
+    if (type === 'graviton_resonator') return this.drawGravitonResonator(ctx, wall, now);
 
     // Fallback: draw theme-tailored tactical barrier
     this.drawFallbackBarrier(ctx, wall, mapId);
@@ -2747,6 +3148,592 @@ class GameMap {
     ctx.fillText('RCS-THRUSTER', x + 8, y + 16);
   }
 
+  // =========================================================================
+  // 6. CHRONOS-COLLIDER / QUANTUM NEXUS INTERACTIVE ENTITY DRAW HELPERS
+  // =========================================================================
+
+  drawBoostPads(ctx, camera, now) {
+    if (!this.boostPads || this.boostPads.length === 0) return;
+
+    for (const pad of this.boostPads) {
+      const pr = pad.radius || 38;
+      // Frustum culling
+      if (pad.x + pr < camera.x || pad.x - pr > camera.x + camera.width ||
+          pad.y + pr < camera.y || pad.y - pr > camera.y + camera.height) {
+        continue;
+      }
+
+      ctx.save();
+      const col = pad.color || '#00ffcc';
+      const angle = Math.atan2(pad.dirY, pad.dirX);
+      const isTriggered = (pad._activeTimer > 0);
+
+      // Base Platform Disc
+      ctx.fillStyle = '#061220';
+      ctx.beginPath();
+      ctx.arc(pad.x, pad.y, pr, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Outer Neon Rim
+      ctx.strokeStyle = isTriggered ? '#ffffff' : col;
+      ctx.lineWidth = isTriggered ? 4 : 2.5;
+      ctx.shadowColor = col;
+      ctx.shadowBlur = isTriggered ? 26 : 14;
+      ctx.stroke();
+
+      // Inner Rotating Accelerator Grid
+      ctx.translate(pad.x, pad.y);
+      ctx.rotate(angle);
+
+      // Animated Forward-Moving Chevrons (3 kinetic arrows)
+      const phase = (now * 0.005) % 1;
+      ctx.fillStyle = isTriggered ? '#ffffff' : col;
+      ctx.shadowColor = col;
+      ctx.shadowBlur = isTriggered ? 20 : 8;
+
+      for (let i = 0; i < 3; i++) {
+        const offset = ((i / 3 + phase) % 1) * (pr * 1.3) - (pr * 0.65);
+        ctx.beginPath();
+        ctx.moveTo(offset - 9, -14);
+        ctx.lineTo(offset + 7, 0);
+        ctx.lineTo(offset - 9, 14);
+        ctx.lineTo(offset - 4, 14);
+        ctx.lineTo(offset + 12, 0);
+        ctx.lineTo(offset - 4, -14);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      ctx.restore();
+    }
+  }
+
+  drawPortals(ctx, camera, now) {
+    if (!this.portals || this.portals.length === 0) return;
+
+    for (const portal of this.portals) {
+      const pr = portal.radius || 42;
+      // Frustum culling
+      if (portal.x + pr < camera.x || portal.x - pr > camera.x + camera.width ||
+          portal.y + pr < camera.y || portal.y - pr > camera.y + camera.height) {
+        continue;
+      }
+
+      ctx.save();
+      const col = portal.color || '#00ffcc';
+      const pulse = 0.8 + Math.sin(now * 0.006 + portal.x) * 0.2;
+
+      // Outer Heavy Containment Arch
+      ctx.fillStyle = '#030a16';
+      ctx.beginPath();
+      ctx.arc(portal.x, portal.y, pr, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Outer Rotating Magnetic Field Ring (Segmented)
+      ctx.save();
+      ctx.translate(portal.x, portal.y);
+      ctx.rotate(now * 0.002);
+      ctx.strokeStyle = col;
+      ctx.lineWidth = 3;
+      ctx.shadowColor = col;
+      ctx.shadowBlur = 18 * pulse;
+      ctx.setLineDash([16, 12]);
+      ctx.beginPath();
+      ctx.arc(0, 0, pr - 3, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+
+      // Counter-Rotating Inner Field Ring
+      ctx.save();
+      ctx.translate(portal.x, portal.y);
+      ctx.rotate(-now * 0.0035);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([8, 14]);
+      ctx.beginPath();
+      ctx.arc(0, 0, pr - 12, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+
+      // Swirling Event Horizon (Radial Gradient from white/cyan to void)
+      const grad = ctx.createRadialGradient(portal.x, portal.y, 4, portal.x, portal.y, pr - 14);
+      grad.addColorStop(0, '#ffffff');
+      grad.addColorStop(0.35, col);
+      grad.addColorStop(0.8, 'rgba(10, 4, 25, 0.95)');
+      grad.addColorStop(1, '#000000');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(portal.x, portal.y, pr - 14, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Floating Hologram Badge Tag
+      ctx.font = 'bold 9px "Orbitron", monospace, sans-serif';
+      ctx.fillStyle = col;
+      ctx.textAlign = 'center';
+      ctx.shadowBlur = 6;
+      ctx.fillText(portal.label || 'PHASE GATE', portal.x, portal.y - pr - 10);
+
+      ctx.restore();
+    }
+  }
+
+  drawSingularityCore(ctx, camera, now) {
+    const cx = 1200;
+    const cy = 1200;
+    const radius = 110;
+
+    // Frustum culling
+    if (cx + radius < camera.x || cx - radius > camera.x + camera.width ||
+        cy + radius < camera.y || cy - radius > camera.y + camera.height) {
+      return;
+    }
+
+    ctx.save();
+    const rot = now * 0.0018;
+
+    // 1. Expanding Quantum Shockwave Rings
+    const waveRadius = 40 + ((now * 0.06) % 180);
+    const waveAlpha = Math.max(0, 1 - waveRadius / 220);
+    ctx.strokeStyle = `rgba(0, 255, 204, ${waveAlpha * 0.5})`;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(cx, cy, waveRadius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // 2. Swirling Plasma Accretion Disk (Cyan & Violet)
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(rot);
+
+    // Outer plasma spokes
+    ctx.strokeStyle = 'rgba(0, 255, 204, 0.4)';
+    ctx.lineWidth = 3;
+    ctx.shadowColor = '#00ffcc';
+    ctx.shadowBlur = 24;
+    for (let i = 0; i < 6; i++) {
+      const a = (Math.PI / 3) * i;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * 35, Math.sin(a) * 35);
+      ctx.lineTo(Math.cos(a) * (radius - 10), Math.sin(a) * (radius - 10));
+      ctx.stroke();
+    }
+
+    // Counter-spinning violet spiral
+    ctx.rotate(-rot * 2.4);
+    ctx.strokeStyle = 'rgba(189, 0, 255, 0.45)';
+    ctx.shadowColor = '#bd00ff';
+    for (let i = 0; i < 4; i++) {
+      const a = (Math.PI / 2) * i;
+      ctx.beginPath();
+      ctx.arc(0, 0, radius - 25, a, a + Math.PI / 3);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // 3. Pitch-Black Singularity Event Horizon Core
+    const pulse = 0.85 + Math.sin(now * 0.008) * 0.15;
+    ctx.fillStyle = '#000000';
+    ctx.beginPath();
+    ctx.arc(cx, cy, 38 * pulse, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = '#00ffcc';
+    ctx.lineWidth = 3;
+    ctx.shadowColor = '#00ffcc';
+    ctx.shadowBlur = 28;
+    ctx.stroke();
+
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 22 * pulse, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // 4. Tachyon Lightning Arcs to the 4 Collimator Pylons
+    const pylons = [
+      { x: 1020, y: 1020 }, { x: 1380, y: 1020 },
+      { x: 1020, y: 1380 }, { x: 1380, y: 1380 }
+    ];
+    if (Math.sin(now * 0.01) > 0.45) {
+      const targetPylon = pylons[Math.floor((now / 350) % 4)];
+      ctx.strokeStyle = '#00ffcc';
+      ctx.lineWidth = 2;
+      ctx.shadowColor = '#00ffcc';
+      ctx.shadowBlur = 14;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      // Jagged middle points
+      const mid1X = cx + (targetPylon.x - cx) * 0.33 + (Math.random() - 0.5) * 28;
+      const mid1Y = cy + (targetPylon.y - cy) * 0.33 + (Math.random() - 0.5) * 28;
+      const mid2X = cx + (targetPylon.x - cx) * 0.66 + (Math.random() - 0.5) * 28;
+      const mid2Y = cy + (targetPylon.y - cy) * 0.66 + (Math.random() - 0.5) * 28;
+      ctx.lineTo(mid1X, mid1Y);
+      ctx.lineTo(mid2X, mid2Y);
+      ctx.lineTo(targetPylon.x, targetPylon.y);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    }
+
+    ctx.restore();
+  }
+
+  // =========================================================================
+  // 6. CHRONOS-COLLIDER / QUANTUM NEXUS OBSTACLE DRAWING METHODS
+  // =========================================================================
+
+  drawMagneticBeamGuide(ctx, wall, now) {
+    const { x, y, w, h } = wall;
+    const isHoriz = w > h;
+    const beamColor = wall.beamColor || '#00ffcc';
+
+    // Heavy titanium vacuum tube housing
+    ctx.fillStyle = '#081320';
+    this.drawRoundedBox(ctx, x, y, w, h, 6);
+    ctx.strokeStyle = '#1b324d';
+    ctx.lineWidth = 2.5;
+    ctx.strokeRect(x, y, w, h);
+
+    // Magnetic containment solenoids / clamps
+    ctx.fillStyle = '#102236';
+    if (isHoriz) {
+      for (let rx = x + 24; rx < x + w - 20; rx += 46) {
+        ctx.fillRect(rx, y, 12, h);
+        ctx.strokeStyle = '#ffb703';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(rx, y, 12, h);
+      }
+    } else {
+      for (let ry = y + 24; ry < y + h - 20; ry += 46) {
+        ctx.fillRect(x, ry, w, 12);
+        ctx.strokeStyle = '#ffb703';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(x, ry, w, 12);
+      }
+    }
+
+    // Central Glass Beam Canal with high-speed particle stream
+    const pulse = 0.75 + Math.sin(now * 0.008 + x) * 0.25;
+    ctx.strokeStyle = beamColor;
+    ctx.lineWidth = isHoriz ? Math.min(8, h * 0.25) : Math.min(8, w * 0.25);
+    ctx.shadowColor = beamColor;
+    ctx.shadowBlur = 14 * pulse;
+    ctx.beginPath();
+    if (isHoriz) {
+      ctx.moveTo(x + 6, y + h / 2);
+      ctx.lineTo(x + w - 6, y + h / 2);
+    } else {
+      ctx.moveTo(x + w / 2, y + 6);
+      ctx.lineTo(x + w / 2, y + h - 6);
+    }
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Stencil label
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.65)';
+    ctx.font = 'bold 9px monospace';
+    ctx.fillText(wall.label || 'BEAM TUBE', x + 10, y + 16);
+  }
+
+  drawCryoManifold(ctx, wall, now) {
+    const { x, y, w, h } = wall;
+    const isHoriz = w > h;
+
+    // Superconducting vacuum-jacketed stainless steel manifold
+    ctx.fillStyle = '#0a1622';
+    this.drawRoundedBox(ctx, x, y, w, h, 6);
+    ctx.strokeStyle = '#00ffcc';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, w, h);
+
+    // Frost crystals & cryogenic ice bands
+    ctx.strokeStyle = 'rgba(200, 245, 255, 0.45)';
+    ctx.lineWidth = 3;
+    if (isHoriz) {
+      ctx.strokeRect(x + 4, y + 4, w - 8, h - 8);
+    } else {
+      ctx.strokeRect(x + 4, y + 4, w - 8, h - 8);
+    }
+
+    // Liquid Helium Cryo Manometer
+    ctx.fillStyle = '#00e5ff';
+    ctx.shadowColor = '#00e5ff';
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.arc(x + (isHoriz ? 24 : w / 2), y + (isHoriz ? h / 2 : 24), 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 9px monospace';
+    ctx.fillText(wall.label || 'CRYO-4.2K', x + (isHoriz ? 38 : 6), y + (isHoriz ? h / 2 + 3 : 42));
+  }
+
+  drawQuantumHoloDeck(ctx, wall, now) {
+    const { x, y, w, h } = wall;
+
+    // Carbon-alloy slanted terminal desk
+    ctx.fillStyle = '#07101b';
+    this.drawRoundedBox(ctx, x, y, w, h, 8);
+    ctx.strokeStyle = '#bd00ff';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, w, h);
+
+    // Glowing 3D Holographic Projection Matrix
+    const pulse = 0.8 + Math.sin(now * 0.005 + x) * 0.2;
+    ctx.strokeStyle = '#00ffcc';
+    ctx.lineWidth = 1.5;
+    ctx.shadowColor = '#00ffcc';
+    ctx.shadowBlur = 12 * pulse;
+
+    // Hologram circular dials
+    const midX = x + w / 2;
+    const midY = y + h / 2;
+    ctx.beginPath();
+    ctx.arc(midX, midY, Math.min(w, h) * 0.32, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.strokeStyle = '#bd00ff';
+    ctx.beginPath();
+    ctx.arc(midX, midY, Math.min(w, h) * 0.18, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Telemetry text
+    ctx.fillStyle = '#00ffcc';
+    ctx.font = 'bold 9px monospace';
+    ctx.fillText(wall.label || 'QUANTUM TERMINAL', x + 10, y + 16);
+  }
+
+  drawWarpDeflector(ctx, wall, now) {
+    const { x, y, w, h } = wall;
+
+    // Heavy angular kinetic blast shield
+    ctx.fillStyle = '#060e18';
+    this.drawRoundedBox(ctx, x, y, w, h, 4);
+    ctx.strokeStyle = '#00ffcc';
+    ctx.lineWidth = 2.5;
+    ctx.strokeRect(x, y, w, h);
+
+    // Hexagonal energy dissipation honeycomb pattern
+    ctx.strokeStyle = 'rgba(0, 255, 204, 0.25)';
+    ctx.lineWidth = 1;
+    const step = 26;
+    if (w > h) {
+      for (let rx = x + step; rx < x + w; rx += step) {
+        ctx.beginPath();
+        ctx.moveTo(rx, y + 3); ctx.lineTo(rx - 10, y + h - 3);
+        ctx.stroke();
+      }
+    } else {
+      for (let ry = y + step; ry < y + h; ry += step) {
+        ctx.beginPath();
+        ctx.moveTo(x + 3, ry); ctx.lineTo(x + w - 3, ry - 10);
+        ctx.stroke();
+      }
+    }
+
+    // Hazard warning border
+    ctx.strokeStyle = '#ffb703';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([8, 8]);
+    ctx.strokeRect(x + 3, y + 3, w - 6, h - 6);
+    ctx.setLineDash([]);
+
+    ctx.fillStyle = '#ffb703';
+    ctx.font = 'bold 9px monospace';
+    ctx.fillText(wall.label || 'DEFLECTOR', x + 8, y + 16);
+  }
+
+  drawTachyonInjector(ctx, wall, now) {
+    const { x, y, w, h } = wall;
+
+    // High-pressure vertical particle injection stanchion
+    ctx.fillStyle = '#081422';
+    this.drawRoundedBox(ctx, x, y, w, h, 8);
+    ctx.strokeStyle = '#00ffcc';
+    ctx.lineWidth = 2.5;
+    ctx.strokeRect(x, y, w, h);
+
+    // Solenoid magnetic bands
+    ctx.fillStyle = '#112940';
+    for (let ry = y + 18; ry < y + h - 15; ry += 32) {
+      ctx.fillRect(x + 4, ry, w - 8, 14);
+      ctx.strokeStyle = '#00ffcc';
+      ctx.lineWidth = 1.2;
+      ctx.strokeRect(x + 4, ry, w - 8, 14);
+    }
+
+    // Glowing core emitter nozzle
+    const pulse = 0.8 + Math.sin(now * 0.01 + y) * 0.2;
+    ctx.fillStyle = '#00ffcc';
+    ctx.shadowColor = '#00ffcc';
+    ctx.shadowBlur = 14 * pulse;
+    ctx.beginPath();
+    ctx.arc(x + w / 2, y + h / 2, Math.min(w, h) * 0.24, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 9px monospace';
+    ctx.fillText('INJECTOR', x + 6, y + 14);
+  }
+
+  drawLaserFocusArray(ctx, wall, now) {
+    const { x, y, w, h } = wall;
+    const laserColor = wall.laserColor || '#ff0055';
+
+    // Prismatic optical laser emitter stanchion
+    ctx.fillStyle = '#100612';
+    this.drawRoundedBox(ctx, x, y, w, h, 6);
+    ctx.strokeStyle = laserColor;
+    ctx.lineWidth = 2.5;
+    ctx.strokeRect(x, y, w, h);
+
+    // Optical glass lens prisms
+    const count = Math.max(2, Math.floor(Math.max(w, h) / 55));
+    ctx.fillStyle = '#250b28';
+    if (w > h) {
+      for (let i = 0; i < count; i++) {
+        const lx = x + 18 + i * ((w - 36) / (count - 1 || 1));
+        ctx.beginPath();
+        ctx.arc(lx, y + h / 2, 9, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = laserColor;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        // Focused laser dot
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(lx, y + h / 2, 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else {
+      for (let i = 0; i < count; i++) {
+        const ly = y + 18 + i * ((h - 36) / (count - 1 || 1));
+        ctx.beginPath();
+        ctx.arc(x + w / 2, ly, 9, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = laserColor;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(x + w / 2, ly, 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    ctx.fillStyle = laserColor;
+    ctx.font = 'bold 9px monospace';
+    ctx.fillText(wall.label || 'OPTICAL ARRAY', x + 8, y + 16);
+  }
+
+  drawAntimatterPod(ctx, wall, now) {
+    const { x, y, w, h } = wall;
+
+    // Heavy reinforced magnetic containment bottle
+    ctx.fillStyle = '#050a14';
+    this.drawRoundedBox(ctx, x, y, w, h, 8);
+    ctx.strokeStyle = '#bd00ff';
+    ctx.lineWidth = 2.5;
+    ctx.strokeRect(x, y, w, h);
+
+    // Suspended antimatter plasma chamber inside
+    const pulse = 0.75 + Math.sin(now * 0.007 + x) * 0.25;
+    const midX = x + w / 2;
+    const midY = y + h / 2;
+
+    ctx.fillStyle = '#bd00ff';
+    ctx.shadowColor = '#bd00ff';
+    ctx.shadowBlur = 18 * pulse;
+    ctx.beginPath();
+    ctx.arc(midX, midY, Math.min(w, h) * 0.32, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(midX, midY, Math.min(w, h) * 0.14, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Containment field safety brackets
+    ctx.strokeStyle = '#ffb703';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x + 5, y + 5, w - 10, h - 10);
+
+    ctx.fillStyle = '#ffb703';
+    ctx.font = 'bold 9px monospace';
+    ctx.fillText('ANTIMATTER', x + 8, y + 16);
+  }
+
+  drawQuantumCapacitor(ctx, wall, now) {
+    const { x, y, w, h } = wall;
+
+    // Multi-cell high-discharge capacitor power bank
+    ctx.fillStyle = '#071220';
+    this.drawRoundedBox(ctx, x, y, w, h, 6);
+    ctx.strokeStyle = '#00ffcc';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, w, h);
+
+    // Capacitor cell coils
+    const isHoriz = w > h;
+    ctx.fillStyle = '#0d2238';
+    if (isHoriz) {
+      for (let cx = x + 16; cx < x + w - 16; cx += 28) {
+        ctx.fillRect(cx, y + 6, 18, h - 12);
+        ctx.strokeStyle = '#ffb703';
+        ctx.lineWidth = 1.2;
+        ctx.strokeRect(cx, y + 6, 18, h - 12);
+      }
+    } else {
+      for (let cy = y + 16; cy < y + h - 16; cy += 28) {
+        ctx.fillRect(x + 6, cy, w - 12, 18);
+        ctx.strokeStyle = '#ffb703';
+        ctx.lineWidth = 1.2;
+        ctx.strokeRect(x + 6, cy, w - 12, 18);
+      }
+    }
+
+    ctx.fillStyle = '#00ffcc';
+    ctx.font = 'bold 9px monospace';
+    ctx.fillText(wall.label || 'CAPACITOR BANK', x + 8, y + 16);
+  }
+
+  drawGravitonResonator(ctx, wall, now) {
+    const { x, y, w, h } = wall;
+
+    // Graviton harmonic resonator assembly
+    ctx.fillStyle = '#09081a';
+    this.drawRoundedBox(ctx, x, y, w, h, 6);
+    ctx.strokeStyle = '#ffb703';
+    ctx.lineWidth = 2.5;
+    ctx.strokeRect(x, y, w, h);
+
+    // Pulsing tuning fork resonator arms
+    const pulse = 0.8 + Math.sin(now * 0.009 + y) * 0.2;
+    ctx.strokeStyle = '#ffb703';
+    ctx.lineWidth = 2.5;
+    ctx.shadowColor = '#ffb703';
+    ctx.shadowBlur = 14 * pulse;
+
+    const midX = x + w / 2;
+    const midY = y + h / 2;
+    ctx.beginPath();
+    ctx.arc(midX, midY, Math.min(w, h) * 0.28, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 9px monospace';
+    ctx.fillText(wall.label || 'GRAVITON RESONATOR', x + 8, y + 16);
+  }
+
   drawFallbackBarrier(ctx, wall, mapId) {
     const { x, y, w, h } = wall;
     ctx.fillStyle = '#141a24';
@@ -2877,6 +3864,70 @@ class GameMap {
       ctx.fill();
       ctx.shadowBlur = 0;
 
+    } else if (mapId === 'chronos_collider') {
+      // Hadron Collimator Pylon or Quantum Resonator Node
+      if (pillar.type === 'hadron_collimator_pillar') {
+        // Heavy multi-tiered electromagnetic collimator tower
+        ctx.fillStyle = '#061120';
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#00ffcc';
+        ctx.lineWidth = 3.5;
+        ctx.stroke();
+
+        // Copper solenoid coils around pylon
+        ctx.fillStyle = '#b87333';
+        for (let i = 0; i < 6; i++) {
+          const a = (i * Math.PI) / 3;
+          const cx = x + Math.cos(a) * (radius - 7);
+          const cy = y + Math.sin(a) * (radius - 7);
+          ctx.beginPath();
+          ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // Swirling tachyon focus beam in center
+        const pulse = 0.8 + Math.sin(now * 0.006 + x) * 0.2;
+        ctx.strokeStyle = '#00ffcc';
+        ctx.lineWidth = 2.5;
+        ctx.shadowColor = '#00ffcc';
+        ctx.shadowBlur = 18 * pulse;
+        ctx.beginPath();
+        ctx.arc(x, y, radius * 0.55, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // High-density energy core
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(x, y, radius * 0.22, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      } else {
+        // Quantum Harmonic Resonator Node
+        ctx.fillStyle = '#100820';
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#bd00ff';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        const pulse = 0.75 + Math.sin(now * 0.005 + y) * 0.25;
+        ctx.fillStyle = '#bd00ff';
+        ctx.shadowColor = '#bd00ff';
+        ctx.shadowBlur = 14 * pulse;
+        ctx.beginPath();
+        ctx.arc(x, y, radius * 0.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#ffb703';
+        ctx.beginPath();
+        ctx.arc(x, y, radius * 0.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+
     } else {
       // Sector-09: Heavy Industrial Fuel Silo & Smelting Vat
       ctx.fillStyle = '#141b26';
@@ -3006,6 +4057,34 @@ class GameMap {
       ctx.beginPath();
       ctx.arc(x, y, 3, 0, Math.PI * 2);
       ctx.fill();
+
+    } else if (mapId === 'chronos_collider') {
+      // Unstable Tachyon Flux Canister (Quantum Antimatter Cell)
+      ctx.fillStyle = '#050c18';
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#00ffcc';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+
+      // Pulsating Tachyon Core (Alternating Cyan & Violet)
+      const flash = (Math.sin(now * 0.012 + x * 0.5) + 1) * 0.5;
+      const coreColor = flash > 0.5 ? '#00ffcc' : '#bd00ff';
+      ctx.fillStyle = coreColor;
+      ctx.shadowColor = coreColor;
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      ctx.arc(x, y, 6.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Golden containment lock rings
+      ctx.strokeStyle = '#ffb703';
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.arc(x, y, 11, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
 
     } else {
       // Sector-09: Industrial Oil Drum (Deep Red / Crimson with Oil Stains)

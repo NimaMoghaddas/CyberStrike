@@ -110,6 +110,26 @@
               <div id="dash-bar" class="bar-fill dash-fill"></div>
             </div>
           </div>
+
+          <!-- Cyberware Active Ability HUD Card -->
+          <div id="cyberware-hud-card" class="cyberware-hud-card hidden">
+            <div class="cyberware-card-glow"></div>
+            <div class="cyberware-hud-top">
+              <div class="cyberware-hud-meta">
+                <span id="cyberware-hud-icon" class="cyberware-hud-icon">⚡</span>
+                <div class="cyberware-hud-text">
+                  <span class="cyberware-hud-tag">CYBERWARE ACTIVE</span>
+                  <span id="cyberware-hud-name" class="cyberware-hud-name">OVERDRIVE RAGE</span>
+                </div>
+              </div>
+              <div class="cyberware-hud-timer-badge">
+                <span id="cyberware-hud-time" class="cyberware-hud-time">10.0s</span>
+              </div>
+            </div>
+            <div class="cyberware-hud-track">
+              <div id="cyberware-hud-fill" class="cyberware-hud-fill"></div>
+            </div>
+          </div>
         </div>
 
         <!-- Left In-Game Live Players Roster Strip (Always Visible) -->
@@ -137,7 +157,7 @@
             <div class="team-hud-metrics">
               <div class="team-metric-box kills-box">
                 <span class="metric-label">RIVAL KILLS</span>
-                <span class="metric-val" id="hud-alpha-kills">0 / 20</span>
+                <span class="metric-val" id="hud-alpha-kills">0 / 10</span>
               </div>
               <div class="team-metric-box score-box">
                 <span class="metric-label">SCORE</span>
@@ -147,7 +167,7 @@
           </div>
 
           <div class="team-hud-divider">
-            <div class="team-hud-target-pill">TARGET: 20 KILLS</div>
+            <div class="team-hud-target-pill">TARGET: 10 KILLS</div>
             <div class="team-hud-win-rule">HIGHEST SCORE WINS</div>
           </div>
 
@@ -163,7 +183,7 @@
               </div>
               <div class="team-metric-box kills-box">
                 <span class="metric-label">RIVAL KILLS</span>
-                <span class="metric-val" id="hud-beta-kills">0 / 20</span>
+                <span class="metric-val" id="hud-beta-kills">0 / 10</span>
               </div>
             </div>
           </div>
@@ -545,7 +565,7 @@
               </button>
 
               <div class="keybind-guide compact">
-                WASD Move • Mouse Aim • 1-5 Weapons • Space Dash • R Reload
+                WASD Move • Mouse Aim • 1-9 Weapons • Space Dash • R Reload
               </div>
             </div>
 
@@ -886,6 +906,7 @@
   <script src="js/weapons.js"></script>
   <script src="js/map.js"></script>
   <script src="js/medkit.js"></script>
+  <script src="js/powerup.js"></script>
   <script src="js/bullet.js"></script>
   <script src="js/player.js"></script>
   <script src="js/enemy.js"></script>

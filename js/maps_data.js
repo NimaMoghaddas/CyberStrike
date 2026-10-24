@@ -488,6 +488,125 @@ const MAP_DEFINITIONS = {
       { x: 1780, y: 1520 }, { x: 1815, y: 1520 },
       { x: 1420, y: 1850 }, { x: 1455, y: 1850 }
     ]
+  },
+
+  // =========================================================================
+  // 6. CHRONOS-COLLIDER // HADRON WARP VAULT & TACHYON LAB
+  // Theme: Sub-atomic Particle Collider & Quantum Teleportation Complex
+  // Topology: Giant octagonal synchrotron beam ring with central singularity core,
+  //           Active tactical Phase Gates (Alpha <-> Beta, Gamma <-> Delta),
+  //           Directional Kinetic Slingshot Boost Pads, and High-Flux Laser Conduits.
+  // =========================================================================
+  chronos_collider: {
+    id: 'chronos_collider',
+    name: 'QUANTUM-NEXUS // HADRON WARP VAULT',
+    shortName: 'QUANTUM NEXUS',
+    theme: 'quantum',
+    ambientColor: 'rgba(2, 6, 14, 0.96)',
+    accentColor: '#00ffcc',
+    secondaryColor: '#bd00ff',
+    badge: 'WARP PORTALS // BOOST PADS',
+    hazardLevel: 'CRITICAL',
+    description: 'Particle synchrotron complex featuring high-velocity magnetic accelerator boost pads, instant phase teleporters, and an active tachyon singularity core.',
+    spawnPoint: { x: 420, y: 420 },
+    spawns: [
+      { x: 420, y: 420 },     // NW Tachyon Injector
+      { x: 1980, y: 1980 },   // SE Graviton Resonance Bay
+      { x: 1980, y: 420 },    // NE Laser Condenser
+      { x: 420, y: 1980 }     // SW Telemetry Hub
+    ],
+    width: MAP_WIDTH,
+    height: MAP_HEIGHT,
+
+    // Active Tactical Quantum Phase Gates (Instantaneous Teleportation)
+    portals: [
+      { id: 'alpha', targetId: 'beta',  x: 380,  y: 680,  targetX: 2020, targetY: 1720, label: 'PHASE GATE ALPHA', color: '#00ffcc', radius: 42 },
+      { id: 'beta',  targetId: 'alpha', x: 2020, y: 1720, targetX: 380,  targetY: 680,  label: 'PHASE GATE BETA',  color: '#00ffcc', radius: 42 },
+      { id: 'gamma', targetId: 'delta', x: 680,  y: 2020, targetX: 1720, targetY: 380,  label: 'PHASE GATE GAMMA', color: '#bd00ff', radius: 42 },
+      { id: 'delta', targetId: 'gamma', x: 1720, y: 380,  targetX: 680,  targetY: 2020, label: 'PHASE GATE DELTA', color: '#bd00ff', radius: 42 }
+    ],
+
+    // Active Directional Kinetic Grav-Accelerator Slingshots
+    boostPads: [
+      { x: 760,  y: 760,  dirX: 0.707,  dirY: 0.707,  speed: 860, label: 'KINETIC SLINGSHOT SE', color: '#00ffcc', radius: 38 },
+      { x: 1640, y: 760,  dirX: -0.707, dirY: 0.707,  speed: 860, label: 'KINETIC SLINGSHOT SW', color: '#00ffcc', radius: 38 },
+      { x: 760,  y: 1640, dirX: 0.707,  dirY: -0.707, speed: 860, label: 'KINETIC SLINGSHOT NE', color: '#00ffcc', radius: 38 },
+      { x: 1640, y: 1640, dirX: -0.707, dirY: -0.707, speed: 860, label: 'KINETIC SLINGSHOT NW', color: '#00ffcc', radius: 38 },
+      { x: 1200, y: 800,  dirX: 0,      dirY: 1,      speed: 920, label: 'CORE ACCELERATOR S',   color: '#ffb703', radius: 38 },
+      { x: 1200, y: 1600, dirX: 0,      dirY: -1,     speed: 920, label: 'CORE ACCELERATOR N',   color: '#ffb703', radius: 38 }
+    ],
+
+    walls: [
+      // Outer Perimeter Boundaries (Magnetic Containment Bulkhead)
+      { x: 0, y: 0, w: MAP_WIDTH, h: 50, type: 'boundary' },
+      { x: 0, y: MAP_HEIGHT - 50, w: MAP_WIDTH, h: 50, type: 'boundary' },
+      { x: 0, y: 0, w: 50, h: MAP_HEIGHT, type: 'boundary' },
+      { x: MAP_WIDTH - 50, y: 0, w: 50, h: MAP_HEIGHT, type: 'boundary' },
+
+      // --- ZONE 1 (NORTH-WEST): Tachyon Beam Guide & Cryo Vault ---
+      { x: 220, y: 220, w: 380, h: 65, type: 'magnetic_beam_guide', label: 'LINEAR TACHYON ACCELERATOR #01', beamColor: '#00ffcc' },
+      { x: 220, y: 380, w: 65, h: 360, type: 'cryo_manifold', label: 'SUPERCONDUCTING CRYO-LINE A' },
+      { x: 400, y: 550, w: 260, h: 65, type: 'quantum_holo_deck', label: 'BEAM STEERING CONSOLE' },
+      { x: 680, y: 220, w: 65, h: 380, type: 'magnetic_beam_guide', label: 'FLUX DEFLECTOR ARRAY NORTH', beamColor: '#00ffcc' },
+      { x: 380, y: 820, w: 320, h: 70, type: 'warp_deflector', label: 'CONTAINMENT BULKHEAD A-1' },
+      { x: 740, y: 700, w: 75, h: 280, type: 'tachyon_injector', label: 'PRIMARY INJECTION TOWER' },
+
+      // --- ZONE 2 (NORTH-EAST): High-Flux Laser Condenser & Antimatter Silo ---
+      { x: 1400, y: 220, w: 460, h: 65, type: 'laser_focus_array', label: 'OPTICAL LASER CAVITY ALPHA', laserColor: '#ff0055' },
+      { x: 1920, y: 220, w: 65, h: 420, type: 'antimatter_pod', label: 'ANTIMATTER STORAGE VAULT #4' },
+      { x: 1550, y: 420, w: 260, h: 70, type: 'quantum_capacitor', label: 'TACHYON CONDENSER CELL B' },
+      { x: 1400, y: 620, w: 65, h: 360, type: 'magnetic_beam_guide', label: 'BEAM SYNCHRONIZER TUBE', beamColor: '#00ffcc' },
+      { x: 1680, y: 680, w: 380, h: 65, type: 'warp_deflector', label: 'CONTAINMENT BULKHEAD B-2' },
+      { x: 1820, y: 850, w: 220, h: 75, type: 'quantum_capacitor', label: 'ENERGY BANK CLUSTER #9' },
+
+      // --- ZONE 3 (SOUTH-WEST): Quantum Telemetry & Warp Deflectors ---
+      { x: 220, y: 1400, w: 65, h: 420, type: 'antimatter_pod', label: 'TACHYON RESERVOIR CELL C' },
+      { x: 380, y: 1350, w: 360, h: 65, type: 'quantum_holo_deck', label: 'QUANTUM WARP TELEMETRY' },
+      { x: 620, y: 1520, w: 65, h: 380, type: 'magnetic_beam_guide', label: 'FIELD COMPRESSION TUBE', beamColor: '#bd00ff' },
+      { x: 220, y: 1950, w: 420, h: 65, type: 'warp_deflector', label: 'CONTAINMENT BULKHEAD C-3' },
+      { x: 420, y: 1720, w: 260, h: 70, type: 'cryo_manifold', label: 'SUPERCONDUCTING CRYO-LINE B' },
+      { x: 780, y: 1780, w: 75, h: 320, type: 'tachyon_injector', label: 'SECONDARY INJECTION TOWER' },
+
+      // --- ZONE 4 (SOUTH-EAST): Graviton Resonance & Stasis Chamber ---
+      { x: 1400, y: 1400, w: 360, h: 65, type: 'graviton_resonator', label: 'GRAVITON HARMONIC EMITTER' },
+      { x: 1880, y: 1350, w: 65, h: 450, type: 'cryo_manifold', label: 'LIQUID HELIUM MATRIX' },
+      { x: 1520, y: 1620, w: 280, h: 70, type: 'quantum_capacitor', label: 'RESONANCE CAPACITOR D' },
+      { x: 1350, y: 1820, w: 460, h: 65, type: 'warp_deflector', label: 'CONTAINMENT BULKHEAD D-4' },
+      { x: 1920, y: 1880, w: 220, h: 65, type: 'laser_focus_array', label: 'OPTICAL LASER CAVITY BETA', laserColor: '#00ffcc' },
+      { x: 1680, y: 1980, w: 65, h: 260, type: 'graviton_resonator', label: 'SUB-HARMONIC COUPLER' },
+
+      // --- MIDFIELD / SYNCHROTRON COLLIMATOR SHIELDS ---
+      { x: 920, y: 550, w: 240, h: 60, type: 'warp_deflector', label: 'NORTH COLLIMATOR SHIELD' },
+      { x: 920, y: 1790, w: 240, h: 60, type: 'warp_deflector', label: 'SOUTH COLLIMATOR SHIELD' },
+      { x: 550, y: 1080, w: 60, h: 240, type: 'warp_deflector', label: 'WEST COLLIMATOR SHIELD' },
+      { x: 1790, y: 1080, w: 60, h: 240, type: 'warp_deflector', label: 'EAST COLLIMATOR SHIELD' }
+    ],
+
+    pillars: [
+      // 4 Heavy Hadron Collimator Pylons framing the central Singularity Vortex
+      { x: 1020, y: 1020, radius: 46, type: 'hadron_collimator_pillar', label: 'COLLIMATOR PYLON #1' },
+      { x: 1380, y: 1020, radius: 46, type: 'hadron_collimator_pillar', label: 'COLLIMATOR PYLON #2' },
+      { x: 1020, y: 1380, radius: 46, type: 'hadron_collimator_pillar', label: 'COLLIMATOR PYLON #3' },
+      { x: 1380, y: 1380, radius: 46, type: 'hadron_collimator_pillar', label: 'COLLIMATOR PYLON #4' },
+
+      // 4 Corner Quadrant Harmonic Resonance Nodes
+      { x: 520, y: 520, radius: 38, type: 'quantum_resonator_pylon', label: 'RESONATOR NW' },
+      { x: 1880, y: 520, radius: 38, type: 'quantum_resonator_pylon', label: 'RESONATOR NE' },
+      { x: 520, y: 1880, radius: 38, type: 'quantum_resonator_pylon', label: 'RESONATOR SW' },
+      { x: 1880, y: 1880, radius: 38, type: 'quantum_resonator_pylon', label: 'RESONATOR SE' }
+    ],
+
+    barrels: [
+      // Unstable Tachyon Flux Canisters (Implosive Quantum Cells)
+      { x: 380, y: 340 }, { x: 415, y: 340 },
+      { x: 1620, y: 350 }, { x: 1655, y: 350 },
+      { x: 480, y: 1650 }, { x: 515, y: 1650 },
+      { x: 1980, y: 1520 }, { x: 2015, y: 1520 },
+      { x: 860, y: 920 }, { x: 895, y: 920 },
+      { x: 1520, y: 920 }, { x: 1555, y: 920 },
+      { x: 860, y: 1480 }, { x: 895, y: 1480 },
+      { x: 1520, y: 1480 }, { x: 1555, y: 1480 }
+    ]
   }
 };
 

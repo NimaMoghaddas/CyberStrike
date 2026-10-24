@@ -305,6 +305,96 @@ function drawTacticalWeapon(ctx, weaponId, color, isLocal = false, options = {})
       break;
     }
 
+    case 'hydra': {
+      // --- HYDRA-9 SWARM MISSILE LAUNCHER ---
+      ctx.fillStyle = '#1e0517';
+      ctx.beginPath();
+      ctx.roundRect(4, 1.5, 26, 13, 3);
+      ctx.fill();
+
+      // Dual Launcher Tube Pods
+      ctx.fillStyle = '#3f0c2e';
+      ctx.fillRect(12, 2.5, 16, 5);
+      ctx.fillRect(12, 8.5, 16, 5);
+
+      // Rocket Muzzle Exits
+      ctx.fillStyle = '#ff007f';
+      ctx.shadowColor = '#ff007f';
+      ctx.shadowBlur = isFiring ? 14 : 6;
+      ctx.fillRect(28, 3.2, 2.5, 3.6);
+      ctx.fillRect(28, 9.2, 2.5, 3.6);
+      ctx.shadowBlur = 0;
+
+      // Smart Guidance Antenna
+      ctx.strokeStyle = '#475569';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(14, 1.5);
+      ctx.lineTo(24, 0);
+      ctx.stroke();
+      break;
+    }
+
+    case 'tesla': {
+      // --- TESLA-ARC HIGH-VOLTAGE DISCHARGE CANNON ---
+      ctx.fillStyle = '#061325';
+      ctx.beginPath();
+      ctx.roundRect(4, 2.5, 24, 11, 2.5);
+      ctx.fill();
+
+      // Dual High-Voltage Emitter Prongs
+      ctx.fillStyle = '#38bdf8';
+      ctx.fillRect(24, 1.5, 12, 3.2);
+      ctx.fillRect(24, 11.3, 12, 3.2);
+
+      // Glowing Cyan Plasma Discharge Core
+      ctx.fillStyle = '#00f0ff';
+      ctx.shadowColor = '#00f0ff';
+      ctx.shadowBlur = isFiring ? 16 : 8;
+      ctx.fillRect(10, 5.5, 14, 5);
+      ctx.shadowBlur = 0;
+
+      // Spark between prongs
+      if (Math.sin(animTimer * 18) > 0.2) {
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(32, 3.5);
+        ctx.lineTo(34, 8);
+        ctx.lineTo(32, 12.5);
+        ctx.stroke();
+      }
+      break;
+    }
+
+    case 'vortex': {
+      // --- SINGULARITY GRAVITY VORTEX CANNON ---
+      ctx.fillStyle = '#120722';
+      ctx.beginPath();
+      ctx.roundRect(3, 1.5, 26, 13, 3);
+      ctx.fill();
+
+      // Gravitational Containment Collar
+      ctx.fillStyle = '#3b0764';
+      ctx.fillRect(24, 2.2, 8, 11.6);
+
+      // Pulsating Gravitational Core
+      ctx.fillStyle = '#a855f7';
+      ctx.shadowColor = '#c084fc';
+      ctx.shadowBlur = 14 + pulse * 6;
+      ctx.beginPath();
+      ctx.arc(14, 8, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // Event Horizon Black Dot
+      ctx.fillStyle = '#000000';
+      ctx.beginPath();
+      ctx.arc(14, 8, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+
     case 'rifle':
     default: {
       // --- ARC-9 PULSE RIFLE (TACTICAL ENERGY RIFLE) ---
@@ -469,6 +559,40 @@ class Player {
     this.animTimer = Math.random() * 10;
     this.blinkTimer = 2.0 + Math.random() * 2.0;
     this.isBlinking = false;
+
+    // Cyberware Single Active Powerup System (Only 1 powerup active at a time, replacing previous)
+    this.activePowerup = null;
+    this.clusterTimer = 0;
+    this.drone = null;
+  }
+
+  addPowerup(type, duration) {
+    // 1. Immediately clean up previous active powerup effects
+    if (this.drone) {
+      this.drone = null;
+    }
+    this.clusterTimer = 0;
+
+    // 2. Set the new single active powerup
+    const cfg = (typeof POWERUP_CONFIGS !== 'undefined') ? POWERUP_CONFIGS[type] : null;
+    this.activePowerup = {
+      type: type,
+      duration: duration,
+      maxDuration: duration,
+      config: cfg
+    };
+
+    if (type === 'drone' && typeof SupportDrone !== 'undefined') {
+      this.drone = new SupportDrone(this);
+    }
+    if (type === 'overdrive') {
+      // Instant reload on overdrive activation
+      this.inventory.refillAll();
+    }
+  }
+
+  hasPowerup(type) {
+    return !!(this.activePowerup && this.activePowerup.type === type && this.activePowerup.duration > 0);
   }
 
   // --- Convenience Getters & Setters for Active Weapon ---
@@ -628,6 +752,37 @@ class Player {
     }
     if (this.hurtTimer > 0) {
       this.hurtTimer -= dt;
+    }
+
+    // 2.1 Single Cyberware Active Powerup Tick
+    if (this.activePowerup) {
+      this.activePowerup.duration -= dt;
+      if (this.activePowerup.duration <= 0) {
+        if (this.activePowerup.type === 'drone') this.drone = null;
+        this.activePowerup = null;
+      }
+    }
+
+    // Support Combat Drone update
+    if (this.hasPowerup('drone')) {
+      if (!this.drone && typeof SupportDrone !== 'undefined') {
+        this.drone = new SupportDrone(this);
+      }
+      if (this.drone && game) {
+        this.drone.update(dt, game.enemies, game.acidSpits, game);
+      }
+    }
+
+    // Cluster Grenades passive artillery
+    if (this.hasPowerup('cluster')) {
+      this.clusterTimer = (this.clusterTimer || 0) + dt;
+      if (this.clusterTimer >= 1.85 && game && game.clusterGrenades) {
+        this.clusterTimer = 0;
+        for (let g = 0; g < 3; g++) {
+          const gAngle = this.angle + (g - 1) * 0.35 + (Math.random() - 0.5) * 0.2;
+          game.clusterGrenades.push(new ClusterGrenade(this.x, this.y, gAngle, 380));
+        }
+      }
     }
 
     // Acid Damage over Time (DoT): 3 seconds duration, 3 damage per second
@@ -865,6 +1020,24 @@ class Player {
       color: '#00f0ff',
       life: 0.25
     });
+
+    // Cyber Overdrive Dash Shockwave
+    if (this.hasPowerup('overdrive')) {
+      window.particleSystem.emitExplosion(this.x, this.y, 125);
+      const gameRef = window.gameInstance || window.gameEngine;
+      if (gameRef) {
+        if (gameRef.addScreenShake) gameRef.addScreenShake(6);
+        if (gameRef.enemies) {
+          for (let i = 0; i < gameRef.enemies.length; i++) {
+            const e = gameRef.enemies[i];
+            if (!e || !e.alive) continue;
+            if (Math.hypot(e.x - this.x, e.y - this.y) < 135) {
+              e.takeDamage(75, e.x, e.y, Math.atan2(e.y - this.y, e.x - this.x), true, 'cannon');
+            }
+          }
+        }
+      }
+    }
   }
 
   startReload() {
@@ -892,7 +1065,11 @@ class Player {
 
     // Consume ammo
     w.ammo--;
-    this.fireTimer = w.fireRate;
+    let fireRate = w.fireRate;
+    if (this.hasPowerup('overdrive')) {
+      fireRate *= 0.6;
+    }
+    this.fireTimer = fireRate;
     this.muzzleFlashTimer = 0.06;
     this.recoilOffset = w.recoil;
 
@@ -1166,7 +1343,26 @@ class Player {
       ctx.restore();
     }
 
+    // 7. Cyber Overdrive Berserk Aura
+    if (this.hasPowerup('overdrive')) {
+      ctx.save();
+      const oPulse = 1 + Math.sin(Date.now() * 0.015) * 0.12;
+      ctx.strokeStyle = '#ff0055';
+      ctx.shadowColor = '#ff007f';
+      ctx.shadowBlur = 20;
+      ctx.lineWidth = 2.8;
+      ctx.beginPath();
+      ctx.arc(0, 0, (this.radius + 8) * oPulse, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
     ctx.restore();
+
+    // 9. Draw Support Drone Companion in world coordinates
+    if (this.hasPowerup('drone') && this.drone) {
+      this.drone.draw(ctx);
+    }
   }
 }
 

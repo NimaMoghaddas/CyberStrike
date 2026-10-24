@@ -116,6 +116,15 @@ class SoundSystem {
       case 'cannon':
         this.playCannonShoot();
         break;
+      case 'hydra':
+        this.playHydraShoot();
+        break;
+      case 'tesla':
+        this.playTeslaShoot();
+        break;
+      case 'vortex':
+        this.playVortexShoot();
+        break;
       case 'rifle':
       default:
         this.playShoot();
@@ -341,6 +350,226 @@ class SoundSystem {
     filter.connect(noiseGain);
     noiseGain.connect(this.masterGain);
     noise.start(t);
+  }
+
+  // --- Sound: Hydra-9 Homing Micro-Missile Launch ---
+  playHydraShoot() {
+    if (!this.initialized || this.muted) return;
+    this.resume();
+    const t = this.ctx.currentTime;
+
+    // 1. Rocket Thruster Whoosh / Ignition
+    const bufferSize = Math.floor(this.ctx.sampleRate * 0.18);
+    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.sin((i / bufferSize) * Math.PI);
+    }
+    const noise = this.ctx.createBufferSource();
+    noise.buffer = buffer;
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(1100, t);
+    filter.frequency.linearRampToValueAtTime(2400, t + 0.18);
+    filter.Q.setValueAtTime(2.5, t);
+    const nGain = this.ctx.createGain();
+    nGain.gain.setValueAtTime(0.45, t);
+    nGain.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+    noise.connect(filter);
+    filter.connect(nGain);
+    nGain.connect(this.masterGain);
+    noise.start(t);
+
+    // 2. High-Tech Ignition Whistle chirp
+    const osc = this.ctx.createOscillator();
+    const oscGain = this.ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(450, t);
+    osc.frequency.exponentialRampToValueAtTime(1800, t + 0.12);
+    oscGain.gain.setValueAtTime(0.2, t);
+    oscGain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+    osc.connect(oscGain);
+    oscGain.connect(this.masterGain);
+    osc.start(t);
+    osc.stop(t + 0.13);
+  }
+
+  // --- Sound: Tesla-Arc High Voltage Lightning Zap ---
+  playTeslaShoot() {
+    if (!this.initialized || this.muted) return;
+    this.resume();
+    const t = this.ctx.currentTime;
+
+    // 1. Dual Crackling Plasma Oscillators
+    [0, 0.03].forEach((offset, idx) => {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = idx === 0 ? 'sawtooth' : 'square';
+      osc.frequency.setValueAtTime(idx === 0 ? 980 : 1450, t + offset);
+      osc.frequency.exponentialRampToValueAtTime(120, t + offset + 0.12);
+      gain.gain.setValueAtTime(0.35, t + offset);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + offset + 0.12);
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+      osc.start(t + offset);
+      osc.stop(t + offset + 0.13);
+    });
+
+    // 2. Electrical static sizzle
+    const bSize = Math.floor(this.ctx.sampleRate * 0.1);
+    const buf = this.ctx.createBuffer(1, bSize, this.ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < bSize; i++) d[i] = (Math.random() * 2 - 1);
+    const n = this.ctx.createBufferSource();
+    n.buffer = buf;
+    const hp = this.ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.setValueAtTime(3000, t);
+    const ng = this.ctx.createGain();
+    ng.gain.setValueAtTime(0.25, t);
+    ng.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+    n.connect(hp);
+    hp.connect(ng);
+    ng.connect(this.masterGain);
+    n.start(t);
+  }
+
+
+  // --- Sound: Singularity Vortex Launch ---
+  playVortexShoot() {
+    if (!this.initialized || this.muted) return;
+    this.resume();
+    const t = this.ctx.currentTime;
+
+    // Deep cosmic gravity charge
+    const sub = this.ctx.createOscillator();
+    const subGain = this.ctx.createGain();
+    sub.type = 'sine';
+    sub.frequency.setValueAtTime(95, t);
+    sub.frequency.exponentialRampToValueAtTime(220, t + 0.22);
+    subGain.gain.setValueAtTime(0.7, t);
+    subGain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+    sub.connect(subGain);
+    subGain.connect(this.masterGain);
+    sub.start(t);
+    sub.stop(t + 0.26);
+  }
+
+  // --- Sound: Singularity Implosion Shockwave ---
+  playVortexImplode() {
+    if (!this.initialized || this.muted) return;
+    this.resume();
+    const t = this.ctx.currentTime;
+
+    // Vacuum pop + deep bass drop
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(400, t);
+    osc.frequency.exponentialRampToValueAtTime(30, t + 0.45);
+    gain.gain.setValueAtTime(0.85, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+    osc.start(t);
+    osc.stop(t + 0.46);
+  }
+
+  // --- Sound: Cyber Powerup Crate Collected ---
+  playPowerupPickup() {
+    if (!this.initialized || this.muted) return;
+    this.resume();
+    const t = this.ctx.currentTime;
+
+    // Ascending arpeggio harmonic chords
+    [523.25, 659.25, 783.99, 1046.50].forEach((freq, idx) => {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, t + idx * 0.05);
+      gain.gain.setValueAtTime(0.28, t + idx * 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + idx * 0.05 + 0.25);
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+      osc.start(t + idx * 0.05);
+      osc.stop(t + idx * 0.05 + 0.26);
+    });
+  }
+
+  // --- Sound: Chrono Matrix Slow-Motion Warp ---
+  playChronoWarp() {
+    if (!this.initialized || this.muted) return;
+    this.resume();
+    const t = this.ctx.currentTime;
+
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(800, t);
+    osc.frequency.exponentialRampToValueAtTime(90, t + 0.55);
+    gain.gain.setValueAtTime(0.6, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+    osc.start(t);
+    osc.stop(t + 0.56);
+  }
+
+  // --- Sound: Companion Drone Micro-Laser ---
+  playDroneShoot() {
+    if (!this.initialized || this.muted) return;
+    this.resume();
+    const t = this.ctx.currentTime;
+
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(1400, t);
+    osc.frequency.exponentialRampToValueAtTime(300, t + 0.07);
+    gain.gain.setValueAtTime(0.2, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+    osc.start(t);
+    osc.stop(t + 0.08);
+  }
+
+  // --- Sound: Cluster Grenade Bounce ---
+  playGrenadeBounce() {
+    if (!this.initialized || this.muted) return;
+    this.resume();
+    const t = this.ctx.currentTime;
+
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(900, t);
+    osc.frequency.exponentialRampToValueAtTime(350, t + 0.04);
+    gain.gain.setValueAtTime(0.25, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+    osc.start(t);
+    osc.stop(t + 0.05);
+  }
+
+  // --- Sound: Overdrive Surge Roar ---
+  playOverdriveActive() {
+    if (!this.initialized || this.muted) return;
+    this.resume();
+    const t = this.ctx.currentTime;
+
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(120, t);
+    osc.frequency.linearRampToValueAtTime(480, t + 0.35);
+    gain.gain.setValueAtTime(0.6, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+    osc.start(t);
+    osc.stop(t + 0.42);
   }
 
   // --- Sound: Weapon Switch / Holster Cycle ---
@@ -828,6 +1057,195 @@ class SoundSystem {
     osc.start(t);
     osc.stop(t + dur);
   }
+
+  // --- Sound: Quantum Phase Teleportation ---
+  playTeleport() {
+    if (!this.initialized || this.muted) return;
+    this.resume();
+    const t = this.ctx.currentTime;
+    const dur = 0.38;
+
+    // Dual-stage resonant warp synthesizer
+    const osc = this.ctx.createOscillator();
+    const filter = this.ctx.createBiquadFilter();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(220, t);
+    osc.frequency.exponentialRampToValueAtTime(1450, t + 0.12);
+    osc.frequency.exponentialRampToValueAtTime(320, t + dur);
+
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(600, t);
+    filter.frequency.exponentialRampToValueAtTime(2200, t + 0.12);
+    filter.frequency.exponentialRampToValueAtTime(400, t + dur);
+    filter.Q.setValueAtTime(4.5, t);
+
+    gain.gain.setValueAtTime(0.35, t);
+    gain.gain.linearRampToValueAtTime(0.55, t + 0.08);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.masterGain);
+
+    osc.start(t);
+    osc.stop(t + dur);
+  }
+
+  // --- Sound: Kinetic Boost Pad Acceleration ---
+  playBoostPad() {
+    if (!this.initialized || this.muted) return;
+    this.resume();
+    const t = this.ctx.currentTime;
+    const dur = 0.28;
+
+    const osc = this.ctx.createOscillator();
+    const filter = this.ctx.createBiquadFilter();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(280, t);
+    osc.frequency.exponentialRampToValueAtTime(980, t + 0.09);
+    osc.frequency.exponentialRampToValueAtTime(550, t + dur);
+
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(1200, t);
+    filter.frequency.exponentialRampToValueAtTime(3500, t + 0.08);
+
+    gain.gain.setValueAtTime(0.4, t);
+    gain.gain.linearRampToValueAtTime(0.5, t + 0.04);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.masterGain);
+
+    osc.start(t);
+    osc.stop(t + dur);
+  }
+
+  // --- Sound: Boss Incoming Emergency Klaxon Siren ---
+  playBossAlarm() {
+    if (!this.initialized || this.muted) return;
+    this.resume();
+    const t = this.ctx.currentTime;
+
+    for (let i = 0; i < 3; i++) {
+      const startT = t + i * 0.4;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      const filter = this.ctx.createBiquadFilter();
+
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(440, startT);
+      osc.frequency.linearRampToValueAtTime(740, startT + 0.2);
+      osc.frequency.linearRampToValueAtTime(440, startT + 0.35);
+
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(1600, startT);
+
+      gain.gain.setValueAtTime(0.001, startT);
+      gain.gain.linearRampToValueAtTime(0.35, startT + 0.05);
+      gain.gain.linearRampToValueAtTime(0.35, startT + 0.28);
+      gain.gain.exponentialRampToValueAtTime(0.001, startT + 0.38);
+
+      osc.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.masterGain);
+
+      osc.start(startT);
+      osc.stop(startT + 0.39);
+    }
+  }
+
+  // --- Sound: Boss Mechanical Roar / Powerup Hum ---
+  playBossRoar() {
+    if (!this.initialized || this.muted) return;
+    this.resume();
+    const t = this.ctx.currentTime;
+    const dur = 1.0;
+
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    const filter = this.ctx.createBiquadFilter();
+
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(140, t);
+    osc.frequency.linearRampToValueAtTime(260, t + 0.3);
+    osc.frequency.exponentialRampToValueAtTime(45, t + dur);
+
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(600, t);
+    filter.frequency.linearRampToValueAtTime(1800, t + 0.3);
+    filter.frequency.exponentialRampToValueAtTime(300, t + dur);
+
+    gain.gain.setValueAtTime(0.1, t);
+    gain.gain.linearRampToValueAtTime(0.45, t + 0.25);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.masterGain);
+
+    osc.start(t);
+    osc.stop(t + dur);
+  }
+
+  // --- Sound: Boss High-Energy Beam / Devastator Laser ---
+  playBossLaser() {
+    if (!this.initialized || this.muted) return;
+    this.resume();
+    const t = this.ctx.currentTime;
+    const dur = 0.55;
+
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    const filter = this.ctx.createBiquadFilter();
+
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(1800, t);
+    osc.frequency.exponentialRampToValueAtTime(180, t + dur);
+
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(1400, t);
+    filter.Q.setValueAtTime(3.0, t);
+
+    gain.gain.setValueAtTime(0.5, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.masterGain);
+
+    osc.start(t);
+    osc.stop(t + dur);
+  }
+
+  // --- Sound: Boss Shockwave Stomp Impact ---
+  playBossStomp() {
+    if (!this.initialized || this.muted) return;
+    this.resume();
+    const t = this.ctx.currentTime;
+    const dur = 0.6;
+
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(150, t);
+    osc.frequency.exponentialRampToValueAtTime(25, t + dur);
+
+    gain.gain.setValueAtTime(0.65, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+
+    osc.start(t);
+    osc.stop(t + dur);
+  }
 }
 
 window.soundSystem = new SoundSystem();
+

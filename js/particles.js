@@ -123,6 +123,19 @@ class ParticleSystem {
     });
   }
 
+  // --- Expanding Energy Shockwave ---
+  emitShockwave(x, y, maxRadius = 70, color = '#00ffcc', duration = 0.35) {
+    this.shockwaves.push({
+      x: x,
+      y: y,
+      radius: 6,
+      maxRadius: maxRadius,
+      life: duration,
+      maxLife: duration,
+      color: color
+    });
+  }
+
   // --- Big Explosion (Barrels / Tanks) ---
   emitExplosion(x, y, radius = 60) {
     // 1. Expanding Shockwave

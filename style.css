@@ -34,7 +34,15 @@
 html, body {
   width: 100%;
   height: 100%;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin: 0;
+  padding: 0;
   overflow: hidden;
+  overscroll-behavior: none;
   background-color: var(--bg-dark);
   font-family: var(--font-ui);
   color: var(--text-main);
@@ -462,20 +470,23 @@ html, body {
   backdrop-filter: blur(10px);
 }
 
-/* Arsenal Selector Dock (5 Tactical Slots) */
+/* Arsenal Selector Dock (Tactical Slots 1-9) */
 .arsenal-dock {
   display: flex;
-  gap: 5px;
+  flex-wrap: wrap;
+  gap: 4px;
   margin-bottom: 10px;
+  max-width: 360px;
 }
 
 .arsenal-slot {
-  flex: 1;
+  flex: 1 1 calc(20% - 4px);
+  min-width: 60px;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 6px;
-  background: rgba(14, 22, 36, 0.7);
+  gap: 5px;
+  padding: 4px 5px;
+  background: rgba(14, 22, 36, 0.75);
   border: 1px solid rgba(255, 255, 255, 0.09);
   border-radius: 4px;
   cursor: pointer;
@@ -2120,15 +2131,30 @@ html, body {
   box-shadow: 0 12px 48px rgba(0, 0, 0, 0.8), 0 0 30px rgba(0, 240, 255, 0.12) !important;
   overflow-y: auto !important;
   overflow-x: hidden !important;
-  scrollbar-width: none !important; /* Firefox */
-  -ms-overflow-style: none !important; /* IE & Edge */
+  scrollbar-width: thin !important;
+  scrollbar-color: rgba(0, 240, 255, 0.45) rgba(10, 15, 26, 0.7) !important;
   -webkit-overflow-scrolling: touch;
 }
 
 .terminal-modal::-webkit-scrollbar {
-  display: none !important;
-  width: 0 !important;
-  height: 0 !important;
+  display: block !important;
+  width: 6px !important;
+}
+
+.terminal-modal::-webkit-scrollbar-track {
+  background: rgba(10, 15, 26, 0.6) !important;
+  border-radius: 3px !important;
+}
+
+.terminal-modal::-webkit-scrollbar-thumb {
+  background: rgba(0, 240, 255, 0.45) !important;
+  border-radius: 3px !important;
+  transition: background 0.2s ease;
+}
+
+.terminal-modal::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 240, 255, 0.85) !important;
+  box-shadow: 0 0 10px rgba(0, 240, 255, 0.6) !important;
 }
 
 .terminal-header {
@@ -4850,6 +4876,209 @@ html, body {
   color: var(--accent-cyan);
 }
 
+/* ==========================================================================
+   CYBERWARE ACTIVE ABILITIES HUD & TOAST NOTIFICATIONS
+   ========================================================================== */
+.cyberware-hud-card {
+  position: relative;
+  margin-top: 10px;
+  padding: 8px 10px;
+  background: rgba(8, 14, 26, 0.92);
+  border: 1px solid var(--powerup-color, #00f0ff);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6), inset 0 0 10px rgba(0, 240, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow: hidden;
+  transition: opacity 0.25s ease, transform 0.25s ease, border-color 0.2s ease;
+  animation: cyberwareCardEnter 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
 
+.cyberware-hud-card.hidden {
+  display: none !important;
+}
 
+@keyframes cyberwareCardEnter {
+  0% { opacity: 0; transform: translateY(-8px) scale(0.96); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
 
+.cyberware-hud-card.critical {
+  animation: cyberwareCriticalPulse 0.45s ease-in-out infinite alternate;
+}
+
+@keyframes cyberwareCriticalPulse {
+  0% {
+    border-color: var(--powerup-color, #00f0ff);
+    box-shadow: 0 0 12px rgba(255, 59, 48, 0.3);
+  }
+  100% {
+    border-color: #ff3b30;
+    box-shadow: 0 0 18px rgba(255, 59, 48, 0.8), inset 0 0 10px rgba(255, 59, 48, 0.2);
+  }
+}
+
+.cyberware-card-glow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--powerup-color, #00f0ff), transparent);
+}
+
+.cyberware-hud-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cyberware-hud-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.cyberware-hud-icon {
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--powerup-color, #00f0ff);
+  border-radius: 4px;
+  box-shadow: 0 0 8px var(--powerup-color, #00f0ff);
+  flex-shrink: 0;
+}
+
+.cyberware-hud-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.cyberware-hud-tag {
+  font-family: var(--font-mono, monospace);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  color: var(--powerup-color, #00f0ff);
+  opacity: 0.9;
+  line-height: 1;
+  margin-bottom: 2px;
+}
+
+.cyberware-hud-name {
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 0 8px var(--powerup-color, #00f0ff);
+  line-height: 1.1;
+}
+
+.cyberware-hud-timer-badge {
+  display: flex;
+  align-items: baseline;
+  background: rgba(0, 0, 0, 0.45);
+  padding: 3px 7px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  flex-shrink: 0;
+}
+
+.cyberware-hud-time {
+  font-family: var(--font-mono, monospace);
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.5px;
+  color: var(--powerup-color, #00f0ff);
+  text-shadow: 0 0 10px var(--powerup-color, #00f0ff);
+}
+
+.cyberware-hud-card.critical .cyberware-hud-time {
+  color: #ff4757;
+  text-shadow: 0 0 10px #ff4757;
+}
+
+.cyberware-hud-track {
+  width: 100%;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.cyberware-hud-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.05s linear;
+}
+
+/* Center Pop-Up Powerup Toast Notification */
+.powerup-toast {
+  position: absolute;
+  top: 75px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 18px;
+  background: rgba(7, 12, 22, 0.92);
+  border: 1.5px solid var(--accent-cyan);
+  border-radius: 6px;
+  box-shadow: 0 0 24px rgba(0, 240, 255, 0.4), inset 0 0 14px rgba(0, 0, 0, 0.6);
+  z-index: 1000;
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+  animation: powerupPopDown 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes powerupPopDown {
+  from { opacity: 0; transform: translate(-50%, -18px) scale(0.92); }
+  to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+
+.powerup-toast-icon {
+  font-size: 26px;
+}
+
+.powerup-toast-content {
+  display: flex;
+  flex-direction: column;
+}
+
+.powerup-toast-tag {
+  font-family: var(--font-display);
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: 1px;
+}
+
+.powerup-toast-title {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: 0.8px;
+  color: #ffffff;
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.4);
+}
+
+.powerup-toast-sub {
+  font-family: var(--font-primary);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #94a3b8;
+}

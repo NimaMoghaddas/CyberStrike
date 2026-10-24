@@ -90,6 +90,11 @@ class GameEngine {
     this.weaponMode = 'standard'; // 'standard' | 'ground'
     this.pvpOnly = false;
 
+    // Cyberware Powerup Ability Crate System
+    this.powerupDrops = [];
+    this.clusterGrenades = [];
+    this.powerupDropTimer = 12;
+
     // Network Multiplayer System
     this.localPlayerId = null;
     this.network = new NetworkSystem(this);
@@ -319,7 +324,8 @@ class GameEngine {
       cyber_bunker: '🛡️',
       neon_slums: '🏮',
       reactor_crucible: '☢️',
-      orbital_station: '🛰️'
+      orbital_station: '🛰️',
+      chronos_collider: '⚛️'
     };
 
     for (const id in MAP_DEFINITIONS) {
@@ -399,7 +405,8 @@ class GameEngine {
       cyber_bunker: '🛡️',
       neon_slums: '🏮',
       reactor_crucible: '☢️',
-      orbital_station: '🛰️'
+      orbital_station: '🛰️',
+      chronos_collider: '⚛️'
     };
 
     document.querySelectorAll('.map-card').forEach(c => {
@@ -719,9 +726,17 @@ class GameEngine {
     }
   }
 
-  // --- Threat Protocol / PvP Only UI ---
   setPvPMode(mode, userInitiated = true) {
     this.pvpOnly = (mode === 'pvp_only');
+    if (this.pvpOnly && this.player) {
+      this.player.maxHp = 200;
+      if (this.gameState !== 'playing') {
+        this.player.hp = 200;
+      }
+    } else if (!this.pvpOnly && this.player && this.gameMode !== 'multiplayer') {
+      this.player.maxHp = 100;
+    }
+
     const btnEnemies = document.getElementById('btn-pvp-with-enemies');
     const btnPvPOnly = document.getElementById('btn-pvp-only');
     if (btnEnemies) btnEnemies.classList.toggle('active', !this.pvpOnly);
@@ -976,6 +991,9 @@ class GameEngine {
     this.medkitTimer = 0;
     this.weaponDrops = [];
     this.weaponDropTimer = 0;
+    this.powerupDrops = [];
+    this.clusterGrenades = [];
+    this.powerupDropTimer = 12;
     this.bullets = [];
     this.enemyProjectiles = [];
     this.acidPools = [];
@@ -1251,6 +1269,68 @@ class GameEngine {
     }
   }
 
+  // --- Cyberware Powerup Crate System ---
+  spawnPowerupDrop(x = null, y = null, specificType = null) {
+    if (typeof PowerupDrop === 'undefined') return;
+    // Cap active ground crates to max 4 to keep the battlefield dynamic
+    if (this.powerupDrops && this.powerupDrops.length >= 4) return;
+
+    // In multiplayer & pure PvP modes, Chrono Matrix is excluded!
+    if ((this.gameMode === 'multiplayer' || this.pvpOnly) && specificType === 'chrono') {
+      specificType = 'overdrive';
+    }
+
+    const map = this.map;
+    let spawnX = x;
+    let spawnY = y;
+    if (spawnX === null || spawnY === null) {
+      let attempts = 0;
+      const pad = 140;
+      do {
+        spawnX = pad + Math.random() * (map.width - pad * 2);
+        spawnY = pad + Math.random() * (map.height - pad * 2);
+        attempts++;
+      } while (attempts < 25 && map.isColliding(spawnX, spawnY, 30));
+    }
+
+    const drop = new PowerupDrop(spawnX, spawnY, specificType, null, this);
+    this.powerupDrops.push(drop);
+
+    if (window.particleSystem) {
+      window.particleSystem.emit(spawnX, spawnY, 18, {
+        speed: 120,
+        color: drop.config.color,
+        life: 0.45
+      });
+    }
+  }
+
+  showPowerupToast(config) {
+    let toast = document.getElementById('powerup-toast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'powerup-toast';
+      toast.className = 'powerup-toast hidden';
+      const container = document.getElementById('game-container') || document.body;
+      container.appendChild(toast);
+    }
+
+    toast.innerHTML = `
+      <div class="powerup-toast-icon">${config.icon}</div>
+      <div class="powerup-toast-content">
+        <div class="powerup-toast-tag" style="color: ${config.color}">${config.tag}</div>
+        <div class="powerup-toast-title">${config.name}</div>
+        <div class="powerup-toast-sub">${config.subtitle}</div>
+      </div>
+    `;
+
+    toast.classList.remove('hidden');
+    clearTimeout(this._powerupToastTimer);
+    this._powerupToastTimer = setTimeout(() => {
+      toast.classList.add('hidden');
+    }, 3200);
+  }
+
   // --- In-Game Live Operatives Roster Strip (Left Sidebar) ---
   updateLiveRoster() {
     const rosterList = document.getElementById('roster-list');
@@ -1322,9 +1402,15 @@ class GameEngine {
   initEvents() {
     window.addEventListener('resize', () => this.resize());
 
-    // Keyboard
+    // Prevent accidental page scroll from gameplay keys (Space, Arrows)
     window.addEventListener('keydown', (e) => {
       this.input.keys[e.code] = true;
+
+      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+        if (!document.activeElement || document.activeElement.tagName !== 'INPUT') {
+          e.preventDefault();
+        }
+      }
 
       // Escape Key: Pause in Singleplayer or Prompt Leave Confirmation in Multiplayer
       if (e.code === 'Escape') {
@@ -1350,13 +1436,16 @@ class GameEngine {
         }
       }
 
-      // Weapon Selection Hotkeys (1 to 5) - only allowed in Standard Arsenal mode!
+      // Weapon Selection Hotkeys (1 to 9) - only allowed in Standard Arsenal mode!
       if (this.weaponMode !== 'ground') {
         if (e.code === 'Digit1' || e.code === 'Numpad1') this.player.equipWeapon('rifle');
         if (e.code === 'Digit2' || e.code === 'Numpad2') this.player.equipWeapon('shotgun');
         if (e.code === 'Digit3' || e.code === 'Numpad3') this.player.equipWeapon('smg');
         if (e.code === 'Digit4' || e.code === 'Numpad4') this.player.equipWeapon('railgun');
         if (e.code === 'Digit5' || e.code === 'Numpad5') this.player.equipWeapon('cannon');
+        if (e.code === 'Digit6' || e.code === 'Numpad6') this.player.equipWeapon('hydra');
+        if (e.code === 'Digit7' || e.code === 'Numpad7') this.player.equipWeapon('tesla');
+        if (e.code === 'Digit8' || e.code === 'Numpad8') this.player.equipWeapon('vortex');
         if (e.code === 'KeyQ') this.player.quickSwitchWeapon();
       }
 
@@ -1399,16 +1488,27 @@ class GameEngine {
     // Prevent default context menu
     window.addEventListener('contextmenu', (e) => e.preventDefault());
 
-    // Mouse Wheel Weapon Cycle (Only in standard mode)
+    // Mouse Wheel Weapon Cycle in-game (allows natural scrolling in lobby & menus)
     window.addEventListener('wheel', (e) => {
-      if (this.gameState !== 'playing' || !this.player || !this.player.alive) return;
+      if (this.gameState !== 'playing' || !this.player || !this.player.alive) {
+        // Allow full natural scrolling in lobby, customize screens, and modals
+        return;
+      }
+      e.preventDefault();
       if (this.weaponMode === 'ground') return; // Cannot cycle weapons in ground drop mode
       if (e.deltaY > 0) {
         this.player.nextWeapon();
       } else if (e.deltaY < 0) {
         this.player.previousWeapon();
       }
-    }, { passive: true });
+    }, { passive: false });
+
+    // Lock window scroll position strictly to (0, 0) during active play
+    window.addEventListener('scroll', () => {
+      if (this.gameState === 'playing' && (window.scrollX !== 0 || window.scrollY !== 0)) {
+        window.scrollTo(0, 0);
+      }
+    });
 
     // UI Buttons
     document.getElementById('start-btn').addEventListener('click', () => {
@@ -1570,9 +1670,30 @@ class GameEngine {
     this.isPaused = false;
     this.gameState = 'playing';
 
+    // Complete battlefield & stats reset for fresh match
+    this.score = 0;
+    this.kills = 0;
+    this.deaths = 0;
+    this.shotsFired = 0;
+    this.shotsHit = 0;
+    this.wave = 1;
+    const scoreDisp = document.getElementById('score-display');
+    if (scoreDisp) scoreDisp.textContent = '00000';
+    const killsDisp = document.getElementById('kills-display');
+    if (killsDisp) killsDisp.textContent = '0';
+
     // Auto-detect and ensure multiplayer mode if in party or connected with other players
     if (this.network && this.network.connected && ((this.network.lobbyPlayers && this.network.lobbyPlayers.length > 1) || !this.network.isHost || this.network.roomId || Object.keys(this.network.remotePlayers).length > 0)) {
       this.gameMode = 'multiplayer';
+    }
+
+    // Set Max HP: 200 in PvP without enemies, 100 in Standard PvE
+    if (this.pvpOnly) {
+      this.player.maxHp = 200;
+      this.player.hp = 200;
+    } else if (this.gameMode !== 'multiplayer') {
+      this.player.maxHp = 100;
+      this.player.hp = 100;
     }
 
     // Apply selected customizations to local player
@@ -1855,6 +1976,38 @@ class GameEngine {
       }
     }
 
+    // 1.7. Update Cyberware Powerup Drops & Bouncing Cluster Grenades
+    this.powerupDropTimer = (this.powerupDropTimer || 0) + dt;
+    if (this.powerupDropTimer >= 22.0) {
+      this.powerupDropTimer = 0;
+      if (this.powerupDrops.length < 4) {
+        this.spawnPowerupDrop();
+      }
+    }
+
+    for (let i = this.powerupDrops.length - 1; i >= 0; i--) {
+      const drop = this.powerupDrops[i];
+      const collected = drop.update(dt, this.player, this);
+      if (collected || drop.collected) {
+        this.powerupDrops.splice(i, 1);
+      }
+    }
+
+    if (this.clusterGrenades) {
+      for (let i = this.clusterGrenades.length - 1; i >= 0; i--) {
+        const gren = this.clusterGrenades[i];
+        gren.update(dt, this.map, this.enemies, this.map.barrels, this);
+        if (!gren.active) {
+          this.clusterGrenades.splice(i, 1);
+        }
+      }
+    }
+
+    // 1.8. Update Interactive Map Features (Boost Pads, Quantum Portals, Singularity)
+    if (this.map && this.map.update) {
+      this.map.update(dt, this.player, this.enemies, this);
+    }
+
     // 2. Camera Lerping towards Player
     const targetCamX = this.player.x - this.width / 2;
     const targetCamY = this.player.y - this.height / 2;
@@ -1862,9 +2015,19 @@ class GameEngine {
     this.camera.x += (targetCamX - this.camera.x) * (this.camera.lerpSpeed * (dt * 60));
     this.camera.y += (targetCamY - this.camera.y) * (this.camera.lerpSpeed * (dt * 60));
 
-    // Clamp camera within map bounds
-    this.camera.x = Math.max(0, Math.min(this.camera.x, this.map.width - this.width));
-    this.camera.y = Math.max(0, Math.min(this.camera.y, this.map.height - this.height));
+    // Dynamic Edge Overscan Margin:
+    // Allows camera to pan beyond map boundary walls (220px horizontal, 190px vertical)
+    // so operative remains fully visible in the open play area and is never hidden under HUD cards,
+    // ammo monitors, or squad rosters when walking along perimeter walls or into corners.
+    const camPadX = 220;
+    const camPadY = 190;
+    const minCamX = -camPadX;
+    const maxCamX = Math.max(minCamX, this.map.width - this.width + camPadX);
+    const minCamY = -camPadY;
+    const maxCamY = Math.max(minCamY, this.map.height - this.height + camPadY);
+
+    this.camera.x = Math.max(minCamX, Math.min(this.camera.x, maxCamX));
+    this.camera.y = Math.max(minCamY, Math.min(this.camera.y, maxCamY));
 
     // Screen Shake Decay
     if (this.screenShake > 0) {
@@ -1880,11 +2043,15 @@ class GameEngine {
       }
     }
 
+    // Chrono Matrix Time Dilation factor for hostiles (strictly disabled in multiplayer & PvP)
+    const isChrono = (this.gameMode !== 'multiplayer' && !this.pvpOnly) && this.player && this.player.hasPowerup && this.player.hasPowerup('chrono');
+    const enemyDt = isChrono ? (dt * 0.25) : dt;
+
     // 3.5. Update Enemy Projectiles (Acid Spit)
     if (this.enemyProjectiles) {
       for (let i = this.enemyProjectiles.length - 1; i >= 0; i--) {
         const proj = this.enemyProjectiles[i];
-        proj.update(dt, this.map, this.player, this);
+        proj.update(enemyDt, this.map, this.player, this);
         if (!proj.active) {
           this.enemyProjectiles.splice(i, 1);
         }
@@ -1895,27 +2062,45 @@ class GameEngine {
     if (this.acidPools) {
       for (let i = this.acidPools.length - 1; i >= 0; i--) {
         const pool = this.acidPools[i];
-        pool.update(dt, this.player, this);
+        pool.update(enemyDt, this.player, this);
         if (!pool.active) {
           this.acidPools.splice(i, 1);
         }
       }
     }
 
-
-
     // 4. Update Enemies & Combat
     // In singleplayer mode, run local enemy AI and waves
     if (this.gameMode === 'singleplayer') {
       for (let i = this.enemies.length - 1; i >= 0; i--) {
         const enemy = this.enemies[i];
-        enemy.update(dt, this.player, this.map, this.enemies, this);
+        enemy.update(enemyDt, this.player, this.map, this.enemies, this);
 
         if (!enemy.alive) {
           this.score += enemy.scoreValue;
           this.kills++;
           this.enemies.splice(i, 1);
           this.addScreenShake(3);
+
+          // Cyber Overdrive Life-Steal (+8 HP per kill)
+          if (this.player && this.player.hasPowerup && this.player.hasPowerup('overdrive')) {
+            const oldHp = this.player.hp;
+            this.player.hp = Math.min(this.player.maxHp, this.player.hp + 8);
+            if (this.player.hp > oldHp && window.particleSystem) {
+              window.particleSystem.emitDamageNumber(this.player.x, this.player.y - 14, '+8 HP', true);
+              window.particleSystem.emit(this.player.x, this.player.y, 8, { speed: 80, color: '#00ff88', life: 0.3 });
+            }
+            this.updateHUD();
+          }
+
+          // Chance to drop Cyberware Ability Crate (max 4 active on map)
+          if (this.powerupDrops && this.powerupDrops.length < 4) {
+            const isHeavy = enemy.type === 'tank' || enemy.type === 'bomber' || enemy.type === 'splitter';
+            const dropChance = isHeavy ? 0.35 : 0.12;
+            if (Math.random() < dropChance) {
+              this.spawnPowerupDrop(enemy.x, enemy.y);
+            }
+          }
         }
       }
 
@@ -2050,7 +2235,27 @@ class GameEngine {
     // Stats
     document.getElementById('score-display').textContent = this.score.toString().padStart(5, '0');
     document.getElementById('kills-display').textContent = this.kills;
-    document.getElementById('enemies-left').textContent = this.enemies.length + this.enemiesToSpawn;
+    const enemiesLeftEl = document.getElementById('enemies-left');
+    if (enemiesLeftEl) {
+      enemiesLeftEl.textContent = this.enemies.length + this.enemiesToSpawn;
+    }
+
+    // Toggle Mission Phase / Waves HUD in PvP without enemies (Arena stays constant & clean)
+    const waveBadge = document.getElementById('wave-badge-container');
+    const waveBar = document.getElementById('wave-timer-bar');
+    const waveBanner = document.getElementById('wave-banner');
+    const hostilesBox = enemiesLeftEl ? enemiesLeftEl.closest('.score-box') : null;
+
+    if (this.gameMode === 'multiplayer' && this.pvpOnly) {
+      if (waveBadge) waveBadge.classList.add('hidden');
+      if (waveBar) waveBar.classList.add('hidden');
+      if (waveBanner) waveBanner.classList.add('hidden');
+      if (hostilesBox) hostilesBox.classList.add('hidden');
+    } else {
+      if (waveBadge) waveBadge.classList.remove('hidden');
+      if (waveBar) waveBar.classList.remove('hidden');
+      if (hostilesBox) hostilesBox.classList.remove('hidden');
+    }
 
     // Toggle In-game Pause Button (Singleplayer) vs Leave Button (Multiplayer)
     const pauseBtn = document.getElementById('pause-game-btn');
@@ -2073,6 +2278,69 @@ class GameEngine {
     } else {
       this.crosshair.classList.remove('reloading');
       document.getElementById('reload-indicator').classList.add('hidden');
+    }
+
+    // Real-Time Cyberware Active Ability HUD
+    this.updatePowerupUI();
+  }
+
+  updatePowerupUI() {
+    const card = document.getElementById('cyberware-hud-card');
+    if (!card) return;
+
+    const p = this.player;
+    if (!p || !p.activePowerup || p.activePowerup.duration <= 0) {
+      if (!card.classList.contains('hidden')) {
+        card.classList.add('hidden');
+      }
+      return;
+    }
+
+    const ap = p.activePowerup;
+    const cfg = ap.config || ((typeof POWERUP_CONFIGS !== 'undefined') ? POWERUP_CONFIGS[ap.type] : null);
+    if (!cfg) {
+      card.classList.add('hidden');
+      return;
+    }
+
+    if (card.classList.contains('hidden')) {
+      card.classList.remove('hidden');
+    }
+
+    const rem = Math.max(0, ap.duration);
+    const maxDur = ap.maxDuration || cfg.duration || 10.0;
+    const pct = Math.min(100, Math.max(0, (rem / maxDur) * 100));
+
+    // Dynamic cyberpunk theme color
+    card.style.setProperty('--powerup-color', cfg.color);
+
+    const iconEl = document.getElementById('cyberware-hud-icon');
+    if (iconEl && iconEl.textContent !== cfg.icon) {
+      iconEl.textContent = cfg.icon;
+    }
+
+    const nameEl = document.getElementById('cyberware-hud-name');
+    if (nameEl && nameEl.textContent !== cfg.name) {
+      nameEl.textContent = cfg.name;
+    }
+
+    const timeEl = document.getElementById('cyberware-hud-time');
+    if (timeEl) {
+      timeEl.textContent = rem.toFixed(1) + 's';
+    }
+
+    const fillEl = document.getElementById('cyberware-hud-fill');
+    if (fillEl) {
+      fillEl.style.width = pct + '%';
+      fillEl.style.background = cfg.color;
+      fillEl.style.boxShadow = `0 0 10px ${cfg.color}`;
+    }
+
+    // Critical low-time warning when <= 3.0s left
+    if (rem <= 3.0) {
+      card.classList.add('critical');
+    } else {
+      card.classList.remove('critical');
     }
   }
 
@@ -2339,6 +2607,42 @@ class GameEngine {
     ctx.stroke();
   }
 
+  // --- Render Outer Cybernetic Void & Coordinate Blueprint Grid ---
+  drawMapExterior(ctx) {
+    const pad = 650;
+    // Outer void backdrop around map
+    ctx.save();
+    ctx.fillStyle = '#05070e';
+    ctx.fillRect(-pad, -pad, this.map.width + pad * 2, this.map.height + pad * 2);
+
+    // Subtle tactical coordinate grid in exterior zone
+    ctx.strokeStyle = 'rgba(0, 240, 255, 0.025)';
+    ctx.lineWidth = 1;
+    const gridStep = 80;
+    const startX = -pad;
+    const endX = this.map.width + pad;
+    const startY = -pad;
+    const endY = this.map.height + pad;
+
+    ctx.beginPath();
+    for (let x = startX; x <= endX; x += gridStep) {
+      ctx.moveTo(x, startY);
+      ctx.lineTo(x, endY);
+    }
+    for (let y = startY; y <= endY; y += gridStep) {
+      ctx.moveTo(startX, y);
+      ctx.lineTo(endX, y);
+    }
+    ctx.stroke();
+
+    // Map Deck Perimeter Drop Shadow (elevates arena deck above the void)
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.85)';
+    ctx.shadowBlur = 36;
+    ctx.fillStyle = '#090e17';
+    ctx.fillRect(0, 0, this.map.width, this.map.height);
+    ctx.restore();
+  }
+
   // --- Master Draw Frame ---
   draw() {
     this.ctx.clearRect(0, 0, this.width, this.height);
@@ -2352,6 +2656,9 @@ class GameEngine {
       shakeY = (Math.random() - 0.5) * this.screenShake;
     }
     this.ctx.translate(-Math.round(this.camera.x) + shakeX, -Math.round(this.camera.y) + shakeY);
+
+    // 0. Exterior Perimeter Tactical Void (drawn under the map for outside regions)
+    this.drawMapExterior(this.ctx);
 
     // 1. Draw Map & Environment
     this.map.draw(this.ctx, this.camera);
@@ -2373,7 +2680,19 @@ class GameEngine {
       }
     }
 
+    // 1.8. Draw Cyberware Powerup Crate Drops
+    if (this.powerupDrops) {
+      for (const drop of this.powerupDrops) {
+        drop.draw(this.ctx);
+      }
+    }
 
+    // 1.9. Draw Bouncing Cluster Grenades
+    if (this.clusterGrenades) {
+      for (const gren of this.clusterGrenades) {
+        gren.draw(this.ctx);
+      }
+    }
 
     // 2. Draw Enemies
     for (const enemy of this.enemies) {
@@ -2402,6 +2721,16 @@ class GameEngine {
     window.particleSystem.draw(this.ctx);
 
     this.ctx.restore();
+
+    // Chrono Matrix Time-Dilation Cyan Aura
+    if (this.player && this.player.hasPowerup && this.player.hasPowerup('chrono')) {
+      this.ctx.save();
+      const cPulse = Math.sin(Date.now() * 0.008) * 0.08 + 0.16;
+      this.ctx.strokeStyle = `rgba(0, 240, 255, ${cPulse * 1.6})`;
+      this.ctx.lineWidth = 14;
+      this.ctx.strokeRect(0, 0, this.width, this.height);
+      this.ctx.restore();
+    }
 
     // 6. Draw Lighting & Atmospheric Vignette
     this.renderLighting();

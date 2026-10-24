@@ -400,9 +400,11 @@ function broadcastLobbySync(roomId) {
   });
 }
 
-const MEDKIT_SPAWN_INTERVAL = 5.0; // 5 seconds
+const MEDKIT_SPAWN_INTERVAL = 5.0; // 5 seconds (standard PvE)
 const MAX_SERVER_MEDKITS = 8;
-const WEAPON_TYPES = ['rifle', 'shotgun', 'smg', 'railgun', 'cannon'];
+const PVP_MEDKIT_SPAWN_INTERVAL = 7.0; // 7 seconds (competitive PvP without enemies)
+const PVP_MAX_SERVER_MEDKITS = 8;     // Max 8 active medkits on arena as requested
+const WEAPON_TYPES = ['rifle', 'shotgun', 'smg', 'railgun', 'cannon', 'hydra', 'tesla', 'vortex'];
 
 function spawnServerMedkit(room) {
   const map = getActiveMap(room.mapId);
@@ -472,6 +474,54 @@ function startWave(room, waveNum) {
     totalEnemies: room.waveManager.totalEnemiesInWave,
     message: `HOSTILE WAVE ${waveNum}`
   });
+}
+
+function resetRoomMatchState(room) {
+  if (!room) return;
+  room.gameStarted = false;
+  room.teamStats = {
+    alpha: { kills: 0, score: 0 },
+    beta: { kills: 0, score: 0 },
+    targetKills: 10,
+    matchFinished: false,
+    winner: null
+  };
+  for (const pid in room.activePlayers) {
+    const p = room.activePlayers[pid];
+    if (p) {
+      p.score = 0;
+      p.kills = 0;
+      p.deaths = 0;
+      p.hp = room.pvpOnly ? 200 : 100;
+      p.maxHp = room.pvpOnly ? 200 : 100;
+      p.alive = true;
+      p.invulnerableTimer = 2.5;
+    }
+  }
+  for (const pid in room.players) {
+    const lp = room.players[pid];
+    if (lp) {
+      lp.score = 0;
+      lp.kills = 0;
+      lp.deaths = 0;
+    }
+  }
+  room.medkits = {};
+  room.nextMedkitId = 1;
+  room.medkitTimer = 0;
+  room.weaponDrops = {};
+  room.nextWeaponDropId = 1;
+  room.weaponDropTimer = 0;
+  room.bullets = [];
+  room.enemyProjectiles = [];
+  room.acidPools = [];
+  room.barrels = getInitialBarrelsForMap(room.mapId);
+  room.enemies = {};
+  room.waveManager.wave = 1;
+  room.waveManager.enemiesToSpawn = 0;
+  room.waveManager.totalEnemiesInWave = 0;
+  room.waveManager.state = 'spawning';
+  room.waveManager.spawnTimer = 2.0;
 }
 
 function triggerServerBomberExplosion(room, x, y, killerSocketId, killerPlayer) {
@@ -876,7 +926,8 @@ function schedulePlayerRespawn(room, player) {
     const spawn = getRandomSpawnPoint(room.mapId, player.team, room.mode);
     player.x = spawn.x;
     player.y = spawn.y;
-    player.hp = player.maxHp || 100;
+    player.hp = (room.pvpOnly ? 200 : (player.maxHp || 100));
+    player.maxHp = room.pvpOnly ? 200 : (player.maxHp || 100);
     player.alive = true;
     player.invulnerableTimer = 2.5;
 
@@ -1230,38 +1281,14 @@ io.on('connection', (socket) => {
   socket.on('leader_start_game', () => {
     const room = getRoomForSocket(socket);
     if (!room || socket.id !== room.hostId) return;
+    resetRoomMatchState(room);
     room.gameStarted = true;
-    for (const pid in room.activePlayers) {
-      room.activePlayers[pid].score = 0;
-      room.activePlayers[pid].kills = 0;
-      room.activePlayers[pid].deaths = 0;
-    }
-    room.teamStats = {
-      alpha: { kills: 0, score: 0 },
-      beta: { kills: 0, score: 0 },
-      targetKills: 20,
-      matchFinished: false,
-      winner: null
-    };
-
-    // Clean ground & reset all battlefield items so nothing is carried over from previous matches
-    room.medkits = {};
-    room.nextMedkitId = 1;
-    room.medkitTimer = 0;
-    room.weaponDrops = {};
-    room.nextWeaponDropId = 1;
-    room.weaponDropTimer = 0;
-    room.bullets = [];
-    room.enemyProjectiles = [];
-    room.acidPools = [];
-    room.barrels = getInitialBarrelsForMap(room.mapId);
 
     if (room.pvpOnly) {
       room.enemies = {};
       room.waveManager.enemiesToSpawn = 0;
       room.waveManager.totalEnemiesInWave = 0;
     } else {
-      room.enemies = {};
       startWave(room, 1);
     }
     if (room.weaponMode === 'ground') {
@@ -1270,14 +1297,26 @@ io.on('connection', (socket) => {
       });
     }
     io.to(room.id).emit('team_stats_update', { teamStats: room.teamStats });
+    io.to(room.id).emit('match_reset', { teamStats: room.teamStats });
     io.to(room.id).emit('game_start_signal', {
       mapId: room.mapId,
       mode: room.mode,
       lightingMode: room.lightingMode || 'tactical',
       weaponMode: room.weaponMode || 'standard',
       pvpOnly: !!room.pvpOnly,
-      targetKills: 20
+      playerMaxHp: room.pvpOnly ? 200 : 100,
+      targetKills: 10
     });
+    broadcastLobbySync(room.id);
+  });
+
+  // Explicit Match Reset Event
+  socket.on('reset_match', () => {
+    const room = getRoomForSocket(socket);
+    if (!room) return;
+    resetRoomMatchState(room);
+    io.to(room.id).emit('match_reset', { teamStats: room.teamStats });
+    io.to(room.id).emit('team_stats_update', { teamStats: room.teamStats });
     broadcastLobbySync(room.id);
   });
 
@@ -1290,6 +1329,13 @@ io.on('connection', (socket) => {
     }
     if (room.players[socket.id]) {
       room.players[socket.id].ready = false;
+      room.players[socket.id].score = 0;
+      room.players[socket.id].kills = 0;
+      room.players[socket.id].deaths = 0;
+    }
+    if (Object.keys(room.activePlayers).length === 0) {
+      resetRoomMatchState(room);
+      io.to(room.id).emit('match_reset', { teamStats: room.teamStats });
     }
     io.to(room.id).emit('player_left', { id: socket.id });
     broadcastLobbySync(room.id);
@@ -1340,6 +1386,12 @@ io.on('connection', (socket) => {
     const room = getRoomForSocket(socket);
     if (!room) return;
 
+    if (room.teamStats && room.teamStats.matchFinished) {
+      resetRoomMatchState(room);
+      io.to(room.id).emit('match_reset', { teamStats: room.teamStats });
+      io.to(room.id).emit('team_stats_update', { teamStats: room.teamStats });
+    }
+
     const lp = room.players[socket.id];
     const team = (room.mode === 'teams' && lp) ? lp.team : 'solo';
     const spawn = getRandomSpawnPoint(room.mapId, team, room.mode);
@@ -1365,6 +1417,7 @@ io.on('connection', (socket) => {
       }
     }
 
+    const playerMaxHp = room.pvpOnly ? 200 : 100;
     const newPlayer = {
       id: socket.id,
       name,
@@ -1378,8 +1431,8 @@ io.on('connection', (socket) => {
       vx: 0,
       vy: 0,
       angle: 0,
-      hp: 100,
-      maxHp: 100,
+      hp: playerMaxHp,
+      maxHp: playerMaxHp,
       score: 0,
       kills: 0,
       deaths: 0,
@@ -1396,8 +1449,8 @@ io.on('connection', (socket) => {
 
     room.activePlayers[socket.id] = newPlayer;
 
-    // Start wave 1 if no active wave running in this room
-    if (room.waveManager.enemiesToSpawn === 0 && Object.keys(room.enemies).length === 0) {
+    // Start wave 1 only if NOT in pvpOnly mode and no active wave running in this room
+    if (!room.pvpOnly && room.waveManager.enemiesToSpawn === 0 && Object.keys(room.enemies).length === 0) {
       startWave(room, 1);
     }
 
@@ -1444,6 +1497,7 @@ io.on('connection', (socket) => {
     p.walkCycle = data.walkCycle || 0;
     p.recoilOffset = data.recoilOffset || 0;
     p.weapon = data.weapon || p.weapon || 'rifle';
+    p.hasChrono = !!data.hasChrono;
     p.lastUpdate = Date.now();
   });
 
@@ -1591,9 +1645,7 @@ io.on('connection', (socket) => {
 
         io.to(room.id).emit('team_stats_update', { teamStats: room.teamStats });
 
-        // Check 10-kill victory condition:
-        // When either team or any player reaches 10 kills, match terminates!
-        const TARGET_VICTORY_KILLS = 10;
+        const TARGET_VICTORY_KILLS = (room.teamStats && room.teamStats.targetKills) ? room.teamStats.targetKills : 10;
         let shouldFinish = false;
         let winner = null;
 
@@ -1747,13 +1799,14 @@ io.on('connection', (socket) => {
     const dy = p.y - medkit.y;
     if (dx * dx + dy * dy <= 60 * 60) {
       delete room.medkits[data.id];
-      const healAmount = Math.max(1, Math.round(p.maxHp * 0.20));
+      const healAmount = room.pvpOnly ? 50 : Math.max(1, Math.round(p.maxHp * 0.20));
       p.hp = Math.min(p.maxHp, p.hp + healAmount);
       io.to(room.id).emit('medkit_collected', {
         id: data.id,
         collectorId: socket.id,
         collectorName: p.name,
         hp: p.hp,
+        healAmount: healAmount,
         x: medkit.x,
         y: medkit.y
       });
@@ -1896,79 +1949,87 @@ setInterval(() => {
       }
     }
 
-    // 2. Wave Progression & Spawning (Active Game Only)
+    // 2. Item Spawning & Wave Progression (Active Game Only)
     if (alivePlayers.length > 0 && room.gameStarted) {
-      // Medkit Spawn Timer (Every 5 seconds)
+      // Medkit Spawn Timer (PvP: 7 seconds with max 3 on arena; PvE: 5 seconds with max 8)
+      const medkitInterval = room.pvpOnly ? PVP_MEDKIT_SPAWN_INTERVAL : MEDKIT_SPAWN_INTERVAL;
+      const maxMedkits = room.pvpOnly ? PVP_MAX_SERVER_MEDKITS : MAX_SERVER_MEDKITS;
       room.medkitTimer += DT;
-      if (room.medkitTimer >= MEDKIT_SPAWN_INTERVAL) {
+      if (room.medkitTimer >= medkitInterval) {
         room.medkitTimer = 0;
-        if (Object.keys(room.medkits).length < MAX_SERVER_MEDKITS) {
+        if (Object.keys(room.medkits).length < maxMedkits) {
           spawnServerMedkit(room);
         }
       }
 
-      if (room.waveManager.state === 'intermission') {
-        room.waveManager.timer -= DT;
-        if (room.waveManager.timer <= 0) {
-          room.waveManager.state = 'active';
-          io.to(room.id).emit('wave_state_changed', { state: 'active', wave: room.waveManager.wave });
-        }
-      } else if (room.waveManager.state === 'active') {
-        if (room.waveManager.enemiesToSpawn > 0) {
-          room.waveManager.spawnTimer -= DT;
-          if (Object.keys(room.enemies).length === 0) {
-            room.waveManager.spawnTimer = 0;
+      // PvE Wave Progression (Strictly disabled in pvpOnly mode so arena remains constant and uninterrupted)
+      if (!room.pvpOnly) {
+        if (room.waveManager.state === 'intermission') {
+          room.waveManager.timer -= DT;
+          if (room.waveManager.timer <= 0) {
+            room.waveManager.state = 'active';
+            io.to(room.id).emit('wave_state_changed', { state: 'active', wave: room.waveManager.wave });
           }
-          if (room.waveManager.spawnTimer <= 0) {
-            const batchSize = Math.min(room.waveManager.enemiesToSpawn, Math.max(3, Math.floor(3 + room.waveManager.wave * 0.7)));
-            for (let b = 0; b < batchSize; b++) {
-              spawnServerEnemy(room);
+        } else if (room.waveManager.state === 'active') {
+          if (room.waveManager.enemiesToSpawn > 0) {
+            room.waveManager.spawnTimer -= DT;
+            if (Object.keys(room.enemies).length === 0) {
+              room.waveManager.spawnTimer = 0;
             }
-            const interval = Math.max(2.0, 4.2 - room.waveManager.wave * 0.35);
-            room.waveManager.spawnTimer = interval;
-          }
-        } else if (Object.keys(room.enemies).length === 0) {
-          // Wave Cleared!
-          room.waveManager.state = 'cleared';
-          // Moderate, steady HP scaling instead of exponential 1.6 factor
-          const maxHpBonus = Math.round(10 + (room.waveManager.wave - 1) * 6);
-          io.to(room.id).emit('wave_cleared', {
-            wave: room.waveManager.wave,
-            bonus: 1000,
-            maxHpBonus: maxHpBonus
-          });
-
-          // Upgrade maxHp exponentially and heal all alive players to 100% full HP
-          for (const p of alivePlayers) {
-            p.score += 1000;
-            p.maxHp = (p.maxHp || 100) + maxHpBonus;
-            p.hp = p.maxHp; // Full heal to 100% of new upgraded baseline vitality!
-          }
-
-          io.to(room.id).emit('kill_feed_msg', {
-            text: `SECTOR CLEARED // WAVE ${room.waveManager.wave} COMPLETE (+${maxHpBonus} MAX VITALITY)`,
-            type: 'wave'
-          });
-
-          setTimeout(() => {
-            if (rooms[room.id]) {
-              startWave(room, room.waveManager.wave + 1);
+            if (room.waveManager.spawnTimer <= 0) {
+              const batchSize = Math.min(room.waveManager.enemiesToSpawn, Math.max(3, Math.floor(3 + room.waveManager.wave * 0.7)));
+              for (let b = 0; b < batchSize; b++) {
+                spawnServerEnemy(room);
+              }
+              const interval = Math.max(2.0, 4.2 - room.waveManager.wave * 0.35);
+              room.waveManager.spawnTimer = interval;
             }
-          }, 4000);
+          } else if (Object.keys(room.enemies).length === 0) {
+            // Wave Cleared!
+            room.waveManager.state = 'cleared';
+            // Moderate, steady HP scaling instead of exponential 1.6 factor
+            const maxHpBonus = Math.round(10 + (room.waveManager.wave - 1) * 6);
+            io.to(room.id).emit('wave_cleared', {
+              wave: room.waveManager.wave,
+              bonus: 1000,
+              maxHpBonus: maxHpBonus
+            });
+
+            // Upgrade maxHp and heal alive PvE players
+            for (const p of alivePlayers) {
+              p.score += 1000;
+              p.maxHp = (p.maxHp || 100) + maxHpBonus;
+              p.hp = p.maxHp;
+            }
+
+            io.to(room.id).emit('kill_feed_msg', {
+              text: `SECTOR CLEARED // WAVE ${room.waveManager.wave} COMPLETE (+${maxHpBonus} MAX VITALITY)`,
+              type: 'wave'
+            });
+
+            setTimeout(() => {
+              if (rooms[room.id] && !rooms[room.id].pvpOnly) {
+                startWave(rooms[room.id], rooms[room.id].waveManager.wave + 1);
+              }
+            }, 4000);
+          }
         }
       }
     }
 
-    // 3. Enemy AI & Movement
+    // 3. Enemy AI & Movement (Slow down only enemies if any player has Chrono Matrix in with-enemies modes)
+    const roomHasChrono = !room.pvpOnly && Object.values(room.activePlayers || room.players || {}).some(p => p && p.hasChrono);
+    const enemyDT = roomHasChrono ? (DT * 0.25) : DT;
+
     for (const enemyId in room.enemies) {
       const enemy = room.enemies[enemyId];
-      if (enemy.attackTimer > 0) enemy.attackTimer -= DT;
+      if (enemy.attackTimer > 0) enemy.attackTimer -= enemyDT;
 
       // UNCONDITIONAL GREEN ENEMY ACID SPIT (Every 5 seconds, anywhere, blind fire!)
       if (enemy.type === 'normal') {
         if (enemy.spitTimer === undefined) enemy.spitTimer = 1.0 + Math.random() * 4.0;
         if (enemy.spitWindupTimer > 0) {
-          enemy.spitWindupTimer -= DT;
+          enemy.spitWindupTimer -= enemyDT;
           if (enemy.spitWindupTimer <= 0) {
             const mouthX = enemy.x + Math.cos(enemy.angle) * (enemy.radius + 6);
             const mouthY = enemy.y + Math.sin(enemy.angle) * (enemy.radius + 6);
@@ -1977,7 +2038,7 @@ setInterval(() => {
               x: mouthX,
               y: mouthY,
               angle: enemy.angle,
-              speed: 460,
+              speed: roomHasChrono ? 115 : 460,
               damage: 16,
               color: '#00ff88',
               ignoreWalls: false,
@@ -1985,7 +2046,7 @@ setInterval(() => {
             });
           }
         } else {
-          enemy.spitTimer -= DT;
+          enemy.spitTimer -= enemyDT;
           if (enemy.spitTimer <= 0) {
             enemy.spitTimer = 5.0; // Shoot every 5 seconds unconditionally!
             enemy.spitWindupTimer = 0.35;
@@ -1998,7 +2059,7 @@ setInterval(() => {
       if (enemy.type === 'toxic') {
         if (enemy.spitTimer === undefined) enemy.spitTimer = 1.0 + Math.random() * 3.0;
         if (enemy.spitWindupTimer > 0) {
-          enemy.spitWindupTimer -= DT;
+          enemy.spitWindupTimer -= enemyDT;
           if (enemy.spitWindupTimer <= 0) {
             const mouthX = enemy.x + Math.cos(enemy.angle) * (enemy.radius + 8);
             const mouthY = enemy.y + Math.sin(enemy.angle) * (enemy.radius + 8);
@@ -2007,7 +2068,7 @@ setInterval(() => {
               x: mouthX,
               y: mouthY,
               angle: enemy.angle,
-              speed: 400,
+              speed: roomHasChrono ? 100 : 400,
               damage: 20,
               color: '#39ff14',
               ignoreWalls: false,
@@ -2015,7 +2076,7 @@ setInterval(() => {
             });
           }
         } else {
-          enemy.spitTimer -= DT;
+          enemy.spitTimer -= enemyDT;
           if (enemy.spitTimer <= 0) {
             enemy.spitTimer = 3.8;
             enemy.spitWindupTimer = 0.45;
@@ -2101,11 +2162,11 @@ setInterval(() => {
           let angleDiff = targetAngle - enemy.angle;
           while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
           while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
-          enemy.angle += Math.sign(angleDiff) * Math.min(Math.abs(angleDiff), 9.0 * DT);
+          enemy.angle += Math.sign(angleDiff) * Math.min(Math.abs(angleDiff), 9.0 * enemyDT);
 
           // Movement
-          let stepX = Math.cos(enemy.angle) * enemy.speed * DT;
-          let stepY = Math.sin(enemy.angle) * enemy.speed * DT;
+          let stepX = Math.cos(enemy.angle) * enemy.speed * enemyDT;
+          let stepY = Math.sin(enemy.angle) * enemy.speed * enemyDT;
 
           if (curDist <= minDistanceToPlayer + 4 && curDist > 0.001) {
             const toPx = (closestP.x - enemy.x) / curDist;
@@ -2141,7 +2202,7 @@ setInterval(() => {
           if (enemy.type === 'sniper') {
             if (enemy.sniperTimer === undefined) enemy.sniperTimer = 2.0 + Math.random() * 2.0;
             if (enemy.sniperAimTimer > 0) {
-              enemy.sniperAimTimer -= DT;
+              enemy.sniperAimTimer -= enemyDT;
               if (enemy.sniperAimTimer <= 0) {
                 const muzzleX = enemy.x + Math.cos(enemy.angle) * (enemy.radius + 14);
                 const muzzleY = enemy.y + Math.sin(enemy.angle) * (enemy.radius + 14);
@@ -2150,14 +2211,14 @@ setInterval(() => {
                   x: muzzleX,
                   y: muzzleY,
                   angle: enemy.angle,
-                  speed: 820,
+                  speed: roomHasChrono ? 205 : 820,
                   damage: 28,
                   color: '#ff00aa',
                   ignoreWalls: true
                 });
               }
             } else {
-              enemy.sniperTimer -= DT;
+              enemy.sniperTimer -= enemyDT;
               if (enemy.sniperTimer <= 0 && curDist <= 900 && hasLineOfSight(enemy.x, enemy.y, closestP.x, closestP.y, room.mapId)) {
                 enemy.sniperTimer = 5.0;
                 enemy.sniperAimTimer = 1.0;
